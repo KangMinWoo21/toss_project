@@ -740,6 +740,57 @@ class CliTests(unittest.TestCase):
         self.assertIn("walk_002", text)
         self.assertIn("pattern_status", text.splitlines()[0])
 
+    def test_monthly_failure_drilldown_cli_writes_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            baseline = root / "baseline.csv"
+            patterns = root / "patterns.csv"
+            delta = root / "delta.csv"
+            output = root / "drilldown.csv"
+            baseline.write_text(
+                "name,category,required,deployable,reason,train_start,train_end,selected_preset,train_excess_return_pct,start,end,excess_return_pct,max_drawdown_pct,trade_count\n"
+                "regime_sideways,regime,True,False,negative_excess_return,2024-01-01,2024-12-31,balanced,3.5,2025-01-01,2025-06-30,-7.1,-18.2,42\n",
+                encoding="utf-8",
+            )
+            patterns.write_text(
+                "scenario,pattern_status,dominant_diagnostic,failed_candidate_count,suggested_action\n"
+                "regime_sideways,PERSISTENT_BLOCK,same_failure_persists=3,3,REVIEW_PERSISTENT_FAILURE\n",
+                encoding="utf-8",
+            )
+            delta.write_text(
+                "name,classification,candidate_label,excess_return_delta,max_drawdown_delta,trade_count_delta,diagnostic\n"
+                "regime_sideways,UNCHANGED_FAILURE,cash_10,-2,1,-4,same_failure_persists\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "backtester",
+                    "monthly-failure-drilldown",
+                    "--baseline",
+                    str(baseline),
+                    "--patterns",
+                    str(patterns),
+                    "--delta-report",
+                    str(delta),
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            text = output.read_text(encoding="utf-8") if output.exists() else ""
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("failure_drilldown_report", completed.stdout)
+        self.assertIn("regime_sideways", text)
+        self.assertIn("likely_root_cause", text.splitlines()[0])
+        self.assertIn("weak_window_return_drag", text)
+
     def test_monthly_compare_validation_cli_writes_comparison(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

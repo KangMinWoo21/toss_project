@@ -40,6 +40,7 @@ def evaluate_readiness(
     validation_candidate_decision_path: Path | str | None = None,
     validation_candidate_followup_path: Path | str | None = None,
     validation_failure_patterns_path: Path | str | None = None,
+    validation_failure_drilldown_path: Path | str | None = None,
     risk_report_path: Path | str | None = None,
     coverage_report_path: Path | str | None = None,
     missing_ohlcv_targets_path: Path | str | None = None,
@@ -80,6 +81,8 @@ def evaluate_readiness(
         checks.append(_validation_candidate_followup_check(Path(validation_candidate_followup_path)))
     if validation_failure_patterns_path is not None:
         checks.append(_validation_failure_patterns_check(Path(validation_failure_patterns_path)))
+    if validation_failure_drilldown_path is not None:
+        checks.append(_validation_failure_drilldown_check(Path(validation_failure_drilldown_path)))
     if risk_report_path is not None:
         checks.append(_risk_report_check(Path(risk_report_path)))
     coverage_check: ReadinessCheck | None = None
@@ -440,6 +443,20 @@ def recommend_readiness_actions(checks: list[ReadinessCheck]) -> list[ReadinessA
                 "P1",
                 "Analyze persistent validation failures",
                 failure_pattern_checks[0].detail,
+            )
+        )
+
+    failure_drilldown_checks = [
+        check
+        for check in checks
+        if check.name == "validation_failure_drilldown" and check.status in {"BLOCK", "WARN"}
+    ]
+    if failure_drilldown_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Fill validation drilldown evidence gaps",
+                failure_drilldown_checks[0].detail,
             )
         )
 
@@ -925,6 +942,36 @@ def _validation_failure_patterns_check(path: Path) -> ReadinessCheck:
     )
     detail = f"{len(rows)} scenarios; statuses: {status_summary}; top={top_detail}"
     return ReadinessCheck("validation_failure_patterns", status, detail)
+
+
+def _validation_failure_drilldown_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_failure_drilldown", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_failure_drilldown", "WARN", f"empty: {path}")
+    root_causes = Counter(str(row.get("likely_root_cause", "")).strip() for row in rows)
+    evidence_gap_rows = [row for row in rows if str(row.get("evidence_gaps", "")).strip()]
+    persistent_gap_rows = [
+        row
+        for row in evidence_gap_rows
+        if str(row.get("pattern_status", "")).strip().upper() in {"PERSISTENT_BLOCK", "REGRESSION_RISK"}
+    ]
+    if persistent_gap_rows:
+        status = "WARN"
+    else:
+        status = "PASS"
+    root_summary = ", ".join(f"{name}={count}" for name, count in sorted(root_causes.items()) if name)
+    top_rows = persistent_gap_rows or rows
+    top_detail = "; ".join(
+        f"{row.get('scenario', '')}:{row.get('likely_root_cause', '')}:{row.get('evidence_gaps', '')}"
+        for row in top_rows[:5]
+    )
+    detail = (
+        f"{len(rows)} scenarios; root_causes: {root_summary}; "
+        f"evidence_gaps={len(evidence_gap_rows)}; top={top_detail}"
+    )
+    return ReadinessCheck("validation_failure_drilldown", status, detail)
 
 
 def _candidate_followup_decisions(rows: list[dict[str, Any]], *, base_dir: Path) -> list[dict[str, str]]:

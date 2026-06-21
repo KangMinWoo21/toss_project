@@ -51,6 +51,7 @@ from .monthly_rebalance import (
     analyze_monthly_drawdown_attribution,
     analyze_monthly_performance_concentration,
     analyze_monthly_validation_failures,
+    analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
     analyze_monthly_validation_remediation,
     analyze_symbol_realized_pnl_attribution,
@@ -101,6 +102,7 @@ from .monthly_rebalance import (
     save_monthly_validation_comparison,
     save_monthly_validation_candidate_decision,
     save_monthly_validation_candidate_followup_rows,
+    save_monthly_validation_failure_drilldown,
     save_monthly_validation_failure_patterns,
     save_monthly_validation_scenario_deltas,
     save_monthly_validation_rows,
@@ -994,6 +996,34 @@ def main() -> int:
         default="data/reports/monthly_validation_failure_patterns.csv",
     )
 
+    monthly_failure_drilldown_parser = subparsers.add_parser(
+        "monthly-failure-drilldown",
+        help="Create scenario-level diagnostics for persistent validation failures",
+    )
+    monthly_failure_drilldown_parser.add_argument(
+        "--baseline",
+        default="data/reports/monthly_validation_scenarios_pit_universe.csv",
+    )
+    monthly_failure_drilldown_parser.add_argument(
+        "--patterns",
+        default="data/reports/monthly_validation_failure_patterns.csv",
+    )
+    monthly_failure_drilldown_parser.add_argument(
+        "--delta-report",
+        action="append",
+        default=None,
+        help="Candidate scenario delta CSV. Can be repeated.",
+    )
+    monthly_failure_drilldown_parser.add_argument(
+        "--delta-glob",
+        default="data/reports/monthly_validation_comparison_deltas_*.csv",
+        help="Glob for candidate scenario delta CSVs when --delta-report is omitted or supplemented.",
+    )
+    monthly_failure_drilldown_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_validation_failure_drilldown.csv",
+    )
+
     production_check_parser = subparsers.add_parser(
         "production-check",
         help="Evaluate whether local data, validation, and risk reports are ready for live trading",
@@ -1047,6 +1077,10 @@ def main() -> int:
     production_check_parser.add_argument(
         "--validation-failure-patterns",
         default="data/reports/monthly_validation_failure_patterns.csv",
+    )
+    production_check_parser.add_argument(
+        "--validation-failure-drilldown",
+        default="data/reports/monthly_validation_failure_drilldown.csv",
     )
     production_check_parser.add_argument("--risk-report", default="data/reports/monthly_risk_report.csv")
     production_check_parser.add_argument(
@@ -1255,6 +1289,38 @@ def main() -> int:
             print("top_pattern  none")
         return 0
 
+    if args.command == "monthly-failure-drilldown":
+        baseline_rows = _read_csv_dicts(Path(args.baseline))
+        pattern_rows = _read_csv_dicts(Path(args.patterns))
+        delta_paths: list[Path] = []
+        for raw_path in args.delta_report or []:
+            delta_paths.append(Path(raw_path))
+        if args.delta_glob:
+            glob_path = Path(args.delta_glob)
+            parent = glob_path.parent if str(glob_path.parent) else Path(".")
+            delta_paths.extend(sorted(parent.glob(glob_path.name)))
+        unique_delta_paths: list[Path] = []
+        seen_delta_paths: set[Path] = set()
+        for path in delta_paths:
+            normalized = path.resolve() if path.exists() else path
+            if normalized in seen_delta_paths:
+                continue
+            seen_delta_paths.add(normalized)
+            if path.exists():
+                unique_delta_paths.append(path)
+        delta_rows: list[dict[str, str]] = []
+        for path in unique_delta_paths:
+            delta_rows.extend(_read_csv_dicts(path))
+        rows = analyze_monthly_validation_failure_drilldown(baseline_rows, pattern_rows, delta_rows)
+        saved = save_monthly_validation_failure_drilldown(rows, args.output)
+        print(f"failure_drilldown_report  {args.output} rows={saved}")
+        print(f"delta_reports  {len(unique_delta_paths)}")
+        if rows:
+            print(f"top_drilldown  {rows[0]['scenario']} {rows[0]['likely_root_cause']}")
+        else:
+            print("top_drilldown  none")
+        return 0
+
     if args.command == "production-check":
         required_artifacts = args.required_artifact
         if required_artifacts is None:
@@ -1279,6 +1345,7 @@ def main() -> int:
             validation_candidate_decision_path=args.validation_candidate_decision,
             validation_candidate_followup_path=args.validation_candidate_followup,
             validation_failure_patterns_path=args.validation_failure_patterns,
+            validation_failure_drilldown_path=args.validation_failure_drilldown,
             risk_report_path=args.risk_report,
             coverage_report_path=args.coverage_report,
             missing_ohlcv_targets_path=args.missing_ohlcv_targets,

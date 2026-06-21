@@ -21,6 +21,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_performance_concentration,
     analyze_monthly_drawdown_attribution,
     analyze_monthly_validation_failures,
+    analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
     analyze_monthly_validation_remediation,
     analyze_symbol_realized_pnl_attribution,
@@ -70,6 +71,7 @@ from backtester.monthly_rebalance import (
     save_monthly_validation_comparison,
     save_monthly_validation_candidate_decision,
     save_monthly_validation_candidate_followup_rows,
+    save_monthly_validation_failure_drilldown,
     save_monthly_validation_failure_patterns,
     save_monthly_validation_scenario_deltas,
     save_monthly_attribution_rows,
@@ -1135,6 +1137,156 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("pattern_status", text.splitlines()[0])
         self.assertIn("walk_001", text)
         self.assertIn("PERSISTENT_BLOCK", text)
+
+    def test_analyze_monthly_validation_failure_drilldown_summarizes_root_cause_and_gaps(self):
+        baseline_rows = [
+            {
+                "name": "regime_sideways",
+                "category": "regime",
+                "required": True,
+                "deployable": False,
+                "reason": "negative_excess_return",
+                "train_start": "2024-01-01",
+                "train_end": "2024-12-31",
+                "selected_preset": "balanced",
+                "train_excess_return_pct": "3.5",
+                "start": "2025-01-01",
+                "end": "2025-06-30",
+                "excess_return_pct": "-7.1",
+                "max_drawdown_pct": "-18.2",
+                "trade_count": "42",
+            },
+            {
+                "name": "walk_forward_003",
+                "category": "walk_forward",
+                "required": True,
+                "deployable": False,
+                "reason": "train_window_rejected",
+                "train_start": "2024-01-01",
+                "train_end": "2024-06-30",
+                "selected_preset": "",
+                "train_excess_return_pct": "-2.0",
+                "start": "2024-07-01",
+                "end": "2024-12-31",
+                "excess_return_pct": "",
+                "max_drawdown_pct": "",
+                "trade_count": "0",
+            },
+            {
+                "name": "regime_improved_but_failed",
+                "category": "regime",
+                "required": True,
+                "deployable": False,
+                "reason": "negative_excess_return",
+                "train_start": "2024-01-01",
+                "train_end": "2024-12-31",
+                "selected_preset": "balanced",
+                "train_excess_return_pct": "4.0",
+                "start": "2025-01-01",
+                "end": "2025-06-30",
+                "excess_return_pct": "-2.0",
+                "max_drawdown_pct": "-10.0",
+                "trade_count": "20",
+            },
+        ]
+        pattern_rows = [
+            {
+                "scenario": "regime_sideways",
+                "pattern_status": "PERSISTENT_BLOCK",
+                "dominant_diagnostic": "same_failure_persists=3",
+                "failed_candidate_count": "3",
+                "suggested_action": "REVIEW_PERSISTENT_FAILURE",
+            },
+            {
+                "scenario": "walk_forward_003",
+                "pattern_status": "PERSISTENT_BLOCK",
+                "dominant_diagnostic": "same_failure_persists=3",
+                "failed_candidate_count": "3",
+                "suggested_action": "REVIEW_PERSISTENT_FAILURE",
+            },
+            {
+                "scenario": "regime_improved_but_failed",
+                "pattern_status": "PERSISTENT_BLOCK",
+                "dominant_diagnostic": "same_failure_persists=3",
+                "failed_candidate_count": "3",
+                "suggested_action": "REVIEW_PERSISTENT_FAILURE",
+            },
+        ]
+        delta_rows = [
+            {
+                "name": "regime_sideways",
+                "classification": "UNCHANGED_FAILURE",
+                "candidate_label": "cash_10",
+                "excess_return_delta": "-2.0",
+                "max_drawdown_delta": "1.0",
+                "trade_count_delta": "-4",
+                "diagnostic": "same_failure_persists",
+            },
+            {
+                "name": "regime_sideways",
+                "classification": "UNCHANGED_FAILURE",
+                "candidate_label": "stop_12",
+                "excess_return_delta": "-4.0",
+                "max_drawdown_delta": "2.0",
+                "trade_count_delta": "8",
+                "diagnostic": "same_failure_persists",
+            },
+            {
+                "name": "regime_improved_but_failed",
+                "classification": "UNCHANGED_FAILURE",
+                "candidate_label": "cash_10",
+                "excess_return_delta": "1.0",
+                "max_drawdown_delta": "1.0",
+                "trade_count_delta": "-2",
+                "diagnostic": "same_failure_persists",
+            },
+            {
+                "name": "regime_improved_but_failed",
+                "classification": "UNCHANGED_FAILURE",
+                "candidate_label": "stop_12",
+                "excess_return_delta": "3.0",
+                "max_drawdown_delta": "1.0",
+                "trade_count_delta": "2",
+                "diagnostic": "same_failure_persists",
+            },
+        ]
+
+        rows = analyze_monthly_validation_failure_drilldown(baseline_rows, pattern_rows, delta_rows)
+        by_name = {row["scenario"]: row for row in rows}
+
+        sideways = by_name["regime_sideways"]
+        self.assertEqual(sideways["likely_root_cause"], "weak_window_return_drag")
+        self.assertEqual(sideways["candidate_count"], 2)
+        self.assertEqual(sideways["candidate_excess_delta_median"], "-3")
+        self.assertIn("selected_symbols", sideways["evidence_gaps"])
+        self.assertIn("scenario attribution", sideways["next_action"])
+        walk = by_name["walk_forward_003"]
+        self.assertEqual(walk["likely_root_cause"], "train_window_selection")
+        self.assertIn("training window", walk["next_action"])
+        improved = by_name["regime_improved_but_failed"]
+        self.assertEqual(improved["candidate_excess_delta_median"], "2")
+        self.assertEqual(improved["likely_root_cause"], "insufficient_recovery")
+
+    def test_save_monthly_validation_failure_drilldown_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "drilldown.csv"
+            saved = save_monthly_validation_failure_drilldown(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "pattern_status": "PERSISTENT_BLOCK",
+                        "likely_root_cause": "weak_window_return_drag",
+                        "evidence_gaps": "selected_symbols; exposure",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("likely_root_cause", text.splitlines()[0])
+        self.assertIn("regime_sideways", text)
+        self.assertIn("weak_window_return_drag", text)
 
     def test_compare_monthly_validation_reports_detects_shifted_failures(self):
         baseline_rows = [

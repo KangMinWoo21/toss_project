@@ -377,6 +377,25 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Analyze persistent validation failures", action_text)
 
+    def test_validation_failure_drilldown_warns_on_missing_attribution_evidence(self):
+        with TemporaryDirectory() as temp_dir:
+            drilldown = Path(temp_dir) / "monthly_validation_failure_drilldown.csv"
+            drilldown.write_text(
+                "scenario,pattern_status,likely_root_cause,evidence_gaps,next_action\n"
+                "regime_sideways,PERSISTENT_BLOCK,weak_window_return_drag,selected_symbols; exposure; cash_weight,Run scenario attribution before tuning more parameters.\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_failure_drilldown_path=drilldown)
+            actions = recommend_readiness_actions(checks)
+
+        drilldown_checks = [check for check in checks if check.name == "validation_failure_drilldown"]
+        self.assertEqual(drilldown_checks[0].status, "WARN")
+        self.assertIn("weak_window_return_drag=1", drilldown_checks[0].detail)
+        self.assertIn("evidence_gaps=1", drilldown_checks[0].detail)
+        action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
+        self.assertIn("Fill validation drilldown evidence gaps", action_text)
+
     def test_validation_comparison_reject_warns_readiness(self):
         with TemporaryDirectory() as temp_dir:
             comparison = Path(temp_dir) / "monthly_validation_comparison.csv"

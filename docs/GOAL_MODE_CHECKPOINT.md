@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 02:11 KST
+Last updated: 2026-06-22 02:22 KST
 
 ## Objective
 
@@ -27,12 +27,12 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 364 tests.
+- `python -m unittest discover -s tests`: PASS, 368 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because validation still fails required scenarios.
 - `health-check`: WARN, only because scalper data is stale.
 - Candidate follow-up state: all 3 full-validation candidates completed, all rejected.
-- New failure-pattern report is generated and integrated into `production-check`.
+- Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 
 ## Latest Loop Results
 
@@ -42,6 +42,14 @@ Added validation failure-pattern diagnostics:
 - New report: `data/reports/monthly_validation_failure_patterns.csv`
 - New production-check input: `--validation-failure-patterns`
 - New readiness check: `validation_failure_patterns`
+
+Added validation failure drilldown diagnostics:
+
+- New CLI: `python -m backtester monthly-failure-drilldown`
+- New report: `data/reports/monthly_validation_failure_drilldown.csv`
+- New production-check input: `--validation-failure-drilldown`
+- New readiness check: `validation_failure_drilldown`
+- Purpose: combine baseline scenario metrics, persistent/regression pattern status, and candidate deltas into a scenario-level root-cause/action report.
 
 Generated from baseline validation plus 3 candidate delta reports:
 
@@ -70,16 +78,47 @@ Interpretation:
 - They introduced or preserved regression risk in `walk_forward_002`, `regime_bear`, and `walk_forward_004`.
 - Do not continue the same candidate family as-is. Isolate what fixed the two resolved scenarios without carrying the regression behavior.
 
+Latest drilldown summary:
+
+- `insufficient_recovery=2`
+  - `regime_sideways`
+  - `walk_forward_005`
+- `train_window_selection=2`
+  - `walk_forward_003`
+  - `walk_forward_004`
+- `selection_or_exposure_regression=1`
+  - `regime_bear`
+- `over_defense_or_filter_drag=1`
+  - `walk_forward_002`
+- `drawdown_pressure=1`
+  - `stress_exclude_500pct_winners`
+- `candidate_fixed_failure=1`
+  - `walk_forward_001`
+
+Important interpretation update:
+
+- `regime_sideways` and `walk_forward_005` did improve under candidates, but not enough to pass.
+- They are now classified as `insufficient_recovery`, not just weak-window drag.
+- Evidence gaps remain for six scenarios:
+  - selected symbols
+  - exposure
+  - cash weight
+  - symbol PnL attribution
+  - train-window candidate scores where applicable
+
 ## Current BLOCK/WARN Summary
 
 Production readiness:
 
-- Status counts: `BLOCK=8`, `PASS=29`, `WARN=8`
+- Status counts: `BLOCK=8`, `PASS=29`, `WARN=9`
 - Main BLOCK: required monthly validation failures remain.
 - `validation_failure_patterns`: BLOCK
   - `CANDIDATE_FIXED=2`
   - `PERSISTENT_BLOCK=3`
   - `REGRESSION_RISK=3`
+- `validation_failure_drilldown`: WARN
+  - root causes: `insufficient_recovery=2`, `train_window_selection=2`, `selection_or_exposure_regression=1`, `over_defense_or_filter_drag=1`, `drawdown_pressure=1`, `candidate_fixed_failure=1`
+  - evidence gaps: 6 scenarios
 - `validation_scenarios`: BLOCK
   - `stress_exclude_500pct_winners`
   - `regime_sideways`
@@ -109,6 +148,7 @@ Touched in latest loop:
 - `tests/test_monthly_rebalance.py`
 - `tests/test_readiness.py`
 - `tests/test_cli.py`
+- `data/reports/monthly_validation_failure_drilldown.csv`
 - `data/reports/monthly_validation_failure_patterns.csv`
 - `data/reports/production_readiness.csv`
 - `data/reports/production_readiness_report.md`
@@ -121,6 +161,8 @@ Touched in latest loop:
 ```powershell
 python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_validation_failure_patterns_flags_persistent_and_regression tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_validation_failure_patterns_writes_csv tests.test_readiness.ProductionReadinessTests.test_validation_failure_patterns_block_persistent_failures tests.test_cli.CliTests.test_monthly_failure_patterns_cli_writes_report
 python -m backtester monthly-failure-patterns --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --output data/reports/monthly_validation_failure_patterns.csv
+python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_validation_failure_drilldown_summarizes_root_cause_and_gaps tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_validation_failure_drilldown_writes_csv tests.test_cli.CliTests.test_monthly_failure_drilldown_cli_writes_report tests.test_readiness.ProductionReadinessTests.test_validation_failure_drilldown_warns_on_missing_attribution_evidence
+python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --patterns data/reports/monthly_validation_failure_patterns.csv --output data/reports/monthly_validation_failure_drilldown.csv
 python -m backtester production-check --allow-blocked-exit-zero
 python -m unittest discover -s tests
 python -m compileall -q backtester
@@ -129,22 +171,22 @@ python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
 
 ## Next Highest-Value Work
 
-1. Build a narrower diagnostic experiment around `PERSISTENT_BLOCK` scenarios only:
+1. Fill the drilldown evidence gaps before another parameter sweep:
+   - selected symbols per failed scenario
+   - realized symbol PnL attribution per failed scenario
+   - average exposure/cash weight per failed scenario
+   - train-window candidate scores for train-window failures
+2. Build a narrower diagnostic experiment around `PERSISTENT_BLOCK` scenarios only:
    - `regime_sideways`
    - `walk_forward_003`
    - `walk_forward_005`
-2. Separately preserve the behavior that fixed:
+3. Separately preserve the behavior that fixed:
    - `stress_exclude_500pct_winners`
    - `walk_forward_001`
-3. Avoid candidate settings that introduce:
+4. Avoid candidate settings that introduce:
    - `walk_forward_002`
    - `regime_bear`
    - `walk_forward_004`
-4. Add scenario-level attribution before changing more parameters:
-   - selected symbols
-   - exposure/cash level
-   - train-window choice
-   - drawdown and trade count deltas
 5. Keep all changes paper-only.
 
 ## Resume Procedure

@@ -418,6 +418,33 @@ VALIDATION_FAILURE_PATTERN_COLUMNS = [
     "notes",
 ]
 
+VALIDATION_FAILURE_DRILLDOWN_COLUMNS = [
+    "scenario",
+    "category",
+    "pattern_status",
+    "suggested_action",
+    "baseline_reason",
+    "likely_root_cause",
+    "train_start",
+    "train_end",
+    "selected_preset",
+    "train_excess_return_pct",
+    "start",
+    "end",
+    "baseline_excess_return_pct",
+    "baseline_max_drawdown_pct",
+    "baseline_trade_count",
+    "candidate_count",
+    "candidate_labels",
+    "candidate_excess_delta_min",
+    "candidate_excess_delta_median",
+    "candidate_drawdown_delta_median",
+    "candidate_trade_delta_median",
+    "dominant_diagnostic",
+    "evidence_gaps",
+    "next_action",
+]
+
 PERFORMANCE_CONCENTRATION_COLUMNS = [
     "source",
     "start",
@@ -3123,6 +3150,97 @@ def save_monthly_validation_failure_patterns(rows: list[dict[str, Any]], output_
     return len(rows)
 
 
+def analyze_monthly_validation_failure_drilldown(
+    baseline_rows: list[dict[str, Any]],
+    pattern_rows: list[dict[str, Any]],
+    delta_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    baseline_by_name = {
+        str(row.get("name", "")).strip(): row
+        for row in baseline_rows
+        if str(row.get("name", "")).strip()
+    }
+    delta_by_name: dict[str, list[dict[str, Any]]] = {}
+    for row in delta_rows:
+        name = str(row.get("name", "")).strip()
+        if name:
+            delta_by_name.setdefault(name, []).append(row)
+
+    rows: list[dict[str, Any]] = []
+    for pattern in pattern_rows:
+        scenario = str(pattern.get("scenario", "")).strip()
+        if not scenario:
+            continue
+        baseline = baseline_by_name.get(scenario, {})
+        deltas = delta_by_name.get(scenario, [])
+        candidate_labels = sorted(
+            {
+                str(row.get("candidate_label", "")).strip()
+                for row in deltas
+                if str(row.get("candidate_label", "")).strip()
+            }
+        )
+        excess_deltas = [_float_or_none(row.get("excess_return_delta")) for row in deltas]
+        drawdown_deltas = [_float_or_none(row.get("max_drawdown_delta")) for row in deltas]
+        trade_deltas = [_float_or_none(row.get("trade_count_delta")) for row in deltas]
+        median_excess_delta = _median_numeric(excess_deltas)
+        likely_root_cause = _validation_failure_likely_root_cause(
+            baseline,
+            pattern,
+            median_excess_delta=median_excess_delta,
+        )
+        evidence_gaps = _validation_failure_evidence_gaps(
+            pattern_status=str(pattern.get("pattern_status", "")),
+            likely_root_cause=likely_root_cause,
+        )
+        rows.append(
+            {
+                "scenario": scenario,
+                "category": baseline.get("category", ""),
+                "pattern_status": pattern.get("pattern_status", ""),
+                "suggested_action": pattern.get("suggested_action", ""),
+                "baseline_reason": baseline.get("reason", pattern.get("baseline_reason", "")),
+                "likely_root_cause": likely_root_cause,
+                "train_start": baseline.get("train_start", ""),
+                "train_end": baseline.get("train_end", ""),
+                "selected_preset": baseline.get("selected_preset", ""),
+                "train_excess_return_pct": baseline.get("train_excess_return_pct", ""),
+                "start": baseline.get("start", ""),
+                "end": baseline.get("end", ""),
+                "baseline_excess_return_pct": baseline.get("excess_return_pct", ""),
+                "baseline_max_drawdown_pct": baseline.get("max_drawdown_pct", ""),
+                "baseline_trade_count": baseline.get("trade_count", ""),
+                "candidate_count": len(candidate_labels),
+                "candidate_labels": "; ".join(candidate_labels),
+                "candidate_excess_delta_min": _format_optional_float(_min_numeric(excess_deltas)),
+                "candidate_excess_delta_median": _format_optional_float(median_excess_delta),
+                "candidate_drawdown_delta_median": _format_optional_float(_median_numeric(drawdown_deltas)),
+                "candidate_trade_delta_median": _format_optional_float(_median_numeric(trade_deltas)),
+                "dominant_diagnostic": pattern.get("dominant_diagnostic", ""),
+                "evidence_gaps": evidence_gaps,
+                "next_action": _validation_failure_next_action(likely_root_cause, evidence_gaps),
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            _failure_pattern_rank(str(row.get("pattern_status", ""))),
+            str(row.get("scenario", "")),
+        )
+    )
+    return rows
+
+
+def save_monthly_validation_failure_drilldown(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_FAILURE_DRILLDOWN_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_FAILURE_DRILLDOWN_COLUMNS})
+    return len(rows)
+
+
 def _scenario_names_by_classification(rows: list[dict[str, Any]], classification: str) -> list[str]:
     wanted = classification.strip()
     names = [
@@ -3185,6 +3303,66 @@ def _failure_pattern_rank(status: str) -> int:
         "REVIEW": 5,
     }
     return ranks.get(status, 99)
+
+
+def _validation_failure_likely_root_cause(
+    baseline: dict[str, Any],
+    pattern: dict[str, Any],
+    *,
+    median_excess_delta: float | None = None,
+) -> str:
+    reason = str(baseline.get("reason", pattern.get("baseline_reason", ""))).strip()
+    pattern_status = str(pattern.get("pattern_status", "")).strip().upper()
+    diagnostic = str(pattern.get("dominant_diagnostic", "")).strip()
+    if reason == "train_window_rejected" or "train_gate_regression" in diagnostic:
+        return "train_window_selection"
+    if reason == "max_drawdown_breach":
+        return "drawdown_pressure"
+    if pattern_status == "REGRESSION_RISK":
+        if "over_defense_or_filter_drag" in diagnostic:
+            return "over_defense_or_filter_drag"
+        return "selection_or_exposure_regression"
+    if pattern_status == "CANDIDATE_FIXED":
+        return "candidate_fixed_failure"
+    if reason == "negative_excess_return" and pattern_status == "PERSISTENT_BLOCK":
+        if median_excess_delta is not None and median_excess_delta > 0:
+            return "insufficient_recovery"
+        return "weak_window_return_drag"
+    return "scenario_review"
+
+
+def _validation_failure_evidence_gaps(*, pattern_status: str, likely_root_cause: str) -> str:
+    status = pattern_status.strip().upper()
+    gaps: list[str] = []
+    if status in {"PERSISTENT_BLOCK", "REGRESSION_RISK", "MIXED_RESPONSE"}:
+        gaps.extend(["selected_symbols", "exposure", "cash_weight"])
+    if likely_root_cause == "train_window_selection":
+        gaps.append("train_window_candidate_scores")
+    if likely_root_cause in {"weak_window_return_drag", "selection_or_exposure_regression", "insufficient_recovery"}:
+        gaps.append("symbol_pnl_attribution")
+    return "; ".join(dict.fromkeys(gaps))
+
+
+def _validation_failure_next_action(likely_root_cause: str, evidence_gaps: str) -> str:
+    if likely_root_cause == "train_window_selection":
+        return "Review training window rejection and no-trade gate before tuning parameters."
+    if likely_root_cause == "drawdown_pressure":
+        return "Run drawdown attribution and reduce exposure only after identifying loss months and symbols."
+    if likely_root_cause in {"selection_or_exposure_regression", "over_defense_or_filter_drag"}:
+        return "Avoid regression configs; compare selected symbols, exposure, and cash weight against baseline."
+    if likely_root_cause == "insufficient_recovery":
+        return "Isolate the partial fix, then run scenario attribution before increasing risk or adding filters."
+    if likely_root_cause == "candidate_fixed_failure":
+        return "Retest the fixing behavior in isolation and verify it does not introduce new failures."
+    if evidence_gaps:
+        return "Run scenario attribution with selected symbols, exposure, cash weight, and symbol PnL before tuning more parameters."
+    return "Review scenario metrics before adding another parameter experiment."
+
+
+def _median_numeric(values: Any) -> float | None:
+    numeric_values = [_float_or_none(value) for value in values]
+    numeric_values = [value for value in numeric_values if value is not None]
+    return median(numeric_values) if numeric_values else None
 
 
 def _validation_failure_diagnostic(row: dict[str, Any]) -> dict[str, Any]:
