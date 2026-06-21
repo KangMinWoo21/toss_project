@@ -1,11 +1,15 @@
 import csv
+import shlex
+import subprocess
+from collections import Counter
 from dataclasses import dataclass
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from statistics import mean, median
 from typing import Any, Callable
 
+from .events import EventScoreStore
 from .models import Candle
 from .momentum_rotation import (
     MomentumRotationConfig,
@@ -49,9 +53,17 @@ class PlannedOrder:
     target_weight: float
     current_quantity: int
     reason: str
+    adv_20d: float = 0.0
+    adv_participation_rate: float = 0.0
+    liquidity_status: str = "NOT_CHECKED"
+    liquidity_reason: str = ""
+    estimated_slippage_rate: float = 0.0
+    estimated_total_cost: float = 0.0
     execution_allowed: bool = False
     execution_mode: str = "blocked"
     execution_block_reason: str = "unmarked_order_plan"
+    risk_status: str = "BLOCKED"
+    risk_reasons: str = "unmarked_order_plan"
 
 
 @dataclass(frozen=True)
@@ -64,6 +76,9 @@ class RiskLimits:
     max_signal_age_days: int = 7
     max_daily_loss_pct: float = 3.0
     block_skip_orders: bool = True
+    max_adv_participation_rate: float = 0.10
+    warn_adv_participation_rate: float = 0.05
+    liquidity_missing_adv_status: str = "BLOCK"
 
 
 @dataclass(frozen=True)
@@ -157,8 +172,11 @@ class MonthlyRebalanceConfig:
     market_volatility_min_scale: float = 0.25
     drawdown_guard_trigger_pct: float = -15.0
     drawdown_guard_scale: float = 0.75
+    drawdown_guard_deep_trigger_pct: float = 0.0
+    drawdown_guard_deep_scale: float = 0.5
     daily_drawdown_stop_pct: float = 0.0
     daily_drawdown_cooldown_days: int = 20
+    position_trailing_stop_pct: float = 0.0
     weak_breadth_min_train_avg_excess_pct: float = 10.0
     cash_buffer_weight: float = 0.01
     max_position_weight: float = 0.15
@@ -177,6 +195,39 @@ class MonthlyRebalanceConfig:
     point_in_time_universe: dict[str, set[str]] | None = None
     market_beta_symbol: str = "069500"
     market_beta_proxy_size: int = 12
+    event_scores: EventScoreStore | None = None
+    event_lookback_days: int = 5
+    min_entry_event_score: float = -0.2
+    event_weight: float = 0.25
+    min_event_weight_multiplier: float = 0.5
+    max_event_weight_multiplier: float = 1.5
+
+
+@dataclass(frozen=True)
+class UniverseMember:
+    snapshot_date: str
+    symbol: str
+    name: str = ""
+    market: str = ""
+    listed_date: str = ""
+    delisted_date: str = ""
+    is_active: str = ""
+    is_suspended: str = ""
+    is_managed: str = ""
+    is_spac: str = ""
+    is_preferred: str = ""
+    tradable: str = ""
+
+
+class PointInTimeUniverse(dict[str, set[str]]):
+    def __init__(
+        self,
+        snapshots: dict[str, set[str]] | None = None,
+        *,
+        members_by_date: dict[str, list[UniverseMember]] | None = None,
+    ) -> None:
+        super().__init__(snapshots or {})
+        self.members_by_date = members_by_date or {}
 
 
 ORDER_COLUMNS = [
@@ -189,9 +240,17 @@ ORDER_COLUMNS = [
     "target_weight",
     "current_quantity",
     "reason",
+    "adv_20d",
+    "adv_participation_rate",
+    "liquidity_status",
+    "liquidity_reason",
+    "estimated_slippage_rate",
+    "estimated_total_cost",
     "execution_allowed",
     "execution_mode",
     "execution_block_reason",
+    "risk_status",
+    "risk_reasons",
 ]
 
 DECISION_COLUMNS = ["as_of_date", "signal_date", "mode", "selected_preset", "reason", "target_weights"]
@@ -200,6 +259,210 @@ STATE_COLUMNS = ["last_rebalance_date", "signal_date", "mode", "selected_preset"
 
 RISK_COLUMNS = ["name", "status", "detail"]
 PERFORMANCE_AUDIT_COLUMNS = ["name", "status", "detail"]
+
+VALIDATION_FAILURE_COLUMNS = [
+    "name",
+    "category",
+    "reason",
+    "severity",
+    "failed_metric",
+    "metric_value",
+    "threshold",
+    "suggested_action",
+    "parameter_hints",
+    "start",
+    "end",
+    "selected_preset",
+    "train_excess_return_pct",
+    "excess_return_pct",
+    "max_drawdown_pct",
+    "trade_count",
+    "stress",
+    "source",
+]
+
+VALIDATION_REMEDIATION_COLUMNS = [
+    "priority",
+    "suggested_action",
+    "failure_count",
+    "blocked_count",
+    "affected_categories",
+    "affected_scenarios",
+    "failed_metrics",
+    "worst_metric_value",
+    "parameter_hints",
+    "next_experiment",
+]
+
+VALIDATION_SWEEP_PLAN_COLUMNS = [
+    "priority",
+    "suggested_action",
+    "experiment_id",
+    "target_scenarios",
+    "cash_buffer_weight",
+    "min_train_positive_ratio",
+    "candidate_pool_size",
+    "max_position_weight",
+    "drawdown_guard_scale",
+    "market_volatility_min_scale",
+    "position_trailing_stop_pct",
+    "expected_effect",
+    "risk_note",
+]
+
+VALIDATION_SWEEP_RESULT_COLUMNS = [
+    "experiment_id",
+    "suggested_action",
+    "status",
+    "target_scenarios",
+    "scenario_count",
+    "failed_required",
+    "baseline_failed_required",
+    "failed_delta",
+    "min_excess_return_pct",
+    "worst_drawdown_pct",
+    "trade_count",
+    "config_changes",
+    "candidate_validation_args",
+    "validation_scope",
+    "adoption_status",
+    "adoption_requirements",
+    "result_summary",
+    "risk_note",
+]
+
+VALIDATION_CANDIDATE_FOLLOWUP_COLUMNS = [
+    "priority_rank",
+    "experiment_id",
+    "status",
+    "adoption_status",
+    "failed_delta",
+    "candidate_validation_args",
+    "candidate_scenario_output",
+    "candidate_gate_output",
+    "comparison_output",
+    "delta_output",
+    "decision_output",
+    "validation_command",
+    "comparison_command",
+    "risk_note",
+]
+
+VALIDATION_COMPARISON_COLUMNS = [
+    "baseline_label",
+    "candidate_label",
+    "status",
+    "baseline_failed_required",
+    "candidate_failed_required",
+    "failed_delta",
+    "resolved_failures",
+    "new_failures",
+    "unchanged_failures",
+    "summary",
+]
+
+VALIDATION_SCENARIO_DELTA_COLUMNS = [
+    "name",
+    "classification",
+    "baseline_label",
+    "candidate_label",
+    "baseline_deployable",
+    "candidate_deployable",
+    "baseline_reason",
+    "candidate_reason",
+    "baseline_excess_return_pct",
+    "candidate_excess_return_pct",
+    "excess_return_delta",
+    "baseline_max_drawdown_pct",
+    "candidate_max_drawdown_pct",
+    "max_drawdown_delta",
+    "baseline_trade_count",
+    "candidate_trade_count",
+    "trade_count_delta",
+    "diagnostic",
+]
+
+VALIDATION_CANDIDATE_DECISION_COLUMNS = [
+    "candidate_label",
+    "comparison_status",
+    "decision",
+    "decision_reasons",
+    "baseline_failed_required",
+    "candidate_failed_required",
+    "failed_delta",
+    "resolved_count",
+    "new_failure_count",
+    "unchanged_failure_count",
+    "resolved_failure_names",
+    "new_failure_names",
+    "unchanged_failure_names",
+    "new_failure_diagnostics",
+    "recommendation",
+]
+
+VALIDATION_FAILURE_PATTERN_COLUMNS = [
+    "scenario",
+    "baseline_failed",
+    "baseline_reason",
+    "failed_candidate_count",
+    "new_failure_candidate_count",
+    "resolved_candidate_count",
+    "unchanged_failure_candidate_count",
+    "candidate_labels_failed",
+    "candidate_labels_new_failure",
+    "candidate_labels_resolved",
+    "candidate_labels_unchanged",
+    "dominant_diagnostic",
+    "pattern_status",
+    "suggested_action",
+    "notes",
+]
+
+PERFORMANCE_CONCENTRATION_COLUMNS = [
+    "source",
+    "start",
+    "end",
+    "top_1_month_contribution",
+    "top_3_month_contribution",
+    "top_5_symbol_contribution",
+    "best_month",
+    "worst_month",
+    "positive_month_ratio",
+    "rolling_3m_return_min",
+    "rolling_6m_return_min",
+    "max_recovery_months_if_possible",
+    "concentration_status",
+    "concentration_reasons",
+]
+
+MONTHLY_DRAWDOWN_ATTRIBUTION_COLUMNS = [
+    "month",
+    "start_date",
+    "end_date",
+    "start_equity",
+    "end_equity",
+    "equity_change",
+    "return_pct",
+    "worst_equity",
+    "worst_drawdown_pct",
+    "status",
+]
+
+SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
+    "symbol",
+    "realized_pnl",
+    "realized_return_pct",
+    "buy_value",
+    "sell_value",
+    "quantity_bought",
+    "quantity_sold",
+    "open_quantity",
+    "unmatched_sell_quantity",
+    "trade_count",
+    "first_trade_date",
+    "last_trade_date",
+    "status",
+]
 
 DEPLOYMENT_GATE_COLUMNS = [
     "deployable",
@@ -240,6 +503,7 @@ MONTHLY_VALIDATION_COLUMNS = [
     "universe_extreme_return_share",
     "deployable",
     "reason",
+    "source",
 ]
 
 VALIDATION_DATA_QUALITY_COLUMNS = [
@@ -258,10 +522,23 @@ UNIVERSE_PRICE_COVERAGE_COLUMNS = [
     "universe_symbols",
     "price_symbols",
     "covered_symbols",
+    "excluded_symbols",
     "missing_symbols",
     "coverage_pct",
     "status",
     "missing_preview",
+    "excluded_preview",
+]
+
+UNIVERSE_FILTER_REPORT_COLUMNS = [
+    "as_of_date",
+    "snapshot_date",
+    "symbol",
+    "name",
+    "market",
+    "status",
+    "reason",
+    "detail",
 ]
 
 
@@ -289,6 +566,7 @@ def decide_monthly_allocation(
         symbol_candles,
         cfg.point_in_time_universe,
         signal_date=signal_date,
+        min_history_days=cfg.point_in_time_min_history_days,
     )
     point_in_time_candles = select_point_in_time_universe(
         universe_candles,
@@ -436,9 +714,26 @@ def decide_monthly_allocation(
         signal_date=signal_date,
         config=ranking_config,
     )
+    event_filtered_targets = filter_symbols_by_event_score(
+        ranked_targets,
+        event_scores=cfg.event_scores,
+        signal_date=signal_date,
+        lookback_days=cfg.event_lookback_days,
+        min_entry_event_score=cfg.min_entry_event_score,
+    )
+    event_reason_suffix = "_event_filtered" if len(event_filtered_targets) < len(ranked_targets) else ""
+    event_multipliers = event_score_multipliers(
+        event_filtered_targets,
+        event_scores=cfg.event_scores,
+        signal_date=signal_date,
+        lookback_days=cfg.event_lookback_days,
+        event_weight=cfg.event_weight,
+        min_multiplier=cfg.min_event_weight_multiplier,
+        max_multiplier=cfg.max_event_weight_multiplier,
+    )
     targets = (
         select_buyable_targets(
-            ranked_targets,
+            event_filtered_targets,
             reference_prices=reference_prices,
             portfolio_value=portfolio_value,
             target_budget=target_budget,
@@ -446,7 +741,7 @@ def decide_monthly_allocation(
             min_target_value=cfg.min_target_value,
         )
         if reference_prices is not None and portfolio_value is not None
-        else ranked_targets
+        else event_filtered_targets
     )
     if not targets:
         return MonthlyDecision(
@@ -466,8 +761,9 @@ def decide_monthly_allocation(
             targets,
             target_budget=target_budget,
             max_position_weight=cfg.max_position_weight,
+            symbol_multipliers=event_multipliers,
         ),
-        reason="selected_monthly_alpha" + reason_suffix,
+        reason="selected_monthly_alpha" + reason_suffix + event_reason_suffix,
     )
 
 
@@ -478,6 +774,13 @@ def build_order_plan(
     cash: float,
     reference_prices: dict[str, float],
     min_trade_value: float = 10_000.0,
+    symbol_candles: dict[str, list[Candle]] | None = None,
+    adv_window_days: int = 20,
+    base_slippage_rate: float = 0.0005,
+    impact_slippage_multiplier: float = 0.05,
+    warn_adv_participation_rate: float = 0.05,
+    max_adv_participation_rate: float = 0.10,
+    liquidity_missing_adv_status: str = "BLOCK",
 ) -> list[PlannedOrder]:
     current_positions = {position.symbol: position for position in positions}
     current_values = {
@@ -533,47 +836,131 @@ def build_order_plan(
                     )
                 )
             continue
-        orders.append(
-            PlannedOrder(
-                as_of_date=decision.as_of_date,
-                symbol=symbol,
-                action=action,
-                quantity=quantity,
-                reference_price=price,
-                estimated_value=quantity * price,
-                target_weight=target_weight,
-                current_quantity=current_quantity,
-                reason=decision.reason,
-            )
+        order = PlannedOrder(
+            as_of_date=decision.as_of_date,
+            symbol=symbol,
+            action=action,
+            quantity=quantity,
+            reference_price=price,
+            estimated_value=quantity * price,
+            target_weight=target_weight,
+            current_quantity=current_quantity,
+            reason=decision.reason,
         )
+        if symbol_candles is not None:
+            order = _annotate_order_liquidity(
+                order,
+                symbol_candles.get(symbol, []),
+                as_of_date=decision.signal_date,
+                adv_window_days=adv_window_days,
+                base_slippage_rate=base_slippage_rate,
+                impact_slippage_multiplier=impact_slippage_multiplier,
+                warn_adv_participation_rate=warn_adv_participation_rate,
+                max_adv_participation_rate=max_adv_participation_rate,
+                liquidity_missing_adv_status=liquidity_missing_adv_status,
+            )
+        orders.append(order)
     return sorted(orders, key=lambda order: 0 if order.action == "SELL" else 1)
+
+
+def average_daily_trading_value(
+    candles: list[Candle],
+    *,
+    as_of_date: str,
+    window_days: int = 20,
+) -> float:
+    if window_days <= 0:
+        return 0.0
+    history = [
+        candle
+        for candle in sorted(candles, key=lambda candle: candle.date)
+        if candle.date <= as_of_date and candle.close > 0 and candle.volume > 0
+    ]
+    if len(history) < window_days:
+        return 0.0
+    window = history[-window_days:]
+    return sum(candle.close * candle.volume for candle in window) / len(window)
+
+
+def _annotate_order_liquidity(
+    order: PlannedOrder,
+    candles: list[Candle],
+    *,
+    as_of_date: str,
+    adv_window_days: int,
+    base_slippage_rate: float,
+    impact_slippage_multiplier: float,
+    warn_adv_participation_rate: float,
+    max_adv_participation_rate: float,
+    liquidity_missing_adv_status: str,
+) -> PlannedOrder:
+    adv = average_daily_trading_value(candles, as_of_date=as_of_date, window_days=adv_window_days)
+    participation = abs(order.estimated_value) / adv if adv > 0 else 0.0
+    estimated_slippage_rate = max(0.0, base_slippage_rate) + participation * max(0.0, impact_slippage_multiplier)
+    estimated_total_cost = abs(order.estimated_value) * estimated_slippage_rate
+    if adv <= 0:
+        status = _normalize_liquidity_status(liquidity_missing_adv_status)
+        reason = f"adv_unavailable: need {adv_window_days} rows before {as_of_date}"
+    elif participation > max_adv_participation_rate + 1e-12:
+        status = "BLOCK"
+        reason = f"adv_participation_rate {participation:.4f} > max {max_adv_participation_rate:.4f}"
+    elif participation > warn_adv_participation_rate + 1e-12:
+        status = "WARN"
+        reason = f"adv_participation_rate {participation:.4f} > warn {warn_adv_participation_rate:.4f}"
+    else:
+        status = "PASS"
+        reason = f"adv_participation_rate {participation:.4f}"
+    return replace(
+        order,
+        adv_20d=adv,
+        adv_participation_rate=participation,
+        liquidity_status=status,
+        liquidity_reason=reason,
+        estimated_slippage_rate=estimated_slippage_rate,
+        estimated_total_cost=estimated_total_cost,
+    )
+
+
+def _normalize_liquidity_status(value: str) -> str:
+    normalized = str(value).strip().upper()
+    if normalized in {"WARN", "PASS", "NOT_CHECKED"}:
+        return normalized
+    return "BLOCK"
 
 
 def mark_order_plan_execution(
     orders: list[PlannedOrder],
     *,
     risk_status_value: str,
+    production_trading_enabled: bool = False,
 ) -> list[PlannedOrder]:
     normalized = str(risk_status_value).strip().upper()
     marked: list[PlannedOrder] = []
     for order in orders:
-        if normalized == "PASS" and order.action in {"BUY", "SELL"}:
+        if normalized == "PASS" and order.action in {"BUY", "SELL"} and production_trading_enabled:
             marked.append(
                 replace(
                     order,
                     execution_allowed=True,
                     execution_mode="live_ready",
                     execution_block_reason="",
+                    risk_status="PASS",
+                    risk_reasons="",
                 )
             )
         else:
-            reason = f"risk_status_{normalized}" if normalized != "PASS" else f"action_{order.action}"
+            if normalized == "PASS" and order.action in {"BUY", "SELL"}:
+                reason = "production_trading_disabled"
+            else:
+                reason = f"risk_status_{normalized}" if normalized != "PASS" else f"action_{order.action}"
             marked.append(
                 replace(
                     order,
                     execution_allowed=False,
                     execution_mode="blocked",
                     execution_block_reason=reason,
+                    risk_status="BLOCKED",
+                    risk_reasons=reason,
                 )
             )
     return marked
@@ -744,6 +1131,31 @@ def validate_pre_trade_risk(
     else:
         add("order_shape", "PASS", "valid")
 
+    liquidity_blocked = [
+        order
+        for order in executable_orders
+        if str(order.liquidity_status).strip().upper() == "BLOCK"
+    ]
+    liquidity_warned = [
+        order
+        for order in executable_orders
+        if str(order.liquidity_status).strip().upper() == "WARN"
+    ]
+    liquidity_checked = [
+        order
+        for order in executable_orders
+        if str(order.liquidity_status).strip().upper() not in {"", "NOT_CHECKED"}
+    ]
+    if liquidity_blocked:
+        detail = ";".join(f"{order.symbol}:{order.liquidity_reason}" for order in liquidity_blocked[:10])
+        add("liquidity", "BLOCK", detail)
+    elif liquidity_warned:
+        detail = ";".join(f"{order.symbol}:{order.liquidity_reason}" for order in liquidity_warned[:10])
+        add("liquidity", "WARN", detail)
+    elif liquidity_checked:
+        max_participation = max(order.adv_participation_rate for order in liquidity_checked)
+        add("liquidity", "PASS", f"max_adv_participation_rate={max_participation:.4f}")
+
     return checks
 
 
@@ -758,6 +1170,49 @@ def risk_status(checks: list[RiskCheck]) -> str:
 
 def risk_exit_code(status: str) -> int:
     return 2 if status == "BLOCK" else 0
+
+
+def validate_report_freshness(
+    report_paths: dict[str, Path | str | None],
+    *,
+    as_of_date: str,
+    max_age_days: int,
+) -> list[RiskCheck]:
+    if max_age_days < 0:
+        return []
+    checks: list[RiskCheck] = []
+    try:
+        as_of = date.fromisoformat(as_of_date)
+    except ValueError:
+        as_of = date.today()
+        checks.append(RiskCheck("report_freshness_as_of", "BLOCK", f"invalid as_of_date: {as_of_date}"))
+    for name, raw_path in report_paths.items():
+        if raw_path is None:
+            continue
+        path = Path(raw_path)
+        check_name = f"{name}_freshness"
+        if not path.exists():
+            checks.append(RiskCheck(check_name, "BLOCK", f"missing report: {path}"))
+            continue
+        modified_date = datetime.fromtimestamp(path.stat().st_mtime).date()
+        age_days = max(0, (as_of - modified_date).days)
+        if age_days > max_age_days:
+            checks.append(
+                RiskCheck(
+                    check_name,
+                    "BLOCK",
+                    f"age {age_days}d exceeds {max_age_days}d; modified={modified_date.isoformat()}",
+                )
+            )
+        else:
+            checks.append(
+                RiskCheck(
+                    check_name,
+                    "PASS",
+                    f"age {age_days}d within {max_age_days}d; modified={modified_date.isoformat()}",
+                )
+            )
+    return checks
 
 
 def save_risk_report(rows: list[RiskCheck], output_path: Path | str) -> int:
@@ -884,6 +1339,335 @@ def build_monthly_performance_audit(
         }
     )
     return checks
+
+
+def analyze_monthly_performance_concentration(
+    result: MonthlyBacktestResult,
+    *,
+    symbol_candles: dict[str, list[Candle]] | None = None,
+    source: str = "monthly-backtest",
+    top_1_month_warn_threshold: float = 0.60,
+    top_1_month_block_threshold: float = 0.80,
+    top_3_month_warn_threshold: float = 0.85,
+    top_3_month_block_threshold: float = 0.95,
+    top_5_symbol_warn_threshold: float = 0.75,
+    top_5_symbol_block_threshold: float = 0.90,
+    min_positive_month_ratio: float = 0.45,
+) -> dict[str, Any]:
+    monthly_rows = _monthly_return_rows(result)
+    monthly_returns = [row["return"] for row in monthly_rows]
+    positive_month_returns = [value for value in monthly_returns if value > 0]
+    positive_month_sum = sum(positive_month_returns)
+    top_months = sorted(positive_month_returns, reverse=True)
+    top_1_month = (top_months[0] / positive_month_sum) if positive_month_sum > 0 and top_months else 0.0
+    top_3_month = (sum(top_months[:3]) / positive_month_sum) if positive_month_sum > 0 else 0.0
+    best = max(monthly_rows, key=lambda row: row["return"], default={"month": "", "return": 0.0})
+    worst = min(monthly_rows, key=lambda row: row["return"], default={"month": "", "return": 0.0})
+    positive_month_ratio = (len(positive_month_returns) / len(monthly_returns)) if monthly_returns else 0.0
+    rolling_3m_min = _rolling_compound_return_min(monthly_returns, 3)
+    rolling_6m_min = _rolling_compound_return_min(monthly_returns, 6)
+    recovery_months = _max_recovery_months(monthly_rows, result.initial_cash)
+
+    symbol_contributions = _symbol_profit_contributions(result, symbol_candles or {})
+    positive_symbol_contributions = [value for value in symbol_contributions.values() if value > 0]
+    positive_symbol_sum = sum(positive_symbol_contributions)
+    top_5_symbol = (
+        sum(sorted(positive_symbol_contributions, reverse=True)[:5]) / positive_symbol_sum
+        if positive_symbol_sum > 0
+        else 0.0
+    )
+
+    status = "PASS"
+    reasons: list[str] = []
+
+    def flag(name: str, level: str, detail: str) -> None:
+        nonlocal status
+        reasons.append(f"{name}:{detail}")
+        if level == "BLOCK":
+            status = "BLOCK"
+        elif status == "PASS":
+            status = "WARN"
+
+    if top_1_month >= top_1_month_block_threshold:
+        flag("top_1_month_contribution", "BLOCK", f"{top_1_month:.4f}")
+    elif top_1_month >= top_1_month_warn_threshold:
+        flag("top_1_month_contribution", "WARN", f"{top_1_month:.4f}")
+    if len(monthly_returns) >= 6:
+        if top_3_month >= top_3_month_block_threshold:
+            flag("top_3_month_contribution", "BLOCK", f"{top_3_month:.4f}")
+        elif top_3_month >= top_3_month_warn_threshold:
+            flag("top_3_month_contribution", "WARN", f"{top_3_month:.4f}")
+    if len(positive_symbol_contributions) > 5:
+        if top_5_symbol >= top_5_symbol_block_threshold:
+            flag("top_5_symbol_contribution", "BLOCK", f"{top_5_symbol:.4f}")
+        elif top_5_symbol >= top_5_symbol_warn_threshold:
+            flag("top_5_symbol_contribution", "WARN", f"{top_5_symbol:.4f}")
+    if monthly_returns and positive_month_ratio < min_positive_month_ratio:
+        flag("positive_month_ratio", "WARN", f"{positive_month_ratio:.4f}")
+
+    return {
+        "source": source,
+        "start": result.dates[0] if result.dates else "",
+        "end": result.dates[-1] if result.dates else "",
+        "top_1_month_contribution": round(top_1_month, 6),
+        "top_3_month_contribution": round(top_3_month, 6),
+        "top_5_symbol_contribution": round(top_5_symbol, 6),
+        "best_month": str(best["month"]),
+        "worst_month": str(worst["month"]),
+        "positive_month_ratio": round(positive_month_ratio, 6),
+        "rolling_3m_return_min": round(rolling_3m_min, 6),
+        "rolling_6m_return_min": round(rolling_6m_min, 6),
+        "max_recovery_months_if_possible": recovery_months,
+        "concentration_status": status,
+        "concentration_reasons": ";".join(reasons),
+    }
+
+
+def save_monthly_performance_concentration(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=PERFORMANCE_CONCENTRATION_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in PERFORMANCE_CONCENTRATION_COLUMNS})
+    return len(rows)
+
+
+def analyze_monthly_drawdown_attribution(result: MonthlyBacktestResult) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    if not result.dates or not result.equity_curve:
+        return rows
+
+    running_peak = float(result.initial_cash)
+    previous_month_end_equity = float(result.initial_cash)
+    current: dict[str, Any] | None = None
+    last_equity = float(result.initial_cash)
+
+    def finish(row: dict[str, Any] | None) -> None:
+        if row is None:
+            return
+        equity_change = float(row["end_equity"]) - float(row["start_equity"])
+        return_pct = (equity_change / float(row["start_equity"]) * 100.0) if float(row["start_equity"]) > 0 else 0.0
+        status = "LOSS" if equity_change < 0 else "GAIN" if equity_change > 0 else "FLAT"
+        rows.append(
+            {
+                "month": str(row["month"]),
+                "start_date": str(row["start_date"]),
+                "end_date": str(row["end_date"]),
+                "start_equity": _format_optional_float(float(row["start_equity"])),
+                "end_equity": _format_optional_float(float(row["end_equity"])),
+                "equity_change": _format_optional_float(equity_change),
+                "return_pct": _format_optional_float(return_pct),
+                "worst_equity": _format_optional_float(float(row["worst_equity"])),
+                "worst_drawdown_pct": _format_optional_float(float(row["worst_drawdown_pct"])),
+                "status": status,
+            }
+        )
+
+    for raw_day, raw_equity in zip(result.dates, result.equity_curve):
+        day = str(raw_day)
+        month = day[:7]
+        equity = float(raw_equity)
+        if current is None or current["month"] != month:
+            finish(current)
+            previous_month_end_equity = last_equity
+            current = {
+                "month": month,
+                "start_date": day,
+                "end_date": day,
+                "start_equity": previous_month_end_equity,
+                "end_equity": equity,
+                "worst_equity": equity,
+                "worst_drawdown_pct": 0.0,
+            }
+        running_peak = max(running_peak, equity)
+        drawdown_pct = (equity / running_peak - 1.0) * 100.0 if running_peak > 0 else 0.0
+        current["end_date"] = day
+        current["end_equity"] = equity
+        current["worst_equity"] = min(float(current["worst_equity"]), equity)
+        current["worst_drawdown_pct"] = min(float(current["worst_drawdown_pct"]), drawdown_pct)
+        last_equity = equity
+    finish(current)
+    return rows
+
+
+def analyze_symbol_realized_pnl_attribution(result: MonthlyBacktestResult) -> list[dict[str, str]]:
+    lots: dict[str, list[dict[str, float]]] = {}
+    stats: dict[str, dict[str, Any]] = {}
+
+    def symbol_stats(symbol: str, trade_date: str) -> dict[str, Any]:
+        row = stats.setdefault(
+            symbol,
+            {
+                "symbol": symbol,
+                "realized_pnl": 0.0,
+                "realized_cost": 0.0,
+                "buy_value": 0.0,
+                "sell_value": 0.0,
+                "quantity_bought": 0.0,
+                "quantity_sold": 0.0,
+                "unmatched_sell_quantity": 0.0,
+                "trade_count": 0,
+                "first_trade_date": trade_date,
+                "last_trade_date": trade_date,
+            },
+        )
+        row["first_trade_date"] = min(str(row["first_trade_date"]), trade_date)
+        row["last_trade_date"] = max(str(row["last_trade_date"]), trade_date)
+        row["trade_count"] = int(row["trade_count"]) + 1
+        return row
+
+    for trade in result.trades:
+        symbol = str(trade.symbol)
+        action = str(trade.action).upper()
+        price = float(trade.price)
+        quantity = float(trade.quantity)
+        row = symbol_stats(symbol, str(trade.date))
+        lots.setdefault(symbol, [])
+        if action == "BUY":
+            row["buy_value"] += price * quantity
+            row["quantity_bought"] += quantity
+            lots[symbol].append({"quantity": quantity, "price": price})
+        elif action == "SELL":
+            row["sell_value"] += price * quantity
+            row["quantity_sold"] += quantity
+            remaining = quantity
+            while remaining > 0 and lots[symbol]:
+                lot = lots[symbol][0]
+                matched = min(remaining, float(lot["quantity"]))
+                row["realized_pnl"] += matched * (price - float(lot["price"]))
+                row["realized_cost"] += matched * float(lot["price"])
+                lot["quantity"] = float(lot["quantity"]) - matched
+                remaining -= matched
+                if float(lot["quantity"]) <= 0:
+                    lots[symbol].pop(0)
+            if remaining > 0:
+                row["unmatched_sell_quantity"] += remaining
+
+    output: list[dict[str, str]] = []
+    for symbol, row in stats.items():
+        open_quantity = sum(float(lot["quantity"]) for lot in lots.get(symbol, []))
+        realized_cost = float(row.get("realized_cost", 0.0))
+        realized_pnl = float(row.get("realized_pnl", 0.0))
+        realized_return_pct = (realized_pnl / realized_cost * 100.0) if realized_cost > 0 else 0.0
+        status = "LOSS" if realized_pnl < 0 else "GAIN" if realized_pnl > 0 else "FLAT"
+        output.append(
+            {
+                "symbol": symbol,
+                "realized_pnl": _format_optional_float(realized_pnl),
+                "realized_return_pct": _format_optional_float(realized_return_pct),
+                "buy_value": _format_optional_float(float(row.get("buy_value", 0.0))),
+                "sell_value": _format_optional_float(float(row.get("sell_value", 0.0))),
+                "quantity_bought": _format_optional_float(float(row.get("quantity_bought", 0.0))),
+                "quantity_sold": _format_optional_float(float(row.get("quantity_sold", 0.0))),
+                "open_quantity": _format_optional_float(open_quantity),
+                "unmatched_sell_quantity": _format_optional_float(float(row.get("unmatched_sell_quantity", 0.0))),
+                "trade_count": str(int(row.get("trade_count", 0))),
+                "first_trade_date": str(row.get("first_trade_date", "")),
+                "last_trade_date": str(row.get("last_trade_date", "")),
+                "status": status,
+            }
+        )
+    return sorted(output, key=lambda item: (float(item["realized_pnl"] or 0.0), item["symbol"]))
+
+
+def save_monthly_attribution_rows(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+    columns: list[str] | None = None,
+) -> int:
+    fieldnames = columns or MONTHLY_DRAWDOWN_ATTRIBUTION_COLUMNS
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in fieldnames})
+    return len(rows)
+
+
+def _monthly_return_rows(result: MonthlyBacktestResult) -> list[dict[str, Any]]:
+    month_ends: list[tuple[str, str, float]] = []
+    for day, equity in zip(result.dates, result.equity_curve):
+        month = str(day)[:7]
+        if month_ends and month_ends[-1][0] == month:
+            month_ends[-1] = (month, day, float(equity))
+        else:
+            month_ends.append((month, day, float(equity)))
+    rows: list[dict[str, Any]] = []
+    previous_equity = float(result.initial_cash)
+    for month, day, equity in month_ends:
+        monthly_return = (equity / previous_equity - 1.0) if previous_equity > 0 else 0.0
+        rows.append({"month": month, "date": day, "equity": equity, "return": monthly_return})
+        previous_equity = equity
+    return rows
+
+
+def _rolling_compound_return_min(returns: list[float], window: int) -> float:
+    if window <= 0 or len(returns) < window:
+        return 0.0
+    values: list[float] = []
+    for index in range(0, len(returns) - window + 1):
+        compound = 1.0
+        for value in returns[index : index + window]:
+            compound *= 1.0 + value
+        values.append(compound - 1.0)
+    return min(values) if values else 0.0
+
+
+def _max_recovery_months(monthly_rows: list[dict[str, Any]], initial_cash: float) -> int:
+    peak = float(initial_cash)
+    underwater_start: int | None = None
+    max_months = 0
+    for index, row in enumerate(monthly_rows, start=1):
+        equity = float(row["equity"])
+        if equity >= peak:
+            if underwater_start is not None:
+                max_months = max(max_months, index - underwater_start)
+                underwater_start = None
+            peak = equity
+        elif underwater_start is None:
+            underwater_start = index
+    if underwater_start is not None:
+        max_months = max(max_months, len(monthly_rows) + 1 - underwater_start)
+    return max_months
+
+
+def _symbol_profit_contributions(
+    result: MonthlyBacktestResult,
+    symbol_candles: dict[str, list[Candle]],
+) -> dict[str, float]:
+    cashflows: dict[str, float] = {}
+    quantities: dict[str, int] = {}
+    for trade in result.trades:
+        amount = float(trade.price) * int(trade.quantity)
+        cashflows.setdefault(trade.symbol, 0.0)
+        quantities.setdefault(trade.symbol, 0)
+        if trade.action == "BUY":
+            cashflows[trade.symbol] -= amount
+            quantities[trade.symbol] += int(trade.quantity)
+        elif trade.action == "SELL":
+            cashflows[trade.symbol] += amount
+            quantities[trade.symbol] -= int(trade.quantity)
+    final_date = result.dates[-1] if result.dates else ""
+    contributions: dict[str, float] = {}
+    for symbol, cashflow in cashflows.items():
+        final_value = 0.0
+        quantity = quantities.get(symbol, 0)
+        if quantity > 0:
+            final_price = _last_close_on_or_before(symbol_candles.get(symbol, []), final_date)
+            final_value = quantity * final_price
+        contributions[symbol] = cashflow + final_value
+    return contributions
+
+
+def _last_close_on_or_before(candles: list[Candle], day: str) -> float:
+    prior = [candle for candle in candles if not day or candle.date <= day]
+    if not prior:
+        return 0.0
+    return sorted(prior, key=lambda candle: candle.date)[-1].close
 
 
 def save_monthly_performance_audit_rows(rows: list[dict[str, str]], output_path: Path | str) -> int:
@@ -1415,15 +2199,25 @@ def audit_point_in_time_price_coverage(
     *,
     min_coverage_pct: float = 80.0,
     missing_preview_size: int = 10,
+    excluded_symbols: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    excluded = {_normalize_symbol_code(symbol) for symbol in (excluded_symbols or set())}
     sorted_candles = {
         symbol: sorted(candles, key=lambda candle: candle.date)
         for symbol, candles in symbol_candles.items()
         if candles
     }
     for snapshot_date, universe_symbols in sorted(point_in_time_universe.items()):
-        normalized_universe = {_normalize_symbol_code(symbol) for symbol in universe_symbols if symbol}
+        eligible_symbols, _ = _eligible_universe_symbols(
+            sorted_candles,
+            point_in_time_universe,
+            snapshot_date=snapshot_date,
+            as_of_date=snapshot_date,
+            min_history_days=0,
+        )
+        excluded_in_snapshot = sorted(eligible_symbols & excluded)
+        normalized_universe = eligible_symbols - excluded
         price_symbols = {
             symbol
             for symbol, candles in sorted_candles.items()
@@ -1439,10 +2233,12 @@ def audit_point_in_time_price_coverage(
                 "universe_symbols": universe_count,
                 "price_symbols": len(price_symbols),
                 "covered_symbols": len(covered),
+                "excluded_symbols": len(excluded_in_snapshot),
                 "missing_symbols": len(missing),
                 "coverage_pct": round(coverage_pct, 4),
                 "status": "PASS" if coverage_pct >= min_coverage_pct else "BLOCK",
                 "missing_preview": ";".join(missing[:missing_preview_size]),
+                "excluded_preview": ";".join(excluded_in_snapshot[:missing_preview_size]),
             }
         )
     return rows
@@ -1459,6 +2255,17 @@ def save_universe_price_coverage_rows(rows: list[dict[str, Any]], output_path: P
     return len(rows)
 
 
+def save_universe_filter_report(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=UNIVERSE_FILTER_REPORT_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in UNIVERSE_FILTER_REPORT_COLUMNS})
+    return len(rows)
+
+
 def save_monthly_validation_rows(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1468,6 +2275,1297 @@ def save_monthly_validation_rows(rows: list[dict[str, Any]], output_path: Path |
         for row in rows:
             writer.writerow({column: row.get(column, "") for column in MONTHLY_VALIDATION_COLUMNS})
     return len(rows)
+
+
+def analyze_monthly_validation_failures(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    for row in rows:
+        required = _parse_bool(row.get("required", True))
+        deployable = _parse_bool(row.get("deployable", False))
+        if not required or deployable:
+            continue
+        diagnostics.append(_validation_failure_diagnostic(row))
+    return diagnostics
+
+
+def save_monthly_validation_failures(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_FAILURE_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_FAILURE_COLUMNS})
+    return len(rows)
+
+
+def analyze_monthly_validation_remediation(failures: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in failures:
+        action = str(row.get("suggested_action", "")).strip() or "REVIEW_SCENARIO"
+        grouped.setdefault(action, []).append(row)
+
+    rows: list[dict[str, Any]] = []
+    for action, action_rows in grouped.items():
+        categories = _unique_join(str(row.get("category", "")).strip() for row in action_rows)
+        scenarios = _unique_join(str(row.get("name", "")).strip() for row in action_rows)
+        metrics = _unique_join(str(row.get("failed_metric", "")).strip() for row in action_rows)
+        hints = _unique_join(
+            part.strip()
+            for row in action_rows
+            for part in str(row.get("parameter_hints", "")).split(";")
+        )
+        worst_value = _worst_failure_metric_value(action_rows)
+        blocked_count = sum(1 for row in action_rows if str(row.get("severity", "")).strip().upper() == "BLOCK")
+        rows.append(
+            {
+                "priority": _remediation_priority(action, blocked_count),
+                "suggested_action": action,
+                "failure_count": len(action_rows),
+                "blocked_count": blocked_count,
+                "affected_categories": categories,
+                "affected_scenarios": scenarios,
+                "failed_metrics": metrics,
+                "worst_metric_value": worst_value,
+                "parameter_hints": hints,
+                "next_experiment": _remediation_next_experiment(action),
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            {"P0": 0, "P1": 1, "P2": 2}.get(str(row.get("priority", "P2")), 3),
+            -int(row.get("failure_count", 0) or 0),
+            str(row.get("suggested_action", "")),
+        )
+    )
+    return rows
+
+
+def save_monthly_validation_remediation(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_REMEDIATION_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_REMEDIATION_COLUMNS})
+    return len(rows)
+
+
+def build_monthly_validation_sweep_plan(
+    remediation_rows: list[dict[str, Any]],
+    *,
+    base_config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen_actions = {
+        str(row.get("suggested_action", "")).strip(): row
+        for row in remediation_rows
+        if str(row.get("suggested_action", "")).strip()
+    }
+
+    weak_row = seen_actions.get("IMPROVE_WEAK_WINDOW_DEFENSE")
+    if weak_row is not None:
+        target_scenarios = str(weak_row.get("affected_scenarios", "")).strip()
+        rows.extend(
+            [
+                _sweep_plan_row(
+                    weak_row,
+                    experiment_id="weak_defense_cash_05",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    cash_buffer_weight=0.05,
+                    min_train_positive_ratio=max(base_config.min_train_positive_ratio, 0.55),
+                    candidate_pool_size=min(base_config.candidate_pool_size, 5),
+                    expected_effect="Reduce weak-window exposure while keeping enough breadth for rotation.",
+                ),
+                _sweep_plan_row(
+                    weak_row,
+                    experiment_id="weak_defense_cash_10",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    cash_buffer_weight=0.10,
+                    min_train_positive_ratio=max(base_config.min_train_positive_ratio, 0.60),
+                    candidate_pool_size=min(base_config.candidate_pool_size, 5),
+                    expected_effect="Test a larger cash buffer for sideways and weak walk-forward windows.",
+                ),
+                _sweep_plan_row(
+                    weak_row,
+                    experiment_id="weak_defense_pool_03",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    cash_buffer_weight=0.05,
+                    min_train_positive_ratio=max(base_config.min_train_positive_ratio, 0.60),
+                    candidate_pool_size=min(base_config.candidate_pool_size, 3),
+                    expected_effect="Test whether fewer candidates reduce churn in weak regimes.",
+                ),
+            ]
+        )
+
+    drawdown_row = seen_actions.get("REDUCE_DRAWDOWN")
+    if drawdown_row is not None:
+        target_scenarios = str(drawdown_row.get("affected_scenarios", "")).strip()
+        rows.extend(
+            [
+                _sweep_plan_row(
+                    drawdown_row,
+                    experiment_id="drawdown_guard_stronger",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    max_position_weight=min(base_config.max_position_weight, 0.10),
+                    drawdown_guard_scale=min(base_config.drawdown_guard_scale, 0.50),
+                    market_volatility_min_scale=max(base_config.market_volatility_min_scale, 0.50),
+                    expected_effect="Reduce stress drawdown by capping single-name exposure and risk-off scaling.",
+                ),
+                _sweep_plan_row(
+                    drawdown_row,
+                    experiment_id="drawdown_guard_very_strict",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    max_position_weight=min(base_config.max_position_weight, 0.08),
+                    drawdown_guard_scale=min(base_config.drawdown_guard_scale, 0.35),
+                    market_volatility_min_scale=max(base_config.market_volatility_min_scale, 0.65),
+                    expected_effect="Test a stricter drawdown overlay for stress scenarios that remain just beyond the hard block threshold.",
+                ),
+                _sweep_plan_row(
+                    drawdown_row,
+                    experiment_id="drawdown_cash_buffer_05",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    cash_buffer_weight=max(base_config.cash_buffer_weight, 0.05),
+                    max_position_weight=min(base_config.max_position_weight, 0.10),
+                    drawdown_guard_scale=min(base_config.drawdown_guard_scale, 0.50),
+                    market_volatility_min_scale=max(base_config.market_volatility_min_scale, 0.50),
+                    expected_effect="Test whether adding cash buffer to the drawdown overlay clears the stress drawdown gate.",
+                ),
+                _sweep_plan_row(
+                    drawdown_row,
+                    experiment_id="position_stop_12",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    position_trailing_stop_pct=-12.0,
+                    expected_effect="Test a next-open per-position trailing stop to cap single-name drawdowns without selling at same-day closes.",
+                ),
+            ]
+        )
+
+    if weak_row is not None and drawdown_row is not None:
+        combo_targets = _unique_join(
+            [
+                *_split_semicolon_values(str(weak_row.get("affected_scenarios", ""))),
+                *_split_semicolon_values(str(drawdown_row.get("affected_scenarios", ""))),
+            ]
+        )
+        combo_row = {
+            "priority": "P1",
+            "suggested_action": "COMBINE_WEAK_DEFENSE_AND_DRAWDOWN",
+        }
+        rows.append(
+            _sweep_plan_row(
+                combo_row,
+                experiment_id="weak_cash_10_position_stop_12",
+                target_scenarios=combo_targets,
+                base_config=base_config,
+                cash_buffer_weight=0.10,
+                min_train_positive_ratio=max(base_config.min_train_positive_ratio, 0.60),
+                candidate_pool_size=min(base_config.candidate_pool_size, 5),
+                position_trailing_stop_pct=-12.0,
+                expected_effect="Combine the best weak-window cash buffer candidate with the per-position stop candidate and test whether failures improve without adding new target failures.",
+            )
+        )
+
+    rejected_row = seen_actions.get("KEEP_TRAIN_WINDOW_REJECTED")
+    if rejected_row is not None:
+        rows.append(
+            _sweep_plan_row(
+                rejected_row,
+                experiment_id="train_gate_keep_blocked",
+                target_scenarios=str(rejected_row.get("affected_scenarios", "")).strip(),
+                base_config=base_config,
+                expected_effect="Keep this as a no-trade gate unless independent validation improves.",
+                risk_note="Do not relax train-window rejection only to make deployment pass.",
+            )
+        )
+    return rows
+
+
+def save_monthly_validation_sweep_plan(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_SWEEP_PLAN_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_SWEEP_PLAN_COLUMNS})
+    return len(rows)
+
+
+def filter_monthly_validation_sweep_plan(
+    rows: list[dict[str, Any]],
+    *,
+    experiment_ids: list[str] | tuple[str, ...] | set[str] | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be non-negative")
+    selected = list(rows)
+    if experiment_ids:
+        allowed = {str(value).strip() for value in experiment_ids if str(value).strip()}
+        if allowed:
+            selected = [row for row in selected if str(row.get("experiment_id", "")).strip() in allowed]
+    if limit is not None:
+        selected = selected[:limit]
+    return selected
+
+
+def run_monthly_validation_sweep_results(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    cases: list[MonthlyValidationCase],
+    sweep_plan_rows: list[dict[str, Any]],
+    base_config: MonthlyRebalanceConfig,
+    baseline_rows: list[dict[str, Any]],
+    initial_cash: float = 10_000_000.0,
+    fee_rate: float = 0.00015,
+    tax_rate: float = 0.0018,
+    slippage_rate: float = 0.0005,
+    min_trade_value: float = 10_000.0,
+    min_excess_return_pct: float = 0.0,
+    max_drawdown_pct: float = -25.0,
+    allow_universe_bias_warning: bool = False,
+    backtest_runner: Callable[..., MonthlyBacktestResult] | None = None,
+) -> list[dict[str, Any]]:
+    case_by_name = {case.name: case for case in cases}
+    results: list[dict[str, Any]] = []
+    for plan_row in sweep_plan_rows:
+        target_names = _split_semicolon_values(str(plan_row.get("target_scenarios", "")))
+        target_cases = [case_by_name[name] for name in target_names if name in case_by_name]
+        experiment_id = str(plan_row.get("experiment_id", "")).strip()
+        if not target_cases:
+            results.append(
+                _sweep_result_row(
+                    plan_row,
+                    status="SKIPPED",
+                    scenario_count=0,
+                    failed_required=0,
+                    baseline_failed_required=0,
+                    failed_delta=0,
+                    min_excess_return_pct="",
+                    worst_drawdown_pct="",
+                    trade_count=0,
+                    config_changes=_sweep_config_changes(plan_row),
+                    result_summary="No matching target scenarios found.",
+                )
+            )
+            continue
+
+        experiment_config = _apply_sweep_plan_config(base_config, plan_row)
+        regular_cases = [case for case in target_cases if case.category != "walk_forward"]
+        walk_forward_cases = [case for case in target_cases if case.category == "walk_forward"]
+        rows: list[dict[str, Any]] = []
+        if regular_cases:
+            rows.extend(
+                run_monthly_validation_suite(
+                    symbol_candles,
+                    cases=regular_cases,
+                    config=experiment_config,
+                    initial_cash=initial_cash,
+                    fee_rate=fee_rate,
+                    tax_rate=tax_rate,
+                    slippage_rate=slippage_rate,
+                    min_trade_value=min_trade_value,
+                    min_excess_return_pct=min_excess_return_pct,
+                    max_drawdown_pct=max_drawdown_pct,
+                    allow_universe_bias_warning=allow_universe_bias_warning,
+                    backtest_runner=backtest_runner,
+                )
+            )
+        if walk_forward_cases:
+            rows.extend(
+                run_monthly_walk_forward_validation(
+                    symbol_candles,
+                    cases=walk_forward_cases,
+                    config=experiment_config,
+                    initial_cash=initial_cash,
+                    fee_rate=fee_rate,
+                    tax_rate=tax_rate,
+                    slippage_rate=slippage_rate,
+                    min_trade_value=min_trade_value,
+                    min_excess_return_pct=min_excess_return_pct,
+                    max_drawdown_pct=max_drawdown_pct,
+                    allow_universe_bias_warning=allow_universe_bias_warning,
+                    backtest_runner=backtest_runner,
+                )
+            )
+
+        failed_required = _count_failed_required(rows)
+        baseline_failed = _count_failed_required(
+            [row for row in baseline_rows if str(row.get("name", "")).strip() in set(target_names)]
+        )
+        failed_delta = failed_required - baseline_failed
+        status = "IMPROVED" if failed_delta < 0 else "REGRESSED" if failed_delta > 0 else "UNCHANGED"
+        min_excess = _min_numeric(row.get("excess_return_pct") for row in rows)
+        worst_drawdown = _min_numeric(row.get("max_drawdown_pct") for row in rows)
+        trade_count = sum(int(float(row.get("trade_count", 0) or 0)) for row in rows)
+        results.append(
+            _sweep_result_row(
+                plan_row,
+                status=status,
+                scenario_count=len(rows),
+                failed_required=failed_required,
+                baseline_failed_required=baseline_failed,
+                failed_delta=failed_delta,
+                min_excess_return_pct=_format_optional_float(min_excess),
+                worst_drawdown_pct=_format_optional_float(worst_drawdown),
+                trade_count=trade_count,
+                config_changes=_sweep_config_changes(plan_row),
+                result_summary=(
+                    f"failed_required {baseline_failed} -> {failed_required}; "
+                    f"experiment={experiment_id or 'unknown'}"
+                ),
+            )
+        )
+    return results
+
+
+def save_monthly_validation_sweep_results(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_SWEEP_RESULT_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            normalized = _normalize_sweep_result_row(row)
+            writer.writerow({column: normalized.get(column, "") for column in VALIDATION_SWEEP_RESULT_COLUMNS})
+    return len(rows)
+
+
+def build_monthly_validation_candidate_followup_rows(
+    sweep_result_rows: list[dict[str, Any]],
+    *,
+    data_dir: Path | str,
+    start: str,
+    end: str,
+    baseline_scenarios: Path | str,
+    reports_dir: Path | str = "data/reports",
+    point_in_time_universe: Path | str | None = None,
+    max_candidates: int | None = None,
+) -> list[dict[str, Any]]:
+    candidates = [
+        row
+        for row in sweep_result_rows
+        if str(row.get("status", "")).strip().upper() == "IMPROVED"
+        and str(row.get("adoption_status", "")).strip().upper() == "FULL_VALIDATION_REQUIRED"
+    ]
+    candidates.sort(
+        key=lambda row: (
+            _safe_int(row.get("failed_delta"), default=9999),
+            _safe_int(row.get("failed_required"), default=9999),
+            str(row.get("experiment_id", "")),
+        )
+    )
+    if max_candidates is not None:
+        candidates = candidates[: max(0, max_candidates)]
+    rows: list[dict[str, Any]] = []
+    report_root = Path(reports_dir)
+    for rank, row in enumerate(candidates, start=1):
+        experiment_id = _sanitize_report_token(str(row.get("experiment_id", "")).strip() or f"candidate_{rank}")
+        candidate_scenario_output = report_root / f"monthly_validation_candidate_{experiment_id}.csv"
+        candidate_gate_output = report_root / f"monthly_deployment_gate_candidate_{experiment_id}.csv"
+        candidate_data_quality_output = report_root / f"monthly_validation_data_quality_candidate_{experiment_id}.csv"
+        candidate_coverage_output = report_root / f"monthly_universe_price_coverage_candidate_{experiment_id}.csv"
+        candidate_performance_output = report_root / f"monthly_performance_audit_candidate_{experiment_id}.csv"
+        candidate_concentration_output = report_root / f"monthly_performance_concentration_candidate_{experiment_id}.csv"
+        candidate_failure_output = report_root / f"monthly_validation_failures_candidate_{experiment_id}.csv"
+        candidate_remediation_output = report_root / f"monthly_validation_remediation_candidate_{experiment_id}.csv"
+        candidate_sweep_plan_output = report_root / f"monthly_validation_sweep_plan_candidate_{experiment_id}.csv"
+        candidate_sweep_result_output = report_root / f"monthly_validation_sweep_results_candidate_{experiment_id}.csv"
+        candidate_universe_filter_output = report_root / f"universe_filter_report_candidate_{experiment_id}.csv"
+        comparison_output = report_root / f"monthly_validation_comparison_{experiment_id}.csv"
+        delta_output = report_root / f"monthly_validation_comparison_deltas_{experiment_id}.csv"
+        decision_output = report_root / f"monthly_validation_candidate_decision_{experiment_id}.csv"
+        candidate_args = str(row.get("candidate_validation_args", "")).strip()
+        validate_argv = [
+            "python",
+            "-m",
+            "backtester",
+            "monthly-validate",
+            "--data-dir",
+            str(data_dir),
+            "--start",
+            start,
+            "--end",
+            end,
+        ]
+        if point_in_time_universe is not None:
+            validate_argv.extend(["--point-in-time-universe", str(point_in_time_universe)])
+        validate_argv.extend(_split_cli_args(candidate_args))
+        validate_argv.extend(
+            [
+                "--scenario-output",
+                str(candidate_scenario_output),
+                "--data-quality-output",
+                str(candidate_data_quality_output),
+                "--coverage-output",
+                str(candidate_coverage_output),
+                "--performance-output",
+                str(candidate_performance_output),
+                "--concentration-output",
+                str(candidate_concentration_output),
+                "--failure-output",
+                str(candidate_failure_output),
+                "--remediation-output",
+                str(candidate_remediation_output),
+                "--sweep-plan-output",
+                str(candidate_sweep_plan_output),
+                "--sweep-result-output",
+                str(candidate_sweep_result_output),
+                "--universe-filter-report",
+                str(candidate_universe_filter_output),
+                "--deployment-gate-output",
+                str(candidate_gate_output),
+            ]
+        )
+        compare_argv = [
+            "python",
+            "-m",
+            "backtester",
+            "monthly-compare-validation",
+            "--baseline",
+            str(baseline_scenarios),
+            "--candidate",
+            str(candidate_scenario_output),
+            "--candidate-label",
+            experiment_id,
+            "--output",
+            str(comparison_output),
+            "--delta-output",
+            str(delta_output),
+            "--decision-output",
+            str(decision_output),
+        ]
+        rows.append(
+            {
+                "priority_rank": rank,
+                "experiment_id": experiment_id,
+                "status": row.get("status", ""),
+                "adoption_status": row.get("adoption_status", ""),
+                "failed_delta": row.get("failed_delta", ""),
+                "candidate_validation_args": candidate_args,
+                "candidate_scenario_output": str(candidate_scenario_output),
+                "candidate_gate_output": str(candidate_gate_output),
+                "comparison_output": str(comparison_output),
+                "delta_output": str(delta_output),
+                "decision_output": str(decision_output),
+                "validation_command": _format_cli_command(validate_argv),
+                "comparison_command": _format_cli_command(compare_argv),
+                "risk_note": row.get("risk_note", ""),
+            }
+        )
+    return rows
+
+
+def save_monthly_validation_candidate_followup_rows(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_CANDIDATE_FOLLOWUP_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_CANDIDATE_FOLLOWUP_COLUMNS})
+    return len(rows)
+
+
+def _normalize_sweep_result_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    status = str(normalized.get("status", "")).strip().upper()
+    if not str(normalized.get("candidate_validation_args", "")).strip():
+        normalized["candidate_validation_args"] = _sweep_candidate_validation_args_from_config_changes(
+            str(normalized.get("config_changes", ""))
+        )
+    normalized.setdefault("validation_scope", "TARGET_ONLY")
+    if not str(normalized.get("validation_scope", "")).strip():
+        normalized["validation_scope"] = "TARGET_ONLY"
+    if not str(normalized.get("adoption_status", "")).strip():
+        normalized["adoption_status"] = (
+            "FULL_VALIDATION_REQUIRED" if status == "IMPROVED" else "PAPER_DIAGNOSTIC_ONLY"
+        )
+    if not str(normalized.get("adoption_requirements", "")).strip():
+        normalized["adoption_requirements"] = (
+            "Run full monthly-validate for the candidate config, compare with baseline, "
+            "and require candidate_decision != REJECT before any paper-operation promotion."
+        )
+    return normalized
+
+
+def compare_monthly_validation_reports(
+    baseline_rows: list[dict[str, Any]],
+    candidate_rows: list[dict[str, Any]],
+    *,
+    baseline_label: str = "baseline",
+    candidate_label: str = "candidate",
+) -> dict[str, Any]:
+    baseline_failed = _failed_required_names(baseline_rows)
+    candidate_failed = _failed_required_names(candidate_rows)
+    resolved = sorted(baseline_failed - candidate_failed)
+    new = sorted(candidate_failed - baseline_failed)
+    unchanged = sorted(baseline_failed & candidate_failed)
+    failed_delta = len(candidate_failed) - len(baseline_failed)
+    if failed_delta < 0 and not new:
+        status = "IMPROVED"
+    elif failed_delta > 0 or new:
+        status = "REJECT"
+    else:
+        status = "UNCHANGED"
+    summary = (
+        f"failed_required {len(baseline_failed)} -> {len(candidate_failed)}; "
+        f"resolved={len(resolved)}; new failures={len(new)}; unchanged={len(unchanged)}"
+    )
+    return {
+        "baseline_label": baseline_label,
+        "candidate_label": candidate_label,
+        "status": status,
+        "baseline_failed_required": len(baseline_failed),
+        "candidate_failed_required": len(candidate_failed),
+        "failed_delta": failed_delta,
+        "resolved_failures": "; ".join(resolved),
+        "new_failures": "; ".join(new),
+        "unchanged_failures": "; ".join(unchanged),
+        "summary": summary,
+    }
+
+
+def compare_monthly_validation_scenario_deltas(
+    baseline_rows: list[dict[str, Any]],
+    candidate_rows: list[dict[str, Any]],
+    *,
+    baseline_label: str = "baseline",
+    candidate_label: str = "candidate",
+) -> list[dict[str, Any]]:
+    baseline_by_name = {
+        str(row.get("name", "")).strip(): row
+        for row in baseline_rows
+        if str(row.get("name", "")).strip()
+    }
+    candidate_by_name = {
+        str(row.get("name", "")).strip(): row
+        for row in candidate_rows
+        if str(row.get("name", "")).strip()
+    }
+    rows: list[dict[str, Any]] = []
+    for name in sorted(set(baseline_by_name) | set(candidate_by_name)):
+        baseline = baseline_by_name.get(name, {})
+        candidate = candidate_by_name.get(name, {})
+        baseline_deployable = _parse_bool(baseline.get("deployable", False))
+        candidate_deployable = _parse_bool(candidate.get("deployable", False))
+        baseline_failed = _parse_bool(baseline.get("required", True)) and not baseline_deployable
+        candidate_failed = _parse_bool(candidate.get("required", True)) and not candidate_deployable
+        classification = _scenario_delta_classification(baseline_failed, candidate_failed)
+        baseline_excess = _float_or_none(baseline.get("excess_return_pct"))
+        candidate_excess = _float_or_none(candidate.get("excess_return_pct"))
+        baseline_drawdown = _float_or_none(baseline.get("max_drawdown_pct"))
+        candidate_drawdown = _float_or_none(candidate.get("max_drawdown_pct"))
+        baseline_trades = _float_or_none(baseline.get("trade_count"))
+        candidate_trades = _float_or_none(candidate.get("trade_count"))
+        excess_delta = _numeric_delta(candidate_excess, baseline_excess)
+        drawdown_delta = _numeric_delta(candidate_drawdown, baseline_drawdown)
+        trade_delta = _numeric_delta(candidate_trades, baseline_trades)
+        rows.append(
+            {
+                "name": name,
+                "classification": classification,
+                "baseline_label": baseline_label,
+                "candidate_label": candidate_label,
+                "baseline_deployable": str(baseline_deployable),
+                "candidate_deployable": str(candidate_deployable),
+                "baseline_reason": baseline.get("reason", ""),
+                "candidate_reason": candidate.get("reason", ""),
+                "baseline_excess_return_pct": _format_optional_float(baseline_excess),
+                "candidate_excess_return_pct": _format_optional_float(candidate_excess),
+                "excess_return_delta": _format_optional_float(excess_delta),
+                "baseline_max_drawdown_pct": _format_optional_float(baseline_drawdown),
+                "candidate_max_drawdown_pct": _format_optional_float(candidate_drawdown),
+                "max_drawdown_delta": _format_optional_float(drawdown_delta),
+                "baseline_trade_count": _format_optional_float(baseline_trades),
+                "candidate_trade_count": _format_optional_float(candidate_trades),
+                "trade_count_delta": _format_optional_float(trade_delta),
+                "diagnostic": _scenario_delta_diagnostic(
+                    classification,
+                    baseline_reason=str(baseline.get("reason", "")),
+                    candidate_reason=str(candidate.get("reason", "")),
+                    excess_delta=excess_delta,
+                    drawdown_delta=drawdown_delta,
+                    trade_delta=trade_delta,
+                ),
+            }
+        )
+    return rows
+
+
+def save_monthly_validation_scenario_deltas(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_SCENARIO_DELTA_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_SCENARIO_DELTA_COLUMNS})
+    return len(rows)
+
+
+def save_monthly_validation_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_COMPARISON_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_COMPARISON_COLUMNS})
+    return len(rows)
+
+
+def build_monthly_validation_candidate_decision(
+    comparison: dict[str, Any],
+    delta_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    classifications = Counter(str(row.get("classification", "")).strip() for row in delta_rows)
+    diagnostics = Counter(
+        str(row.get("diagnostic", "")).strip()
+        for row in delta_rows
+        if str(row.get("classification", "")).strip() == "NEW_FAILURE"
+    )
+    new_count = classifications.get("NEW_FAILURE", 0)
+    resolved_count = classifications.get("RESOLVED", 0)
+    unchanged_count = classifications.get("UNCHANGED_FAILURE", 0)
+    resolved_names = _scenario_names_by_classification(delta_rows, "RESOLVED")
+    new_failure_names = _scenario_names_by_classification(delta_rows, "NEW_FAILURE")
+    unchanged_names = _scenario_names_by_classification(delta_rows, "UNCHANGED_FAILURE")
+    comparison_status = str(comparison.get("status", "")).strip().upper() or "UNKNOWN"
+    try:
+        failed_delta = int(float(comparison.get("failed_delta", 0) or 0))
+    except (TypeError, ValueError):
+        failed_delta = 0
+
+    reasons: list[str] = []
+    if comparison_status in {"REJECT", "REJECTED"}:
+        reasons.append("comparison_rejected")
+    if new_count:
+        reasons.append(f"new_failures={new_count}")
+    if failed_delta > 0:
+        reasons.append(f"failed_delta={failed_delta}")
+    if unchanged_count:
+        reasons.append(f"unchanged_failures={unchanged_count}")
+
+    if comparison_status in {"REJECT", "REJECTED"} or new_count or failed_delta > 0:
+        decision = "REJECT"
+        recommendation = (
+            "Do not adopt this candidate; inspect new failure diagnostics and run narrower paper-only experiments."
+        )
+    elif failed_delta < 0 and not new_count:
+        decision = "PAPER_REVIEW"
+        recommendation = (
+            "Candidate improved required failures without introducing new failures; keep paper-only and rerun full validation."
+        )
+    else:
+        decision = "HOLD"
+        recommendation = "No deployable improvement; keep baseline controls and continue diagnostics."
+
+    diagnostic_summary = ", ".join(
+        f"{name}={count}" for name, count in sorted(diagnostics.items()) if name
+    )
+    decision_reasons = "; ".join(reasons) if reasons else "no_required_failure_regression"
+    return [
+        {
+            "candidate_label": comparison.get("candidate_label", ""),
+            "comparison_status": comparison_status,
+            "decision": decision,
+            "decision_reasons": decision_reasons,
+            "baseline_failed_required": comparison.get("baseline_failed_required", ""),
+            "candidate_failed_required": comparison.get("candidate_failed_required", ""),
+            "failed_delta": comparison.get("failed_delta", ""),
+            "resolved_count": resolved_count,
+            "new_failure_count": new_count,
+            "unchanged_failure_count": unchanged_count,
+            "resolved_failure_names": "; ".join(resolved_names),
+            "new_failure_names": "; ".join(new_failure_names),
+            "unchanged_failure_names": "; ".join(unchanged_names),
+            "new_failure_diagnostics": diagnostic_summary,
+            "recommendation": recommendation,
+        }
+    ]
+
+
+def save_monthly_validation_candidate_decision(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_CANDIDATE_DECISION_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_CANDIDATE_DECISION_COLUMNS})
+    return len(rows)
+
+
+def analyze_monthly_validation_failure_patterns(
+    baseline_rows: list[dict[str, Any]],
+    delta_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    baseline_by_name = {
+        str(row.get("name", "")).strip(): row
+        for row in baseline_rows
+        if str(row.get("name", "")).strip()
+    }
+    scenarios: set[str] = {
+        name
+        for name, row in baseline_by_name.items()
+        if _parse_bool(row.get("required", True)) and not _parse_bool(row.get("deployable", False))
+    }
+    stats: dict[str, dict[str, Any]] = {}
+
+    def scenario_stats(name: str) -> dict[str, Any]:
+        if name not in stats:
+            stats[name] = {
+                "failed": set(),
+                "new": set(),
+                "resolved": set(),
+                "unchanged": set(),
+                "diagnostics": Counter(),
+            }
+        return stats[name]
+
+    for row in delta_rows:
+        name = str(row.get("name", "")).strip()
+        if not name:
+            continue
+        classification = str(row.get("classification", "")).strip().upper()
+        if classification not in {"NEW_FAILURE", "RESOLVED", "UNCHANGED_FAILURE"}:
+            continue
+        scenarios.add(name)
+        stat = scenario_stats(name)
+        candidate = str(row.get("candidate_label", "")).strip() or "candidate"
+        diagnostic = str(row.get("diagnostic", "")).strip()
+        if diagnostic:
+            stat["diagnostics"][diagnostic] += 1
+        if classification == "NEW_FAILURE":
+            stat["new"].add(candidate)
+            stat["failed"].add(candidate)
+        elif classification == "UNCHANGED_FAILURE":
+            stat["unchanged"].add(candidate)
+            stat["failed"].add(candidate)
+        elif classification == "RESOLVED":
+            stat["resolved"].add(candidate)
+
+    rows: list[dict[str, Any]] = []
+    for scenario in sorted(scenarios):
+        baseline = baseline_by_name.get(scenario, {})
+        baseline_failed = _parse_bool(baseline.get("required", True)) and not _parse_bool(
+            baseline.get("deployable", False)
+        )
+        stat = scenario_stats(scenario)
+        failed = sorted(stat["failed"])
+        new = sorted(stat["new"])
+        resolved = sorted(stat["resolved"])
+        unchanged = sorted(stat["unchanged"])
+        diagnostic_counts: Counter[str] = stat["diagnostics"]
+        dominant_diagnostic = ""
+        if diagnostic_counts:
+            dominant_diagnostic = "; ".join(
+                f"{name}={count}" for name, count in diagnostic_counts.most_common(3)
+            )
+        pattern_status, suggested_action, notes = _validation_failure_pattern_status(
+            baseline_failed=baseline_failed,
+            failed_count=len(failed),
+            new_count=len(new),
+            resolved_count=len(resolved),
+            unchanged_count=len(unchanged),
+        )
+        rows.append(
+            {
+                "scenario": scenario,
+                "baseline_failed": str(baseline_failed),
+                "baseline_reason": baseline.get("reason", ""),
+                "failed_candidate_count": len(failed),
+                "new_failure_candidate_count": len(new),
+                "resolved_candidate_count": len(resolved),
+                "unchanged_failure_candidate_count": len(unchanged),
+                "candidate_labels_failed": "; ".join(failed),
+                "candidate_labels_new_failure": "; ".join(new),
+                "candidate_labels_resolved": "; ".join(resolved),
+                "candidate_labels_unchanged": "; ".join(unchanged),
+                "dominant_diagnostic": dominant_diagnostic,
+                "pattern_status": pattern_status,
+                "suggested_action": suggested_action,
+                "notes": notes,
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            _failure_pattern_rank(str(row.get("pattern_status", ""))),
+            -int(row.get("failed_candidate_count", 0) or 0),
+            str(row.get("scenario", "")),
+        )
+    )
+    return rows
+
+
+def save_monthly_validation_failure_patterns(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_FAILURE_PATTERN_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_FAILURE_PATTERN_COLUMNS})
+    return len(rows)
+
+
+def _scenario_names_by_classification(rows: list[dict[str, Any]], classification: str) -> list[str]:
+    wanted = classification.strip()
+    names = [
+        str(row.get("name", "")).strip()
+        for row in rows
+        if str(row.get("classification", "")).strip() == wanted
+        and str(row.get("name", "")).strip()
+    ]
+    return sorted(set(names))
+
+
+def _validation_failure_pattern_status(
+    *,
+    baseline_failed: bool,
+    failed_count: int,
+    new_count: int,
+    resolved_count: int,
+    unchanged_count: int,
+) -> tuple[str, str, str]:
+    if baseline_failed and unchanged_count and not resolved_count:
+        return (
+            "PERSISTENT_BLOCK",
+            "REVIEW_PERSISTENT_FAILURE",
+            "Baseline failure persisted in every candidate that touched this scenario.",
+        )
+    if new_count and not baseline_failed:
+        return (
+            "REGRESSION_RISK",
+            "AVOID_REGRESSION_CONFIGS",
+            "Previously passing scenario became a candidate failure.",
+        )
+    if baseline_failed and unchanged_count and resolved_count:
+        return (
+            "MIXED_RESPONSE",
+            "ISOLATE_FIXING_FEATURES",
+            "Some candidates fixed this baseline failure while others left it failed.",
+        )
+    if baseline_failed and resolved_count and not failed_count:
+        return (
+            "CANDIDATE_FIXED",
+            "RETEST_FIXING_CANDIDATES",
+            "Candidates resolved this baseline failure without introducing a scenario failure.",
+        )
+    if baseline_failed:
+        return (
+            "BASELINE_BLOCK",
+            "RUN_CANDIDATE_DIAGNOSTICS",
+            "Baseline remains blocked and no candidate delta evidence is available.",
+        )
+    return ("REVIEW", "REVIEW_SCENARIO", "Scenario appeared in candidate deltas and needs review.")
+
+
+def _failure_pattern_rank(status: str) -> int:
+    ranks = {
+        "PERSISTENT_BLOCK": 0,
+        "REGRESSION_RISK": 1,
+        "MIXED_RESPONSE": 2,
+        "BASELINE_BLOCK": 3,
+        "CANDIDATE_FIXED": 4,
+        "REVIEW": 5,
+    }
+    return ranks.get(status, 99)
+
+
+def _validation_failure_diagnostic(row: dict[str, Any]) -> dict[str, Any]:
+    reason = str(row.get("reason", "") or "unknown").strip()
+    failed_metric = "reason"
+    metric_value = reason
+    threshold = ""
+    suggested_action = "REVIEW_SCENARIO"
+    parameter_hints = "Inspect validation row and keep production-check blocked until the cause is understood."
+
+    if reason == "max_drawdown_breach":
+        failed_metric = "max_drawdown_pct"
+        metric_value = str(row.get("max_drawdown_pct", ""))
+        threshold = "configured max deployment drawdown"
+        suggested_action = "REDUCE_DRAWDOWN"
+        parameter_hints = (
+            "lower max_position_weight; increase cash_buffer_weight; strengthen drawdown_guard_scale; "
+            "test higher market_volatility_min_scale and stricter risk-off fallback"
+        )
+    elif reason == "negative_excess_return":
+        failed_metric = "excess_return_pct"
+        metric_value = str(row.get("excess_return_pct", ""))
+        threshold = "0.0"
+        suggested_action = "IMPROVE_WEAK_WINDOW_DEFENSE"
+        parameter_hints = (
+            "increase cash_buffer_weight in weak regimes; tighten min_train_positive_ratio; "
+            "test lower candidate_pool_size and stronger market_beta/cash fallback"
+        )
+    elif reason == "train_window_rejected":
+        failed_metric = "train_excess_return_pct"
+        metric_value = str(row.get("train_excess_return_pct", ""))
+        threshold = "training gate"
+        suggested_action = "KEEP_TRAIN_WINDOW_REJECTED"
+        parameter_hints = (
+            "Do not override rejected train windows; inspect preset stability and require robust train windows."
+        )
+    elif reason.startswith("data_quality"):
+        failed_metric = "data_quality"
+        metric_value = reason
+        threshold = "PASS"
+        suggested_action = "REFRESH_OR_EXCLUDE_DATA"
+        parameter_hints = "Refresh KRX candles and rerun data-check exclusions before validation."
+
+    return {
+        "name": row.get("name", ""),
+        "category": row.get("category", ""),
+        "reason": reason,
+        "severity": "BLOCK",
+        "failed_metric": failed_metric,
+        "metric_value": metric_value,
+        "threshold": threshold,
+        "suggested_action": suggested_action,
+        "parameter_hints": parameter_hints,
+        "start": row.get("start", ""),
+        "end": row.get("end", ""),
+        "selected_preset": row.get("selected_preset", ""),
+        "train_excess_return_pct": row.get("train_excess_return_pct", ""),
+        "excess_return_pct": row.get("excess_return_pct", ""),
+        "max_drawdown_pct": row.get("max_drawdown_pct", ""),
+        "trade_count": row.get("trade_count", ""),
+        "stress": row.get("stress", ""),
+        "source": row.get("source", ""),
+    }
+
+
+def _sweep_plan_row(
+    remediation_row: dict[str, Any],
+    *,
+    experiment_id: str,
+    target_scenarios: str,
+    base_config: MonthlyRebalanceConfig,
+    cash_buffer_weight: float | None = None,
+    min_train_positive_ratio: float | None = None,
+    candidate_pool_size: int | None = None,
+    max_position_weight: float | None = None,
+    drawdown_guard_scale: float | None = None,
+    market_volatility_min_scale: float | None = None,
+    position_trailing_stop_pct: float | None = None,
+    expected_effect: str,
+    risk_note: str = "Plan only; run monthly validation before adopting any parameter change.",
+) -> dict[str, Any]:
+    return {
+        "priority": remediation_row.get("priority", "P1"),
+        "suggested_action": remediation_row.get("suggested_action", ""),
+        "experiment_id": experiment_id,
+        "target_scenarios": target_scenarios,
+        "cash_buffer_weight": _sweep_value(cash_buffer_weight, base_config.cash_buffer_weight),
+        "min_train_positive_ratio": _sweep_value(min_train_positive_ratio, base_config.min_train_positive_ratio),
+        "candidate_pool_size": "" if candidate_pool_size is None else str(candidate_pool_size),
+        "max_position_weight": _sweep_value(max_position_weight, base_config.max_position_weight),
+        "drawdown_guard_scale": _sweep_value(drawdown_guard_scale, base_config.drawdown_guard_scale),
+        "market_volatility_min_scale": _sweep_value(
+            market_volatility_min_scale,
+            base_config.market_volatility_min_scale,
+        ),
+        "position_trailing_stop_pct": _sweep_value(
+            position_trailing_stop_pct,
+            base_config.position_trailing_stop_pct,
+        ),
+        "expected_effect": expected_effect,
+        "risk_note": risk_note,
+    }
+
+
+def _sweep_value(value: float | None, base_value: float) -> str:
+    if value is None or abs(value - base_value) < 1e-12:
+        return ""
+    return f"{value:.4f}".rstrip("0").rstrip(".")
+
+
+def _sweep_result_row(
+    plan_row: dict[str, Any],
+    *,
+    status: str,
+    scenario_count: int,
+    failed_required: int,
+    baseline_failed_required: int,
+    failed_delta: int,
+    min_excess_return_pct: str,
+    worst_drawdown_pct: str,
+    trade_count: int,
+    config_changes: str,
+    result_summary: str,
+) -> dict[str, Any]:
+    return {
+        "experiment_id": plan_row.get("experiment_id", ""),
+        "suggested_action": plan_row.get("suggested_action", ""),
+        "status": status,
+        "target_scenarios": plan_row.get("target_scenarios", ""),
+        "scenario_count": scenario_count,
+        "failed_required": failed_required,
+        "baseline_failed_required": baseline_failed_required,
+        "failed_delta": failed_delta,
+        "min_excess_return_pct": min_excess_return_pct,
+        "worst_drawdown_pct": worst_drawdown_pct,
+        "trade_count": trade_count,
+        "config_changes": config_changes,
+        "candidate_validation_args": _sweep_candidate_validation_args(plan_row),
+        "validation_scope": "TARGET_ONLY",
+        "adoption_status": "FULL_VALIDATION_REQUIRED" if status == "IMPROVED" else "PAPER_DIAGNOSTIC_ONLY",
+        "adoption_requirements": (
+            "Run full monthly-validate for the candidate config, compare with baseline, "
+            "and require candidate_decision != REJECT before any paper-operation promotion."
+        ),
+        "result_summary": result_summary,
+        "risk_note": plan_row.get("risk_note", ""),
+    }
+
+
+def _apply_sweep_plan_config(
+    base_config: MonthlyRebalanceConfig,
+    plan_row: dict[str, Any],
+) -> MonthlyRebalanceConfig:
+    updates: dict[str, Any] = {}
+    for field_name, converter in {
+        "cash_buffer_weight": float,
+        "min_train_positive_ratio": float,
+        "candidate_pool_size": int,
+        "max_position_weight": float,
+        "drawdown_guard_scale": float,
+        "market_volatility_min_scale": float,
+        "position_trailing_stop_pct": float,
+    }.items():
+        raw_value = str(plan_row.get(field_name, "")).strip()
+        if raw_value == "":
+            continue
+        try:
+            updates[field_name] = converter(float(raw_value)) if converter is int else converter(raw_value)
+        except ValueError:
+            continue
+    return replace(base_config, **updates) if updates else base_config
+
+
+def _sweep_config_changes(plan_row: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for field_name in (
+        "cash_buffer_weight",
+        "min_train_positive_ratio",
+        "candidate_pool_size",
+        "max_position_weight",
+        "drawdown_guard_scale",
+        "market_volatility_min_scale",
+        "position_trailing_stop_pct",
+    ):
+        value = str(plan_row.get(field_name, "")).strip()
+        if value:
+            parts.append(f"{field_name}={value}")
+    return "; ".join(parts)
+
+
+def _sweep_candidate_validation_args(plan_row: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for field_name, flag in _SWEEP_CONFIG_CLI_FLAGS.items():
+        value = str(plan_row.get(field_name, "")).strip()
+        if value:
+            parts.append(f"{flag} {value}")
+    return " ".join(parts)
+
+
+def _sweep_candidate_validation_args_from_config_changes(config_changes: str) -> str:
+    plan_row: dict[str, str] = {}
+    for part in str(config_changes or "").split(";"):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key and value:
+            plan_row[key] = value
+    return _sweep_candidate_validation_args(plan_row)
+
+
+_SWEEP_CONFIG_CLI_FLAGS = {
+    "cash_buffer_weight": "--cash-buffer-weight",
+    "min_train_positive_ratio": "--min-train-positive-ratio",
+    "candidate_pool_size": "--candidate-pool-size",
+    "max_position_weight": "--max-position-weight",
+    "drawdown_guard_scale": "--drawdown-guard-scale",
+    "market_volatility_min_scale": "--market-volatility-min-scale",
+    "position_trailing_stop_pct": "--position-trailing-stop-pct",
+}
+
+
+def _safe_int(value: Any, *, default: int = 0) -> int:
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return default
+
+
+def _sanitize_report_token(value: str) -> str:
+    token = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in str(value).strip())
+    return token.strip("_") or "candidate"
+
+
+def _split_cli_args(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    return shlex.split(text)
+
+
+def _format_cli_command(argv: list[str]) -> str:
+    return subprocess.list2cmdline([str(part) for part in argv])
+
+
+def _split_semicolon_values(value: str) -> list[str]:
+    return [part.strip() for part in value.split(";") if part.strip()]
+
+
+def _count_failed_required(rows: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for row in rows
+        if _parse_bool(row.get("required", True)) and not _parse_bool(row.get("deployable", False))
+    )
+
+
+def _failed_required_names(rows: list[dict[str, Any]]) -> set[str]:
+    return {
+        str(row.get("name", "")).strip()
+        for row in rows
+        if str(row.get("name", "")).strip()
+        and _parse_bool(row.get("required", True))
+        and not _parse_bool(row.get("deployable", False))
+    }
+
+
+def _min_numeric(values: Any) -> float | None:
+    numeric_values = [_float_or_none(value) for value in values]
+    numeric_values = [value for value in numeric_values if value is not None]
+    return min(numeric_values) if numeric_values else None
+
+
+def _format_optional_float(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.4f}".rstrip("0").rstrip(".")
+
+
+def _numeric_delta(candidate_value: float | None, baseline_value: float | None) -> float | None:
+    if candidate_value is None or baseline_value is None:
+        return None
+    return candidate_value - baseline_value
+
+
+def _scenario_delta_classification(baseline_failed: bool, candidate_failed: bool) -> str:
+    if baseline_failed and not candidate_failed:
+        return "RESOLVED"
+    if not baseline_failed and candidate_failed:
+        return "NEW_FAILURE"
+    if baseline_failed and candidate_failed:
+        return "UNCHANGED_FAILURE"
+    return "UNCHANGED_PASS"
+
+
+def _scenario_delta_diagnostic(
+    classification: str,
+    *,
+    baseline_reason: str,
+    candidate_reason: str,
+    excess_delta: float | None,
+    drawdown_delta: float | None,
+    trade_delta: float | None,
+) -> str:
+    if classification == "RESOLVED":
+        return "candidate_fixed_required_failure"
+    if classification == "NEW_FAILURE":
+        if candidate_reason == "train_window_rejected":
+            return "train_gate_regression"
+        if (
+            candidate_reason == "negative_excess_return"
+            and excess_delta is not None
+            and excess_delta < 0
+            and (trade_delta is None or trade_delta <= 0)
+            and (drawdown_delta is None or drawdown_delta >= 0)
+        ):
+            return "over_defense_or_filter_drag"
+        if (
+            candidate_reason == "negative_excess_return"
+            and excess_delta is not None
+            and excess_delta < 0
+            and trade_delta is not None
+            and trade_delta > 0
+        ):
+            return "selection_or_exposure_drag"
+        return "candidate_introduced_failure"
+    if classification == "UNCHANGED_FAILURE":
+        if candidate_reason == baseline_reason:
+            return "same_failure_persists"
+        return "failure_shifted_reason"
+    return "no_required_failure_change"
+
+
+def _unique_join(values: Any) -> str:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        cleaned = str(value).strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        ordered.append(cleaned)
+    return "; ".join(ordered)
+
+
+def _worst_failure_metric_value(rows: list[dict[str, Any]]) -> str:
+    values: list[float] = []
+    for row in rows:
+        value = _float_or_none(row.get("metric_value"))
+        if value is not None:
+            values.append(value)
+    if not values:
+        return ""
+    return f"{min(values):.4f}".rstrip("0").rstrip(".")
+
+
+def _remediation_priority(action: str, blocked_count: int) -> str:
+    if action == "REFRESH_OR_EXCLUDE_DATA":
+        return "P0"
+    if blocked_count > 0:
+        return "P1"
+    return "P2"
+
+
+def _remediation_next_experiment(action: str) -> str:
+    if action == "IMPROVE_WEAK_WINDOW_DEFENSE":
+        return (
+            "Run a parameter sweep with higher cash_buffer_weight, stricter min_train_positive_ratio, "
+            "and lower candidate_pool_size on only failed weak windows."
+        )
+    if action == "REDUCE_DRAWDOWN":
+        return (
+            "Run a drawdown-control sweep with lower max_position_weight, stronger drawdown_guard_scale, "
+            "and higher market_volatility_min_scale."
+        )
+    if action == "KEEP_TRAIN_WINDOW_REJECTED":
+        return "Keep the train-window gate blocking this scenario; inspect preset stability before relaxing gates."
+    if action == "REFRESH_OR_EXCLUDE_DATA":
+        return "Refresh KRX candles, rerun data-check exclusions, then regenerate monthly validation reports."
+    return "Review failed scenarios manually before changing deployment gates."
 
 
 def save_deployment_gate(gate: DeploymentGate, output_path: Path | str) -> int:
@@ -1509,12 +3607,81 @@ def target_weights_for_symbols(
     *,
     target_budget: float,
     max_position_weight: float,
+    symbol_multipliers: dict[str, float] | None = None,
 ) -> dict[str, float]:
     if not symbols or target_budget <= 0:
         return {}
-    equal_weight = target_budget / len(symbols)
-    position_weight = min(equal_weight, max_position_weight) if max_position_weight > 0 else equal_weight
-    return {symbol: position_weight for symbol in symbols}
+    if not symbol_multipliers:
+        equal_weight = target_budget / len(symbols)
+        position_weight = min(equal_weight, max_position_weight) if max_position_weight > 0 else equal_weight
+        return {symbol: position_weight for symbol in symbols}
+
+    multipliers = {symbol: max(float(symbol_multipliers.get(symbol, 1.0)), 0.0) for symbol in symbols}
+    if sum(multipliers.values()) <= 0:
+        return {}
+
+    remaining_symbols = list(symbols)
+    remaining_budget = target_budget
+    weights: dict[str, float] = {}
+    while remaining_symbols and remaining_budget > 0:
+        total_multiplier = sum(multipliers[symbol] for symbol in remaining_symbols)
+        if total_multiplier <= 0:
+            break
+        uncapped: list[str] = []
+        capped_this_round = False
+        for symbol in remaining_symbols:
+            weight = remaining_budget * multipliers[symbol] / total_multiplier
+            if max_position_weight > 0 and weight > max_position_weight:
+                weights[symbol] = max_position_weight
+                remaining_budget -= max_position_weight
+                capped_this_round = True
+            else:
+                uncapped.append(symbol)
+        if not capped_this_round:
+            for symbol in remaining_symbols:
+                weights[symbol] = remaining_budget * multipliers[symbol] / total_multiplier
+            break
+        remaining_symbols = uncapped
+    return weights
+
+
+def filter_symbols_by_event_score(
+    symbols: list[str],
+    *,
+    event_scores: EventScoreStore | None,
+    signal_date: str,
+    lookback_days: int,
+    min_entry_event_score: float,
+) -> list[str]:
+    if event_scores is None:
+        return symbols
+    return [
+        symbol
+        for symbol in symbols
+        if event_scores.score_window(symbol, signal_date, lookback_days) >= min_entry_event_score
+    ]
+
+
+def event_score_multipliers(
+    symbols: list[str],
+    *,
+    event_scores: EventScoreStore | None,
+    signal_date: str,
+    lookback_days: int,
+    event_weight: float,
+    min_multiplier: float = 0.5,
+    max_multiplier: float = 1.5,
+) -> dict[str, float]:
+    if event_scores is None or event_weight <= 0:
+        return {symbol: 1.0 for symbol in symbols}
+    lower = max(min_multiplier, 0.0)
+    upper = max(max_multiplier, lower)
+    multipliers: dict[str, float] = {}
+    for symbol in symbols:
+        score = event_scores.score_window(symbol, signal_date, lookback_days)
+        raw_multiplier = 1.0 + score * event_weight
+        multipliers[symbol] = min(upper, max(lower, raw_multiplier))
+    return multipliers
 
 
 def scale_monthly_decision_targets(
@@ -1769,19 +3936,38 @@ def select_point_in_time_universe(
     return selected
 
 
-def load_point_in_time_universe(path: Path | str) -> dict[str, set[str]]:
+def load_point_in_time_universe(path: Path | str) -> PointInTimeUniverse:
     snapshots: dict[str, set[str]] = {}
+    members_by_date: dict[str, list[UniverseMember]] = {}
     with Path(path).open(newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        if not reader.fieldnames or "date" not in reader.fieldnames or "symbol" not in reader.fieldnames:
-            raise RuntimeError("point-in-time universe CSV must include date and symbol columns")
+        fieldnames = set(reader.fieldnames or [])
+        if not fieldnames or "symbol" not in fieldnames or not ({"date", "snapshot_date"} & fieldnames):
+            raise RuntimeError("point-in-time universe CSV must include date/snapshot_date and symbol columns")
         for row in reader:
-            snapshot_date = str(row.get("date", "")).strip()
+            snapshot_date = _normalize_date_value(row.get("snapshot_date") or row.get("date", ""))
             symbol = _normalize_symbol_code(row.get("symbol", ""))
+            name = str(row.get("name", "") or "").strip()
             if not snapshot_date or not symbol:
                 continue
             snapshots.setdefault(snapshot_date, set()).add(symbol)
-    return snapshots
+            members_by_date.setdefault(snapshot_date, []).append(
+                UniverseMember(
+                    snapshot_date=snapshot_date,
+                    symbol=symbol,
+                    name=name,
+                    market=str(row.get("market", "") or "").strip(),
+                    listed_date=_normalize_date_value(row.get("listed_date", "")),
+                    delisted_date=_normalize_date_value(row.get("delisted_date", "")),
+                    is_active=str(row.get("is_active", "") or "").strip(),
+                    is_suspended=str(row.get("is_suspended", "") or "").strip(),
+                    is_managed=str(row.get("is_managed", "") or "").strip(),
+                    is_spac=str(row.get("is_spac", "") or "").strip() or ("true" if _looks_like_spac(name) else ""),
+                    is_preferred=str(row.get("is_preferred", "") or "").strip() or ("true" if _looks_like_preferred_stock(name) else ""),
+                    tradable=str(row.get("tradable", "") or "").strip(),
+                )
+            )
+    return PointInTimeUniverse(snapshots, members_by_date=members_by_date)
 
 
 def filter_symbol_candles_by_universe(
@@ -1789,14 +3975,156 @@ def filter_symbol_candles_by_universe(
     universe_by_date: dict[str, set[str]] | None,
     *,
     signal_date: str,
+    min_history_days: int = 0,
 ) -> dict[str, list[Candle]]:
     if not universe_by_date:
         return symbol_candles
     eligible_date = max((date for date in universe_by_date if date <= signal_date), default="")
     if not eligible_date:
         return {}
-    eligible_symbols = universe_by_date[eligible_date]
+    eligible_symbols, _ = _eligible_universe_symbols(
+        symbol_candles,
+        universe_by_date,
+        snapshot_date=eligible_date,
+        as_of_date=signal_date,
+        min_history_days=min_history_days,
+    )
     return {symbol: candles for symbol, candles in symbol_candles.items() if symbol in eligible_symbols}
+
+
+def build_universe_filter_report(
+    symbol_candles: dict[str, list[Candle]],
+    universe_by_date: dict[str, set[str]] | None,
+    *,
+    as_of_dates: list[str],
+    min_history_days: int = 0,
+) -> list[dict[str, Any]]:
+    if not universe_by_date:
+        return []
+    rows: list[dict[str, Any]] = []
+    for as_of_date in sorted({date for date in as_of_dates if date}):
+        snapshot_date = max((date for date in universe_by_date if date <= as_of_date), default="")
+        if not snapshot_date:
+            continue
+        _, excluded = _eligible_universe_symbols(
+            symbol_candles,
+            universe_by_date,
+            snapshot_date=snapshot_date,
+            as_of_date=as_of_date,
+            min_history_days=min_history_days,
+        )
+        rows.extend(excluded)
+    rows.sort(key=lambda row: (str(row.get("as_of_date", "")), str(row.get("symbol", "")), str(row.get("reason", ""))))
+    return rows
+
+
+def monthly_rebalance_signal_dates(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    start: str,
+    end: str,
+) -> list[str]:
+    candles_by_symbol = {
+        symbol: sorted(candles, key=lambda candle: candle.date)
+        for symbol, candles in symbol_candles.items()
+        if candles
+    }
+    dates = sorted(
+        {
+            candle.date
+            for candles in candles_by_symbol.values()
+            for candle in candles
+            if start <= candle.date <= end
+        }
+    )
+    signal_dates: list[str] = []
+    for current_date in _first_trading_dates_by_month(dates):
+        asof_candles = _candles_before_date(candles_by_symbol, current_date)
+        if asof_candles:
+            signal_dates.append(latest_signal_date(asof_candles, as_of_date=current_date))
+    return sorted(set(signal_dates))
+
+
+def _eligible_universe_symbols(
+    symbol_candles: dict[str, list[Candle]],
+    universe_by_date: dict[str, set[str]],
+    *,
+    snapshot_date: str,
+    as_of_date: str,
+    min_history_days: int,
+) -> tuple[set[str], list[dict[str, Any]]]:
+    selected: set[str] = set()
+    excluded: list[dict[str, Any]] = []
+    members = _universe_members_for_snapshot(universe_by_date, snapshot_date)
+    for member in members:
+        reason, detail = _universe_member_exclusion_reason(
+            member,
+            symbol_candles.get(member.symbol, []),
+            as_of_date=as_of_date,
+            min_history_days=min_history_days,
+        )
+        if reason:
+            excluded.append(
+                {
+                    "as_of_date": as_of_date,
+                    "snapshot_date": member.snapshot_date,
+                    "symbol": member.symbol,
+                    "name": member.name,
+                    "market": member.market,
+                    "status": "EXCLUDED",
+                    "reason": reason,
+                    "detail": detail,
+                }
+            )
+            continue
+        selected.add(member.symbol)
+    return selected, excluded
+
+
+def _universe_members_for_snapshot(
+    universe_by_date: dict[str, set[str]],
+    snapshot_date: str,
+) -> list[UniverseMember]:
+    if isinstance(universe_by_date, PointInTimeUniverse):
+        members = universe_by_date.members_by_date.get(snapshot_date)
+        if members is not None:
+            return members
+    return [
+        UniverseMember(snapshot_date=snapshot_date, symbol=symbol)
+        for symbol in sorted(universe_by_date.get(snapshot_date, set()))
+    ]
+
+
+def _universe_member_exclusion_reason(
+    member: UniverseMember,
+    candles: list[Candle],
+    *,
+    as_of_date: str,
+    min_history_days: int,
+) -> tuple[str, str]:
+    if member.snapshot_date > as_of_date:
+        return "future_snapshot", f"snapshot_date={member.snapshot_date}; as_of_date={as_of_date}"
+    if member.listed_date and member.listed_date > as_of_date:
+        return "not_listed", f"listed_date={member.listed_date}; as_of_date={as_of_date}"
+    if member.delisted_date and member.delisted_date <= as_of_date:
+        return "delisted", f"delisted_date={member.delisted_date}; as_of_date={as_of_date}"
+    if member.is_active and _metadata_is_false(member.is_active):
+        return "inactive", f"is_active={member.is_active}"
+    if member.tradable and _metadata_is_false(member.tradable):
+        return "not_tradable", f"tradable={member.tradable}"
+    if _parse_bool(member.is_suspended):
+        return "suspended", f"is_suspended={member.is_suspended}"
+    if _parse_bool(member.is_managed):
+        return "managed", f"is_managed={member.is_managed}"
+    if _parse_bool(member.is_spac):
+        return "spac", f"is_spac={member.is_spac}"
+    if _parse_bool(member.is_preferred):
+        return "preferred", f"is_preferred={member.is_preferred}"
+    if min_history_days > 0:
+        history = [candle for candle in sorted(candles, key=lambda candle: candle.date) if candle.date <= as_of_date]
+        if len(history) < min_history_days:
+            return "insufficient_history", f"history_rows={len(history)}; required={min_history_days}"
+    return "", ""
 
 
 def _normalize_symbol_code(value: Any) -> str:
@@ -1806,6 +4134,40 @@ def _normalize_symbol_code(value: Any) -> str:
     if text.isdigit():
         return text.zfill(6)
     return text.upper()
+
+
+def _looks_like_spac(name: str) -> bool:
+    normalized = str(name or "").replace(" ", "").upper()
+    return "스팩" in normalized or normalized.endswith("SPAC") or " SPAC" in normalized
+
+
+def _looks_like_preferred_stock(name: str) -> bool:
+    normalized = str(name or "").replace(" ", "").upper()
+    if not normalized:
+        return False
+    return (
+        normalized.endswith("우")
+        or normalized.endswith("우B")
+        or normalized.endswith("1우")
+        or normalized.endswith("2우")
+        or normalized.endswith("3우")
+    )
+
+
+def _normalize_date_value(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) == 8 and text.isdigit():
+        return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    try:
+        return date.fromisoformat(text[:10]).isoformat()
+    except ValueError:
+        return ""
+
+
+def _metadata_is_false(value: Any) -> bool:
+    return str(value).strip().lower() in {"0", "false", "no", "n", "f"}
 
 
 def exclude_invalid_price_symbols(symbol_candles: dict[str, list[Candle]]) -> dict[str, list[Candle]]:
@@ -1865,6 +4227,8 @@ def run_monthly_rebalance_backtest(
     curve_dates: list[str] = []
     drawdown_stop_pending = False
     drawdown_stop_cooldown_remaining = 0
+    position_peak_prices: dict[str, float] = {}
+    position_stop_pending: set[str] = set()
 
     for current_date in dates:
         day_candles = {
@@ -1872,6 +4236,23 @@ def run_monthly_rebalance_backtest(
             for symbol, by_date in candles_by_symbol_date.items()
             if current_date in by_date
         }
+        if position_stop_pending:
+            cash, position_stop_trades, stopped_symbols = _execute_symbol_liquidation(
+                current_date,
+                position_stop_pending,
+                positions,
+                cash,
+                day_candles,
+                fee_rate=fee_rate,
+                tax_rate=tax_rate,
+                slippage_rate=slippage_rate,
+                reason="position_trailing_stop",
+            )
+            trades.extend(position_stop_trades)
+            position_stop_pending.difference_update(stopped_symbols)
+            for symbol in stopped_symbols:
+                position_peak_prices.pop(symbol, None)
+
         if drawdown_stop_pending:
             cash, stop_trades = _execute_full_liquidation(
                 current_date,
@@ -1887,6 +4268,8 @@ def run_monthly_rebalance_backtest(
             if not positions:
                 drawdown_stop_pending = False
                 drawdown_stop_cooldown_remaining = max(0, cfg.daily_drawdown_cooldown_days)
+                position_stop_pending.clear()
+                position_peak_prices.clear()
 
         if current_date in rebalance_dates:
             asof_candles = _candles_before_date(candles_by_symbol, current_date)
@@ -1920,10 +4303,21 @@ def run_monthly_rebalance_backtest(
                         cfg.drawdown_guard_trigger_pct < 0
                         and current_drawdown_pct <= cfg.drawdown_guard_trigger_pct
                     ):
+                        drawdown_guard_scale = cfg.drawdown_guard_scale
+                        drawdown_guard_suffix = "_drawdown_guard"
+                        if (
+                            cfg.drawdown_guard_deep_trigger_pct < 0
+                            and current_drawdown_pct <= cfg.drawdown_guard_deep_trigger_pct
+                        ):
+                            drawdown_guard_scale = min(
+                                drawdown_guard_scale,
+                                cfg.drawdown_guard_deep_scale,
+                            )
+                            drawdown_guard_suffix = "_deep_drawdown_guard"
                         decision = scale_monthly_decision_targets(
                             decision,
-                            scale=cfg.drawdown_guard_scale,
-                            reason_suffix="_drawdown_guard",
+                            scale=drawdown_guard_scale,
+                            reason_suffix=drawdown_guard_suffix,
                         )
                 except ValueError as exc:
                     decision = MonthlyDecision(
@@ -1952,6 +4346,30 @@ def run_monthly_rebalance_backtest(
         for symbol, candle in day_candles.items():
             if candle.close > 0:
                 last_prices[symbol] = candle.close
+        position_peak_prices = {
+            symbol: peak
+            for symbol, peak in position_peak_prices.items()
+            if positions.get(symbol, 0) > 0
+        }
+        if cfg.position_trailing_stop_pct < 0:
+            for symbol, quantity in positions.items():
+                if quantity <= 0:
+                    continue
+                candle = day_candles.get(symbol)
+                close_price = candle.close if candle and candle.close > 0 else last_prices.get(symbol, 0.0)
+                if close_price <= 0:
+                    continue
+                peak_price = max(position_peak_prices.get(symbol, close_price), close_price)
+                position_peak_prices[symbol] = peak_price
+                position_drawdown_pct = (close_price / peak_price - 1.0) * 100.0 if peak_price > 0 else 0.0
+                if position_drawdown_pct <= cfg.position_trailing_stop_pct:
+                    position_stop_pending.add(symbol)
+        else:
+            for symbol, quantity in positions.items():
+                candle = day_candles.get(symbol)
+                close_price = candle.close if candle and candle.close > 0 else last_prices.get(symbol, 0.0)
+                if quantity > 0 and close_price > 0:
+                    position_peak_prices[symbol] = max(position_peak_prices.get(symbol, close_price), close_price)
         end_of_day_equity = _portfolio_value(cash, positions, last_prices)
         equity_curve.append(end_of_day_equity)
         curve_dates.append(current_date)
@@ -2037,6 +4455,69 @@ def save_order_plan(rows: list[PlannedOrder], output_path: Path | str) -> int:
         for row in rows:
             writer.writerow({column: getattr(row, column) for column in ORDER_COLUMNS})
     return len(rows)
+
+
+def save_order_plan_summary(
+    *,
+    decision: MonthlyDecision,
+    orders: list[PlannedOrder],
+    risk_checks: list[RiskCheck],
+    risk_status_value: str,
+    output_path: Path | str,
+) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    normalized = str(risk_status_value).strip().upper()
+    execution_ready = normalized == "PASS" and all(order.execution_allowed for order in orders)
+    status_text = "LIVE_READY" if execution_ready else "BLOCKED"
+    buy_orders = [order for order in orders if order.action == "BUY"]
+    sell_orders = [order for order in orders if order.action == "SELL"]
+    blocked_orders = [order for order in orders if not order.execution_allowed]
+    lines = [
+        "# Monthly Order Plan Summary",
+        "",
+        f"Execution status: {status_text}",
+        f"Risk status: {normalized}",
+        f"As of: {decision.as_of_date}",
+        f"Signal date: {decision.signal_date}",
+        f"Mode: {decision.mode}",
+        f"Selected preset: {decision.selected_preset}",
+        f"Decision reason: {decision.reason}",
+        "",
+        "## Order Totals",
+        "",
+        f"Orders: {len(orders)}",
+        f"BUY orders: {len(buy_orders)}",
+        f"SELL orders: {len(sell_orders)}",
+        f"Blocked orders: {len(blocked_orders)}",
+        f"Total buy value: {sum(order.estimated_value for order in buy_orders):.0f}",
+        f"Total sell value: {sum(order.estimated_value for order in sell_orders):.0f}",
+        "",
+        "## Risk Checks",
+        "",
+    ]
+    if risk_checks:
+        for check in risk_checks:
+            lines.append(f"- {check.name}: {check.status} - {check.detail}")
+    else:
+        lines.append("- none")
+    lines.extend(["", "## Block Reasons", ""])
+    risk_block_reasons = [
+        f"{check.name}: {check.detail}"
+        for check in risk_checks
+        if str(check.status).strip().upper() in {"BLOCK", "WARN"}
+    ]
+    if blocked_orders:
+        for order in blocked_orders:
+            lines.append(
+                f"- {order.symbol} {order.action} {order.quantity}: {order.execution_block_reason}"
+            )
+    if risk_block_reasons:
+        for reason in risk_block_reasons:
+            lines.append(f"- {reason}")
+    if not blocked_orders and not risk_block_reasons:
+        lines.append("- none")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def save_monthly_decision(decision: MonthlyDecision, output_path: Path | str) -> int:
@@ -2317,6 +4798,47 @@ def _execute_full_liquidation(
             )
         )
     return cash, trades
+
+
+def _execute_symbol_liquidation(
+    trade_date: str,
+    symbols: set[str],
+    positions: dict[str, int],
+    cash: float,
+    day_candles: dict[str, Candle],
+    *,
+    fee_rate: float,
+    tax_rate: float,
+    slippage_rate: float,
+    reason: str,
+) -> tuple[float, list[MonthlyBacktestTrade], set[str]]:
+    trades: list[MonthlyBacktestTrade] = []
+    sold_symbols: set[str] = set()
+    for symbol in sorted(symbols):
+        quantity = positions.get(symbol, 0)
+        candle = day_candles.get(symbol)
+        if quantity <= 0:
+            sold_symbols.add(symbol)
+            continue
+        if candle is None or candle.open <= 0:
+            continue
+        fill_price = candle.open * (1 - slippage_rate)
+        gross = quantity * fill_price
+        cash += gross - gross * fee_rate - gross * tax_rate
+        positions.pop(symbol, None)
+        sold_symbols.add(symbol)
+        trades.append(
+            MonthlyBacktestTrade(
+                date=trade_date,
+                symbol=symbol,
+                action="SELL",
+                price=fill_price,
+                quantity=quantity,
+                cash_after=cash,
+                reason=reason,
+            )
+        )
+    return cash, trades, sold_symbols
 
 
 def _portfolio_value(cash: float, positions: dict[str, int], prices: dict[str, float]) -> float:

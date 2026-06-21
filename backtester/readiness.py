@@ -2,8 +2,11 @@ import csv
 import math
 from collections import Counter
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+
+from .data_quality import validate_dataset_freshness
 
 
 READINESS_COLUMNS = ["name", "status", "detail"]
@@ -28,9 +31,30 @@ def evaluate_readiness(
     required_artifacts: list[Path | str] | None = None,
     deployment_gate_path: Path | str | None = None,
     validation_scenarios_path: Path | str | None = None,
+    validation_failures_path: Path | str | None = None,
+    validation_remediation_path: Path | str | None = None,
+    validation_sweep_plan_path: Path | str | None = None,
+    validation_sweep_results_path: Path | str | None = None,
+    validation_comparison_path: Path | str | None = None,
+    validation_comparison_delta_path: Path | str | None = None,
+    validation_candidate_decision_path: Path | str | None = None,
+    validation_candidate_followup_path: Path | str | None = None,
+    validation_failure_patterns_path: Path | str | None = None,
     risk_report_path: Path | str | None = None,
     coverage_report_path: Path | str | None = None,
+    missing_ohlcv_targets_path: Path | str | None = None,
+    missing_ohlcv_fetch_plan_path: Path | str | None = None,
+    missing_ohlcv_fetch_summary_path: Path | str | None = None,
     performance_report_path: Path | str | None = None,
+    performance_concentration_path: Path | str | None = None,
+    drawdown_attribution_path: Path | str | None = None,
+    symbol_attribution_path: Path | str | None = None,
+    data_quality_path: Path | str | None = None,
+    data_quality_exclusions_path: Path | str | None = None,
+    coverage_warning_min_pct: float = 90.0,
+    max_data_stale_days: int = 7,
+    max_report_age_days: int | None = None,
+    as_of_date: str | None = None,
 ) -> list[ReadinessCheck]:
     checks: list[ReadinessCheck] = []
     checks.extend(_artifact_checks(required_artifacts or []))
@@ -38,12 +62,100 @@ def evaluate_readiness(
         checks.append(_deployment_gate_check(Path(deployment_gate_path)))
     if validation_scenarios_path is not None:
         checks.append(_validation_scenario_check(Path(validation_scenarios_path)))
+    if validation_failures_path is not None:
+        checks.append(_validation_failure_actions_check(Path(validation_failures_path)))
+    if validation_remediation_path is not None:
+        checks.append(_validation_remediation_check(Path(validation_remediation_path)))
+    if validation_sweep_plan_path is not None:
+        checks.append(_validation_sweep_plan_check(Path(validation_sweep_plan_path)))
+    if validation_sweep_results_path is not None:
+        checks.append(_validation_sweep_results_check(Path(validation_sweep_results_path)))
+    if validation_comparison_path is not None:
+        checks.append(_validation_comparison_check(Path(validation_comparison_path)))
+    if validation_comparison_delta_path is not None:
+        checks.append(_validation_comparison_delta_check(Path(validation_comparison_delta_path)))
+    if validation_candidate_decision_path is not None:
+        checks.append(_validation_candidate_decision_check(Path(validation_candidate_decision_path)))
+    if validation_candidate_followup_path is not None:
+        checks.append(_validation_candidate_followup_check(Path(validation_candidate_followup_path)))
+    if validation_failure_patterns_path is not None:
+        checks.append(_validation_failure_patterns_check(Path(validation_failure_patterns_path)))
     if risk_report_path is not None:
         checks.append(_risk_report_check(Path(risk_report_path)))
+    coverage_check: ReadinessCheck | None = None
     if coverage_report_path is not None:
-        checks.append(_coverage_report_check(Path(coverage_report_path)))
+        coverage_check = _coverage_report_check(
+            Path(coverage_report_path),
+            warning_min_coverage_pct=coverage_warning_min_pct,
+        )
+        checks.append(coverage_check)
+    if missing_ohlcv_targets_path is not None:
+        target_check = _missing_ohlcv_targets_check(Path(missing_ohlcv_targets_path), coverage_check)
+        if target_check is not None:
+            checks.append(target_check)
+    if missing_ohlcv_fetch_plan_path is not None:
+        fetch_plan_check = _missing_ohlcv_fetch_plan_check(
+            Path(missing_ohlcv_fetch_plan_path),
+            Path(missing_ohlcv_targets_path) if missing_ohlcv_targets_path is not None else None,
+        )
+        if fetch_plan_check is not None:
+            checks.append(fetch_plan_check)
+    if missing_ohlcv_fetch_summary_path is not None:
+        fetch_summary_check = _missing_ohlcv_fetch_summary_check(Path(missing_ohlcv_fetch_summary_path))
+        if fetch_summary_check is not None:
+            checks.append(fetch_summary_check)
     if performance_report_path is not None:
         checks.append(_performance_report_check(Path(performance_report_path)))
+    if performance_concentration_path is not None:
+        checks.append(_performance_concentration_check(Path(performance_concentration_path)))
+    if drawdown_attribution_path is not None or symbol_attribution_path is not None:
+        checks.append(
+            _drawdown_attribution_check(
+                Path(drawdown_attribution_path) if drawdown_attribution_path is not None else None,
+                Path(symbol_attribution_path) if symbol_attribution_path is not None else None,
+                Path(validation_failures_path) if validation_failures_path is not None else None,
+            )
+        )
+    if data_quality_path is not None:
+        checks.append(_data_quality_check(Path(data_quality_path), max_stale_days=max_data_stale_days, as_of_date=as_of_date))
+    if data_quality_exclusions_path is not None:
+        checks.append(
+            _data_quality_exclusions_check(
+                Path(data_quality_exclusions_path),
+                {
+                    "deployment_gate": deployment_gate_path,
+                    "validation_scenarios": validation_scenarios_path,
+                    "risk_report": risk_report_path,
+                },
+            )
+        )
+    if max_report_age_days is not None:
+        checks.extend(
+            _report_freshness_checks(
+                {
+                    "deployment_gate": deployment_gate_path,
+                    "validation_scenarios": validation_scenarios_path,
+                    "validation_failures": validation_failures_path,
+                    "validation_remediation": validation_remediation_path,
+                    "validation_sweep_plan": validation_sweep_plan_path,
+                    "validation_sweep_results": validation_sweep_results_path,
+                    "validation_comparison": validation_comparison_path,
+                    "validation_comparison_deltas": validation_comparison_delta_path,
+                    "validation_candidate_decision": validation_candidate_decision_path,
+                    "risk_report": risk_report_path,
+                    "universe_price_coverage": coverage_report_path,
+                    "krx_missing_ohlcv_targets": missing_ohlcv_targets_path,
+                    "krx_missing_ohlcv_fetch_plan": missing_ohlcv_fetch_plan_path,
+                    "krx_missing_ohlcv_fetch_summary": missing_ohlcv_fetch_summary_path,
+                    "performance_report": performance_report_path,
+                    "performance_concentration": performance_concentration_path,
+                    "drawdown_attribution": drawdown_attribution_path,
+                    "symbol_attribution": symbol_attribution_path,
+                },
+                max_age_days=max_report_age_days,
+                as_of_date=as_of_date,
+            )
+        )
     if not checks:
         checks.append(ReadinessCheck("overall", "PASS", "no readiness inputs requested"))
     return checks
@@ -107,12 +219,39 @@ def recommend_readiness_actions(checks: list[ReadinessCheck]) -> list[ReadinessA
             )
         )
 
-    if any(check.name == "universe_price_coverage" and check.status == "BLOCK" for check in checks):
+    if any(check.name == "universe_price_coverage" and check.status in {"BLOCK", "WARN"} for check in checks):
         actions.append(
             ReadinessAction(
                 "P0",
                 "Expand KRX price coverage",
-                "Fetch historical OHLCV for the missing point-in-time universe members before considering live deployment.",
+                "Fetch historical OHLCV for missing point-in-time universe members before trusting deployment validation.",
+            )
+        )
+
+    if any(check.name == "krx_missing_ohlcv_targets" and check.status in {"BLOCK", "WARN"} for check in checks):
+        actions.append(
+            ReadinessAction(
+                "P0",
+                "Create KRX missing OHLCV target plan",
+                "Run plan-pykrx-missing-ohlcv, then fetch the prioritized batches before rerunning monthly validation.",
+            )
+        )
+
+    if any(check.name == "krx_missing_ohlcv_fetch_plan" and check.status in {"BLOCK", "WARN"} for check in checks):
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Review KRX missing OHLCV fetch plan",
+                "Generate or refresh the fetch-loop plan before running network collection batches.",
+            )
+        )
+
+    if any(check.name == "krx_missing_ohlcv_fetch_summary" and check.status in {"BLOCK", "WARN"} for check in checks):
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Inspect KRX missing OHLCV fetch result",
+                "Review failed or timed-out collection batches before rerunning validation.",
             )
         )
 
@@ -135,11 +274,199 @@ def recommend_readiness_actions(checks: list[ReadinessCheck]) -> list[ReadinessA
         )
 
     if any(check.name == "performance_report" and check.status in {"BLOCK", "WARN"} for check in checks):
+        if "walk_forward_margin" in details:
+            actions.append(
+                ReadinessAction(
+                    "P1",
+                    "Improve walk-forward margin",
+                    "Raise the weakest required-window excess return before increasing size; test stricter entry filters, slower rebalance cadence, or lower exposure in marginal regimes.",
+                )
+            )
+        if "drawdown_buffer" in details:
+            actions.append(
+                ReadinessAction(
+                    "P1",
+                    "Reduce drawdown pressure",
+                    "Worst drawdown is too close to the hard block threshold; test stronger risk-off overlays, lower max position weight, and faster de-risking after equity-curve drawdowns.",
+                )
+            )
+        if "return_concentration" in details:
+            actions.append(
+                ReadinessAction(
+                    "P1",
+                    "Reduce return concentration",
+                    "Full-period returns are too dependent on a small set of favorable windows; require broader rolling-window contribution before treating the strategy as robust.",
+                )
+            )
         actions.append(
             ReadinessAction(
                 "P1",
                 "Treat performance fragility as a live-size limiter",
                 "Thin walk-forward margins, high drawdown pressure, or full-period concentration should keep trading in paper/live dry-run or very small sizing until they improve.",
+            )
+        )
+
+    if any(check.name == "performance_concentration" and check.status in {"BLOCK", "WARN"} for check in checks):
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Reduce performance concentration risk",
+                "Review whether returns depend on one month or a few symbols before increasing live size.",
+            )
+        )
+
+    drawdown_attribution_checks = [
+        check for check in checks if check.name == "drawdown_attribution" and check.status in {"BLOCK", "WARN"}
+    ]
+    if drawdown_attribution_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Regenerate drawdown attribution reports",
+                "Run monthly-attribution for failed drawdown scenarios so worst months and symbols are visible before tuning risk controls.",
+            )
+        )
+
+    validation_action_checks = [
+        check for check in checks if check.name == "validation_failure_actions" and check.status in {"BLOCK", "WARN"}
+    ]
+    if validation_action_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Apply validation failure playbook",
+                validation_action_checks[0].detail,
+            )
+        )
+
+    remediation_checks = [
+        check for check in checks if check.name == "validation_remediation" and check.status in {"BLOCK", "WARN"}
+    ]
+    if remediation_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Run validation remediation experiments",
+                remediation_checks[0].detail,
+            )
+        )
+
+    sweep_plan_checks = [
+        check for check in checks if check.name == "validation_sweep_plan" and check.status in {"BLOCK", "WARN"}
+    ]
+    if sweep_plan_checks:
+        actions.append(
+            ReadinessAction(
+                "P2",
+                "Review validation sweep plan",
+                sweep_plan_checks[0].detail,
+            )
+        )
+
+    sweep_result_checks = [
+        check for check in checks if check.name == "validation_sweep_results" and check.status in {"BLOCK", "WARN"}
+    ]
+    if sweep_result_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Review validation sweep results",
+                sweep_result_checks[0].detail,
+            )
+        )
+
+    comparison_checks = [
+        check for check in checks if check.name == "validation_comparison" and check.status in {"BLOCK", "WARN"}
+    ]
+    if comparison_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Do not adopt rejected validation candidate",
+                comparison_checks[0].detail,
+            )
+        )
+
+    comparison_delta_checks = [
+        check
+        for check in checks
+        if check.name == "validation_comparison_deltas" and check.status in {"BLOCK", "WARN"}
+    ]
+    if comparison_delta_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Review validation scenario deltas",
+                comparison_delta_checks[0].detail,
+            )
+        )
+
+    candidate_decision_checks = [
+        check
+        for check in checks
+        if check.name == "validation_candidate_decision" and check.status in {"BLOCK", "WARN"}
+    ]
+    if candidate_decision_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Do not adopt rejected validation candidate",
+                candidate_decision_checks[0].detail,
+            )
+        )
+
+    candidate_followup_checks = [
+        check
+        for check in checks
+        if check.name == "validation_candidate_followup" and check.status in {"BLOCK", "WARN"}
+    ]
+    if candidate_followup_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Run candidate follow-up validation",
+                candidate_followup_checks[0].detail,
+            )
+        )
+
+    failure_pattern_checks = [
+        check
+        for check in checks
+        if check.name == "validation_failure_patterns" and check.status in {"BLOCK", "WARN"}
+    ]
+    if failure_pattern_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Analyze persistent validation failures",
+                failure_pattern_checks[0].detail,
+            )
+        )
+
+    if any(check.name.endswith("_freshness") and check.status == "BLOCK" for check in checks):
+        actions.append(
+            ReadinessAction(
+                "P0",
+                "Regenerate stale validation reports",
+                "Live execution must not rely on old deployment, risk, coverage, or performance reports.",
+            )
+        )
+
+    if any(check.name == "data_quality" and check.status == "BLOCK" for check in checks):
+        actions.append(
+            ReadinessAction(
+                "P0",
+                "Refresh or repair market data",
+                "Data quality is blocked by stale, missing, duplicated, or invalid candle rows.",
+            )
+        )
+
+    if any(check.name == "data_quality_exclusions" and check.status in {"BLOCK", "WARN"} for check in checks):
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Regenerate reports with data-quality exclusions",
+                "Run data-check, then rerun monthly-backtest, monthly-validate, and monthly-plan so blocked symbols are excluded.",
             )
         )
 
@@ -217,6 +544,46 @@ def _artifact_checks(paths: list[Path | str]) -> list[ReadinessCheck]:
     return checks
 
 
+def _report_freshness_checks(
+    paths: dict[str, Path | str | None],
+    *,
+    max_age_days: int,
+    as_of_date: str | None,
+) -> list[ReadinessCheck]:
+    try:
+        as_of = date.fromisoformat(as_of_date) if as_of_date else date.today()
+    except ValueError:
+        return [ReadinessCheck("report_freshness_as_of", "BLOCK", f"invalid as_of_date: {as_of_date}")]
+
+    checks: list[ReadinessCheck] = []
+    for name, raw_path in paths.items():
+        if raw_path is None:
+            continue
+        path = Path(raw_path)
+        if not path.exists():
+            continue
+        modified = datetime.fromtimestamp(path.stat().st_mtime).date()
+        age_days = max((as_of - modified).days, 0)
+        check_name = f"{name}_freshness"
+        if age_days > max_age_days:
+            checks.append(
+                ReadinessCheck(
+                    check_name,
+                    "BLOCK",
+                    f"age {age_days}d exceeds {max_age_days}d; modified={modified.isoformat()}",
+                )
+            )
+        else:
+            checks.append(
+                ReadinessCheck(
+                    check_name,
+                    "PASS",
+                    f"age {age_days}d within {max_age_days}d; modified={modified.isoformat()}",
+                )
+            )
+    return checks
+
+
 def _deployment_gate_check(path: Path) -> ReadinessCheck:
     if not path.exists():
         return ReadinessCheck("deployment_gate", "BLOCK", f"missing: {path}")
@@ -266,6 +633,330 @@ def _validation_scenario_check(path: Path) -> ReadinessCheck:
     return ReadinessCheck("validation_scenarios", "PASS", f"{len(rows)} scenarios passed")
 
 
+def _validation_failure_actions_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_failure_actions", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_failure_actions", "PASS", "no validation failures recorded")
+
+    severities = Counter(str(row.get("severity", "")).strip().upper() or "WARN" for row in rows)
+    action_counts = Counter(
+        str(row.get("suggested_action", "")).strip() or "REVIEW_SCENARIO"
+        for row in rows
+    )
+    status = "BLOCK" if severities.get("BLOCK", 0) else "WARN"
+    action_summary = ", ".join(
+        f"{action}={count}" for action, count in sorted(action_counts.items())
+    )
+    samples_by_action: dict[str, str] = {}
+    for row in rows:
+        action = str(row.get("suggested_action", "")).strip() or "REVIEW_SCENARIO"
+        if action in samples_by_action:
+            continue
+        name = str(row.get("name", "unknown")).strip() or "unknown"
+        reason = str(row.get("reason", "unknown")).strip() or "unknown"
+        metric = str(row.get("failed_metric", "")).strip()
+        value = str(row.get("metric_value", "")).strip()
+        hints = str(row.get("parameter_hints", "")).strip()
+        sample = f"{action}->{name}:{reason}"
+        if metric:
+            sample += f" {metric}={value}"
+        if hints:
+            sample += f"; hints={hints}"
+        samples_by_action[action] = sample
+    samples = " | ".join(samples_by_action[action] for action in sorted(samples_by_action))
+    return ReadinessCheck(
+        "validation_failure_actions",
+        status,
+        f"{len(rows)} failures; actions: {action_summary}; samples: {samples}",
+    )
+
+
+def _validation_remediation_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_remediation", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_remediation", "PASS", "no validation remediation experiments needed")
+    priority_counts = Counter(str(row.get("priority", "")).strip() or "P2" for row in rows)
+    status = "BLOCK" if priority_counts.get("P0", 0) or priority_counts.get("P1", 0) else "WARN"
+    first = rows[0]
+    detail = (
+        f"{len(rows)} experiment groups; "
+        f"priorities: {', '.join(f'{priority}={count}' for priority, count in sorted(priority_counts.items()))}; "
+        f"top_action={first.get('suggested_action', '')}; "
+        f"affected={first.get('affected_scenarios', '')}; "
+        f"next={first.get('next_experiment', '')}"
+    )
+    return ReadinessCheck("validation_remediation", status, detail)
+
+
+def _validation_sweep_plan_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_sweep_plan", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_sweep_plan", "PASS", "no sweep experiments planned")
+    first = rows[0]
+    actions = Counter(str(row.get("suggested_action", "")).strip() or "UNKNOWN" for row in rows)
+    action_summary = ", ".join(f"{action}={count}" for action, count in sorted(actions.items()))
+    detail = (
+        f"{len(rows)} planned experiments; actions: {action_summary}; "
+        f"first={first.get('experiment_id', '')}; "
+        f"targets={first.get('target_scenarios', '')}; "
+        f"risk_note={first.get('risk_note', '')}"
+    )
+    return ReadinessCheck("validation_sweep_plan", "WARN", detail)
+
+
+def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_sweep_results", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_sweep_results", "WARN", "empty sweep result report")
+    statuses = Counter(str(row.get("status", "")).strip().upper() or "UNKNOWN" for row in rows)
+    adoption_statuses = Counter(
+        str(row.get("adoption_status", "")).strip().upper()
+        for row in rows
+        if str(row.get("adoption_status", "")).strip()
+    )
+    status_summary = ", ".join(f"{status}={count}" for status, count in sorted(statuses.items()))
+    adoption_summary = ", ".join(
+        f"{status}={count}" for status, count in sorted(adoption_statuses.items())
+    )
+    status = "BLOCK" if statuses.get("REGRESSED", 0) else "WARN"
+    best = _best_sweep_result_row(rows)
+    improved = [
+        str(row.get("experiment_id", "")).strip()
+        for row in rows
+        if str(row.get("status", "")).strip().upper() == "IMPROVED"
+        and str(row.get("experiment_id", "")).strip()
+    ]
+    improved_summary = "; improved=" + ", ".join(improved[:5]) if improved else ""
+    target_only_note = "; target_only_improvements_require_full_validation" if improved else ""
+    candidate_args = str(best.get("candidate_validation_args", "")).strip()
+    candidate_args_note = f"; candidate_validation_args={candidate_args}" if candidate_args else ""
+    detail = (
+        f"{len(rows)} sweep results; statuses: {status_summary}; "
+        f"adoption_statuses: {adoption_summary or 'unspecified'}; "
+        f"best={best.get('experiment_id', '')}; "
+        f"delta={best.get('failed_delta', '')}; "
+        f"summary={best.get('result_summary', '')}; "
+        f"risk_note={best.get('risk_note', '')}"
+        f"{candidate_args_note}"
+        f"{improved_summary}"
+        f"{target_only_note}"
+    )
+    return ReadinessCheck("validation_sweep_results", status, detail)
+
+
+def _validation_comparison_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_comparison", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_comparison", "WARN", f"empty: {path}")
+    row = rows[-1]
+    raw_status = str(row.get("status", "")).strip().upper()
+    if raw_status in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
+        status = "PASS"
+    elif raw_status in {"REJECT", "REJECTED"}:
+        status = "WARN"
+    else:
+        status = "BLOCK"
+    detail = (
+        f"{row.get('candidate_label', path)}:{raw_status or 'UNKNOWN'}; "
+        f"failed_delta={row.get('failed_delta', '')}; "
+        f"new_failures={row.get('new_failures', '')}; "
+        f"resolved_failures={row.get('resolved_failures', '')}; "
+        f"summary={row.get('summary', '')}"
+    )
+    return ReadinessCheck("validation_comparison", status, detail)
+
+
+def _validation_comparison_delta_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_comparison_deltas", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_comparison_deltas", "BLOCK", f"empty: {path}")
+    classifications = Counter(str(row.get("classification", "")).strip() or "UNKNOWN" for row in rows)
+    diagnostics = Counter(str(row.get("diagnostic", "")).strip() or "unknown" for row in rows)
+    status = "WARN" if classifications.get("NEW_FAILURE", 0) else "PASS"
+    class_summary = ", ".join(
+        f"{name}={count}" for name, count in sorted(classifications.items())
+    )
+    diagnostic_summary = ", ".join(
+        f"{name}={count}" for name, count in sorted(diagnostics.items()) if name != "no_required_failure_change"
+    )
+    new_failures = [
+        str(row.get("name", "")).strip()
+        for row in rows
+        if str(row.get("classification", "")).strip() == "NEW_FAILURE"
+        and str(row.get("name", "")).strip()
+    ]
+    detail = f"{len(rows)} scenario deltas; classes: {class_summary}"
+    if diagnostic_summary:
+        detail += f"; diagnostics: {diagnostic_summary}"
+    if new_failures:
+        detail += f"; new_failures={'; '.join(new_failures[:5])}"
+    return ReadinessCheck("validation_comparison_deltas", status, detail)
+
+
+def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_candidate_decision", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_candidate_decision", "WARN", f"empty: {path}")
+
+    row = rows[-1]
+    decision = str(row.get("decision", "")).strip().upper() or "UNKNOWN"
+    comparison_status = str(row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
+    if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
+        status = "PASS"
+    elif decision in {"REJECT", "REJECTED", "HOLD", "PAPER_REVIEW"}:
+        status = "WARN"
+    else:
+        status = "BLOCK"
+
+    detail = (
+        f"{row.get('candidate_label', path)}:{decision}; "
+        f"comparison_status={comparison_status}; "
+        f"failed_delta={row.get('failed_delta', '')}; "
+        f"new_failures={row.get('new_failure_count', '')}; "
+        f"resolved={row.get('resolved_count', '')}; "
+        f"new_failure_names={row.get('new_failure_names', '')}; "
+        f"resolved_failure_names={row.get('resolved_failure_names', '')}; "
+        f"unchanged_failure_names={row.get('unchanged_failure_names', '')}; "
+        f"diagnostics={row.get('new_failure_diagnostics', '')}; "
+        f"reasons={row.get('decision_reasons', '')}; "
+        f"recommendation={row.get('recommendation', '')}"
+    )
+    return ReadinessCheck("validation_candidate_decision", status, detail)
+
+
+def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_candidate_followup", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_candidate_followup", "WARN", f"empty: {path}")
+    rows = sorted(rows, key=lambda row: _parse_float(row.get("priority_rank") or 9999.0))
+    top = rows[0]
+    decisions = _candidate_followup_decisions(rows, base_dir=path.parent)
+    pending_rows = [
+        row
+        for row in rows
+        if _candidate_followup_decision_for_row(row, base_dir=path.parent) is None
+    ]
+    decision_counts = Counter(str(decision.get("decision", "")).strip().upper() for decision in decisions)
+    decision_summary = ", ".join(
+        f"{decision}={count}" for decision, count in sorted(decision_counts.items()) if decision
+    )
+    top_decision = decisions[0] if decisions else {}
+    decision_detail = ""
+    if decision_summary:
+        decision_detail = (
+            f"; decisions: {decision_summary}; "
+            f"top_decision={top_decision.get('decision', '')}; "
+            f"candidate_failed_required={top_decision.get('candidate_failed_required', '')}; "
+            f"new_failures={top_decision.get('new_failure_names', '')}"
+        )
+    pending_detail = f"; completed={len(decisions)}; pending={len(pending_rows)}"
+    if pending_rows:
+        next_pending = pending_rows[0]
+        pending_detail += (
+            f"; next_pending={next_pending.get('experiment_id', '')}; "
+            f"next_validation_command={next_pending.get('validation_command', '')}"
+        )
+    else:
+        pending_detail += "; all_candidate_followups_completed"
+    command_detail = ""
+    if pending_rows:
+        command_detail = (
+            f"; validation_command={top.get('validation_command', '')}; "
+            f"comparison_command={top.get('comparison_command', '')}"
+        )
+    detail = (
+        f"{len(rows)} candidate follow-up command sets; "
+        f"top={top.get('experiment_id', '')}; "
+        f"failed_delta={top.get('failed_delta', '')}"
+        f"{command_detail}"
+        f"{decision_detail}"
+        f"{pending_detail}"
+    )
+    return ReadinessCheck("validation_candidate_followup", "WARN", detail)
+
+
+def _validation_failure_patterns_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("validation_failure_patterns", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_failure_patterns", "PASS", f"empty: {path}")
+
+    statuses = Counter(str(row.get("pattern_status", "")).strip().upper() for row in rows)
+    blocking_statuses = {"PERSISTENT_BLOCK", "REGRESSION_RISK"}
+    warning_statuses = {"MIXED_RESPONSE", "BASELINE_BLOCK"}
+    blocked_rows = [
+        row
+        for row in rows
+        if str(row.get("pattern_status", "")).strip().upper() in blocking_statuses
+    ]
+    warned_rows = [
+        row
+        for row in rows
+        if str(row.get("pattern_status", "")).strip().upper() in warning_statuses
+    ]
+    status = "PASS"
+    if blocked_rows:
+        status = "BLOCK"
+    elif warned_rows:
+        status = "WARN"
+
+    status_summary = ", ".join(f"{name}={count}" for name, count in sorted(statuses.items()) if name)
+    top_rows = blocked_rows or warned_rows or rows
+    top_detail = "; ".join(
+        f"{row.get('scenario', '')}:{row.get('pattern_status', '')}:{row.get('suggested_action', '')}"
+        for row in top_rows[:5]
+    )
+    detail = f"{len(rows)} scenarios; statuses: {status_summary}; top={top_detail}"
+    return ReadinessCheck("validation_failure_patterns", status, detail)
+
+
+def _candidate_followup_decisions(rows: list[dict[str, Any]], *, base_dir: Path) -> list[dict[str, str]]:
+    decisions: list[dict[str, str]] = []
+    for row in rows:
+        decision = _candidate_followup_decision_for_row(row, base_dir=base_dir)
+        if decision is not None:
+            decisions.append(decision)
+    return decisions
+
+
+def _candidate_followup_decision_for_row(
+    row: dict[str, Any],
+    *,
+    base_dir: Path,
+) -> dict[str, str] | None:
+    raw_path = str(row.get("decision_output", "")).strip()
+    if not raw_path:
+        return None
+    decision_path = Path(raw_path)
+    if not decision_path.exists() and not decision_path.is_absolute():
+        candidate = base_dir / decision_path
+        if candidate.exists():
+            decision_path = candidate
+    if not decision_path.exists():
+        return None
+    decision_rows = _read_csv_rows(decision_path)
+    if not decision_rows:
+        return None
+    return decision_rows[-1]
+
+
 def _risk_report_check(path: Path) -> ReadinessCheck:
     if not path.exists():
         return ReadinessCheck("risk_report", "BLOCK", f"missing: {path}")
@@ -310,7 +1001,69 @@ def _performance_report_check(path: Path) -> ReadinessCheck:
     return ReadinessCheck("performance_report", "PASS", f"{len(rows)} performance checks passed")
 
 
-def _coverage_report_check(path: Path) -> ReadinessCheck:
+def _performance_concentration_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("performance_concentration", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("performance_concentration", "BLOCK", f"empty: {path}")
+    row = rows[-1]
+    status = str(row.get("concentration_status", "")).strip().upper() or "BLOCK"
+    if status not in {"PASS", "WARN", "BLOCK"}:
+        status = "BLOCK"
+    reasons = str(row.get("concentration_reasons", "")).strip() or "no reasons"
+    detail = (
+        f"{row.get('source', path)}:{reasons}; "
+        f"top_1_month={row.get('top_1_month_contribution', '')}; "
+        f"top_5_symbol={row.get('top_5_symbol_contribution', '')}"
+    )
+    return ReadinessCheck("performance_concentration", status, detail)
+
+
+def _drawdown_attribution_check(
+    monthly_path: Path | None,
+    symbol_path: Path | None,
+    validation_failures_path: Path | None,
+) -> ReadinessCheck:
+    needs_attribution = _validation_has_drawdown_failure(validation_failures_path)
+    missing = [
+        str(path)
+        for path in (monthly_path, symbol_path)
+        if path is not None and not path.exists()
+    ]
+    if missing:
+        status = "WARN" if needs_attribution else "PASS"
+        prefix = "missing" if needs_attribution else "not required; missing"
+        return ReadinessCheck("drawdown_attribution", status, f"{prefix}: {', '.join(missing)}")
+    if monthly_path is None or symbol_path is None:
+        status = "WARN" if needs_attribution else "PASS"
+        return ReadinessCheck("drawdown_attribution", status, "paths not configured")
+    monthly_rows = _read_csv_rows(monthly_path)
+    symbol_rows = _read_csv_rows(symbol_path)
+    if not monthly_rows or not symbol_rows:
+        status = "WARN" if needs_attribution else "PASS"
+        return ReadinessCheck(
+            "drawdown_attribution",
+            status,
+            f"empty attribution report: monthly_rows={len(monthly_rows)}; symbol_rows={len(symbol_rows)}",
+        )
+
+    worst_loss_month = min(monthly_rows, key=lambda row: _parse_float(row.get("equity_change")))
+    worst_drawdown_month = min(monthly_rows, key=lambda row: _parse_float(row.get("worst_drawdown_pct")))
+    worst_symbol = min(symbol_rows, key=lambda row: _parse_float(row.get("realized_pnl")))
+    detail = (
+        f"monthly_rows={len(monthly_rows)}; symbol_rows={len(symbol_rows)}; "
+        f"worst_month={worst_loss_month.get('month', '')} "
+        f"equity_change={worst_loss_month.get('equity_change', '')}; "
+        f"worst_drawdown_month={worst_drawdown_month.get('month', '')} "
+        f"worst_drawdown_pct={worst_drawdown_month.get('worst_drawdown_pct', '')}; "
+        f"worst_symbol={worst_symbol.get('symbol', '')} "
+        f"realized_pnl={worst_symbol.get('realized_pnl', '')}"
+    )
+    return ReadinessCheck("drawdown_attribution", "PASS", detail)
+
+
+def _coverage_report_check(path: Path, *, warning_min_coverage_pct: float = 90.0) -> ReadinessCheck:
     if not path.exists():
         return ReadinessCheck("universe_price_coverage", "BLOCK", f"missing: {path}")
     rows = _read_csv_rows(path)
@@ -339,11 +1092,202 @@ def _coverage_report_check(path: Path) -> ReadinessCheck:
                 f"need_to_80pct={need_to_80}; batches_of_50={batches_of_50}"
             ),
         )
+    if coverage_values and min_coverage < warning_min_coverage_pct:
+        worst = min(
+            rows,
+            key=lambda row: float(row.get("coverage_pct", 0) or 0),
+        )
+        covered = _parse_int(worst.get("covered_symbols", 0))
+        universe = _parse_int(worst.get("universe_symbols", 0))
+        target = math.ceil(universe * (warning_min_coverage_pct / 100.0)) if universe > 0 else 0
+        need_to_warning = max(0, target - covered)
+        batches_of_50 = math.ceil(need_to_warning / 50) if need_to_warning > 0 else 0
+        target_label = int(warning_min_coverage_pct) if float(warning_min_coverage_pct).is_integer() else warning_min_coverage_pct
+        return ReadinessCheck(
+            "universe_price_coverage",
+            "WARN",
+            (
+                f"{len(rows)} snapshots below coverage warning target; min_coverage_pct={min_coverage:.1f}; "
+                f"warning_min_coverage_pct={warning_min_coverage_pct:.1f}; "
+                f"worst_date={worst.get('date', 'unknown')}; missing={worst.get('missing_symbols', '')}; "
+                f"need_to_{target_label}pct={need_to_warning}; batches_of_50={batches_of_50}"
+            ),
+        )
     return ReadinessCheck(
         "universe_price_coverage",
         "PASS",
         f"{len(rows)} snapshots covered; min_coverage_pct={min_coverage:.1f}",
     )
+
+
+def _missing_ohlcv_targets_check(path: Path, coverage_check: ReadinessCheck | None) -> ReadinessCheck | None:
+    coverage_needs_plan = coverage_check is not None and coverage_check.status in {"BLOCK", "WARN"}
+    if not coverage_needs_plan and not path.exists():
+        return None
+    if not path.exists():
+        return ReadinessCheck(
+            "krx_missing_ohlcv_targets",
+            "WARN",
+            (
+                f"missing target plan: {path}; "
+                "run plan-pykrx-missing-ohlcv --universe-file data/krx_metadata/krx_universe_monthly.csv"
+            ),
+        )
+    rows = _read_csv_rows(path)
+    if not rows:
+        status = "WARN" if coverage_needs_plan else "PASS"
+        return ReadinessCheck("krx_missing_ohlcv_targets", status, f"empty target plan: {path}")
+    sorted_rows = sorted(
+        rows,
+        key=lambda row: (-_parse_int(row.get("missing_snapshots", 0)), str(row.get("symbol", ""))),
+    )
+    top = "; ".join(
+        f"{str(row.get('symbol', '')).strip()}:{_parse_int(row.get('missing_snapshots', 0))}"
+        for row in sorted_rows[:5]
+        if str(row.get("symbol", "")).strip()
+    )
+    first_missing = min(
+        (str(row.get("first_missing_date", "")).strip() for row in rows if str(row.get("first_missing_date", "")).strip()),
+        default="",
+    )
+    last_missing = max(
+        (str(row.get("last_missing_date", "")).strip() for row in rows if str(row.get("last_missing_date", "")).strip()),
+        default="",
+    )
+    detail = (
+        f"targets={len(rows)}; top={top}; first_missing_date={first_missing}; "
+        f"last_missing_date={last_missing}; next=python -m backtester fetch-pykrx-missing-ohlcv-loop "
+        f"--universe-file data/krx_metadata/krx_universe_monthly.csv --start 2024-01-01 --end YYYY-MM-DD "
+        f"--targets-output {path}"
+    )
+    return ReadinessCheck("krx_missing_ohlcv_targets", "PASS", detail)
+
+
+def _missing_ohlcv_fetch_plan_check(path: Path, targets_path: Path | None) -> ReadinessCheck | None:
+    target_plan_exists = targets_path is not None and targets_path.exists()
+    if not target_plan_exists and not path.exists():
+        return None
+    if not path.exists():
+        return ReadinessCheck(
+            "krx_missing_ohlcv_fetch_plan",
+            "WARN",
+            f"missing fetch plan: {path}; rerun plan-pykrx-missing-ohlcv with --fetch-plan-output",
+        )
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("krx_missing_ohlcv_fetch_plan", "WARN", f"empty fetch plan: {path}")
+    row = rows[-1]
+    status_raw = str(row.get("status", "")).strip().upper()
+    status = "PASS" if status_raw in {"READY", "COMPLETE", "PASS"} else "WARN"
+    command = str(row.get("recommended_command", "")).strip()
+    detail = (
+        f"status={status_raw or 'UNKNOWN'}; target_count={row.get('target_count', '')}; "
+        f"planned_batches={row.get('planned_batches', '')}; planned_symbols={row.get('planned_symbols', '')}; "
+        f"remaining_after_plan={row.get('remaining_after_plan', '')}; "
+        f"batch_timeout_seconds={row.get('batch_timeout_seconds', '')}; "
+        f"batch_pause_seconds={row.get('batch_pause_seconds', '')}; "
+        f"top={row.get('top_symbols', '')}; command={command}"
+    )
+    return ReadinessCheck("krx_missing_ohlcv_fetch_plan", status, detail)
+
+
+def _missing_ohlcv_fetch_summary_check(path: Path) -> ReadinessCheck | None:
+    if not path.exists():
+        return None
+    rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("krx_missing_ohlcv_fetch_summary", "WARN", f"empty fetch summary: {path}")
+    row = rows[-1]
+    raw_status = str(row.get("status", "")).strip()
+    status_key = raw_status.lower()
+    timed_out = _parse_int(row.get("timed_out_batches", 0))
+    failed = _parse_int(row.get("failed_batches", 0))
+    status = "PASS" if status_key == "completed" and timed_out == 0 and failed == 0 else "WARN"
+    detail = (
+        f"status={raw_status or 'unknown'}; attempted_batches={row.get('attempted_batches', '')}; "
+        f"completed_batches={row.get('completed_batches', '')}; timed_out_batches={row.get('timed_out_batches', '')}; "
+        f"failed_batches={row.get('failed_batches', '')}; saved={row.get('saved', '')}; "
+        f"remaining_targets={row.get('remaining_targets', '')}; stderr_tail={row.get('last_stderr_tail', '')}"
+    )
+    return ReadinessCheck("krx_missing_ohlcv_fetch_summary", status, detail)
+
+
+def _data_quality_check(path: Path, *, max_stale_days: int, as_of_date: str | None) -> ReadinessCheck:
+    result = validate_dataset_freshness(path, as_of_date=as_of_date, max_stale_days=max_stale_days)
+    detail_parts = [
+        f"latest_date={result.latest_date or ''}",
+        f"stale_days={'' if result.stale_days is None else result.stale_days}",
+        f"rows_checked={result.rows_checked}",
+    ]
+    if result.issues:
+        detail_parts.append("issues=" + "; ".join(result.issues[:5]))
+    if result.warnings:
+        detail_parts.append("warnings=" + "; ".join(result.warnings[:5]))
+    return ReadinessCheck("data_quality", result.status, "; ".join(detail_parts))
+
+
+def _data_quality_exclusions_check(
+    exclusions_path: Path,
+    report_paths: dict[str, Path | str | None],
+) -> ReadinessCheck:
+    if not exclusions_path.exists():
+        return ReadinessCheck(
+            "data_quality_exclusions",
+            "WARN",
+            f"default exclusion report missing: {exclusions_path}",
+        )
+
+    existing_reports = {
+        name: Path(path)
+        for name, path in report_paths.items()
+        if path is not None and Path(path).exists()
+    }
+    if not existing_reports:
+        return ReadinessCheck(
+            "data_quality_exclusions",
+            "WARN",
+            f"exclusion report exists but no monthly reports were available to verify: {exclusions_path}",
+        )
+
+    unapplied: list[str] = []
+    applied: list[str] = []
+    for name, path in existing_reports.items():
+        if _report_has_applied_data_quality_exclusions(path):
+            applied.append(name)
+        else:
+            unapplied.append(name)
+
+    if unapplied:
+        return ReadinessCheck(
+            "data_quality_exclusions",
+            "BLOCK",
+            (
+                f"exclusion report exists but reports lack applied marker: {','.join(unapplied)}; "
+                f"applied={','.join(applied) if applied else 'none'}; exclusions={exclusions_path}"
+            ),
+        )
+    return ReadinessCheck(
+        "data_quality_exclusions",
+        "PASS",
+        f"applied in {','.join(applied)}; exclusions={exclusions_path}",
+    )
+
+
+def _report_has_applied_data_quality_exclusions(path: Path) -> bool:
+    try:
+        rows = _read_csv_rows(path)
+    except (OSError, csv.Error, UnicodeDecodeError):
+        return False
+    for row in rows:
+        source = str(row.get("source", ""))
+        if "data_quality_exclusions=auto:" in source or "data_quality_exclusions=explicit:" in source:
+            return True
+        if str(row.get("name", "")) == "data_quality_exclusions" and str(row.get("status", "")).upper() == "PASS":
+            return True
+        detail = str(row.get("detail", ""))
+        if detail.startswith("auto:") or detail.startswith("explicit:"):
+            return True
+    return False
 
 
 def _read_csv_rows(path: Path) -> list[dict[str, Any]]:
@@ -360,6 +1304,41 @@ def _parse_int(value: Any) -> int:
         return int(float(str(value).strip()))
     except (TypeError, ValueError):
         return 0
+
+
+def _parse_float(value: Any) -> float:
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _validation_has_drawdown_failure(path: Path | None) -> bool:
+    if path is None or not path.exists():
+        return False
+    for row in _read_csv_rows(path):
+        fields = " ".join(
+            str(row.get(name, ""))
+            for name in ("reason", "failed_metric", "suggested_action", "parameter_hints")
+        ).lower()
+        if "drawdown" in fields or "max_drawdown" in fields:
+            return True
+    return False
+
+
+def _best_sweep_result_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    def score(row: dict[str, Any]) -> tuple[int, int]:
+        try:
+            delta = int(float(str(row.get("failed_delta", "0")).strip()))
+        except ValueError:
+            delta = 0
+        status_rank = {"IMPROVED": 0, "UNCHANGED": 1, "SKIPPED": 2, "REGRESSED": 3}.get(
+            str(row.get("status", "")).strip().upper(),
+            4,
+        )
+        return (delta, status_rank)
+
+    return min(rows, key=score)
 
 
 def _split_bias_reasons(value: str) -> list[str]:

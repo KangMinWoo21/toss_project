@@ -1,12 +1,22 @@
 import argparse
+from collections import Counter
+import csv
 import os
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
 from .analysis import generate_rolling_windows, summarize_walk_forward, walk_forward
 from .auto_scalper import parse_symbol_list, run_auto_scalper_loop
-from .config import load_env_into_process
+from .config import is_production_trading_enabled, load_env_into_process
 from .data import load_candles
+from .data_quality import (
+    diagnose_candle_dataset,
+    save_data_quality_diagnostics,
+    save_data_quality_exclusions,
+    validate_candle_csv,
+    validate_dataset_freshness,
+)
 from .dart import (
     disclosure_rows_to_event_rows,
     fetch_dart_disclosures_for_symbols,
@@ -15,9 +25,10 @@ from .dart import (
     save_dart_financial_rows,
 )
 from .engine import BacktestConfig, Backtester
-from .events import load_event_scores
+from .events import load_event_scores, merge_event_files
 from .leader_regime_switch import LeaderRegimeSwitchConfig, run_regime_switching_leader_backtest
 from .flow import load_flow_scores
+from .health import evaluate_health, save_health_json, save_health_markdown
 from .leader_swing import LeaderSwingConfig, load_symbol_candles, run_leader_swing_backtest
 from .momentum_rotation import (
     MomentumRotationConfig,
@@ -34,16 +45,31 @@ from .momentum_validation import (
 )
 from .monthly_rebalance import (
     MonthlyRebalanceConfig,
+    RiskCheck,
     RiskLimits,
+    SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS,
+    analyze_monthly_drawdown_attribution,
+    analyze_monthly_performance_concentration,
+    analyze_monthly_validation_failures,
+    analyze_monthly_validation_failure_patterns,
+    analyze_monthly_validation_remediation,
+    analyze_symbol_realized_pnl_attribution,
+    build_monthly_validation_sweep_plan,
+    build_monthly_validation_candidate_decision,
+    build_monthly_validation_candidate_followup_rows,
     audit_monthly_validation_data,
     audit_point_in_time_price_coverage,
     build_deployment_gate,
     build_monthly_performance_audit,
     build_order_plan,
     build_monthly_validation_gate,
+    build_universe_filter_report,
+    compare_monthly_validation_reports,
+    compare_monthly_validation_scenario_deltas,
     decide_monthly_allocation,
     diagnose_universe_bias,
     exclude_invalid_price_symbols,
+    filter_monthly_validation_sweep_plan,
     generate_monthly_validation_cases,
     is_monthly_rebalance_due,
     latest_reference_prices,
@@ -56,20 +82,36 @@ from .monthly_rebalance import (
     apply_performance_guard,
     compress_decision_to_buyable_targets,
     mark_order_plan_execution,
+    monthly_rebalance_signal_dates,
     risk_exit_code,
     risk_status,
     run_monthly_rebalance_backtest,
     run_monthly_walk_forward_validation,
     run_monthly_validation_suite,
+    run_monthly_validation_sweep_results,
     save_deployment_gate,
     save_monthly_decision,
+    save_monthly_attribution_rows,
     save_monthly_performance_audit_rows,
+    save_monthly_performance_concentration,
+    save_monthly_validation_failures,
+    save_monthly_validation_remediation,
+    save_monthly_validation_sweep_plan,
+    save_monthly_validation_sweep_results,
+    save_monthly_validation_comparison,
+    save_monthly_validation_candidate_decision,
+    save_monthly_validation_candidate_followup_rows,
+    save_monthly_validation_failure_patterns,
+    save_monthly_validation_scenario_deltas,
     save_monthly_validation_rows,
     save_order_plan,
+    save_order_plan_summary,
     save_risk_report,
+    save_universe_filter_report,
     save_universe_price_coverage_rows,
     save_validation_data_quality_rows,
     save_rebalance_state,
+    validate_report_freshness,
     validate_pre_trade_risk,
 )
 from .reporting import (
@@ -91,11 +133,14 @@ from .news import (
     articles_to_event_rows,
     fetch_gdelt_articles,
     fetch_google_news_rss,
+    load_social_posts_csv,
     rss_to_event_rows,
     save_event_rows,
 )
 from .pykrx_fetcher import (
+    available_ohlcv_symbol_dates,
     available_ohlcv_symbols,
+    build_missing_ohlcv_fetch_plan,
     build_missing_ohlcv_targets,
     fetch_missing_ohlcv_batches,
     fetch_pykrx_flow_csv,
@@ -107,6 +152,8 @@ from .pykrx_fetcher import (
     load_universe_snapshot_rows,
     load_symbol_universe,
     run_missing_ohlcv_batch_subprocess_loop,
+    save_missing_ohlcv_fetch_plan,
+    save_missing_ohlcv_loop_summary,
     save_missing_ohlcv_targets,
     save_universe_fetch_report,
 )
@@ -116,6 +163,17 @@ from .study import data_files_from_dir, run_market_regime_study
 from .strategies import FlowFilteredStrategy, NewsFilteredStrategy, Strategy, available_strategies, get_strategy
 from .swing_sweep import run_candidate_validation, run_swing_parameter_sweep, summarize_candidate_validation
 from .toss import download_daily_candles_csv, fetch_market_calendar, fetch_tick_snapshot, issue_token
+
+
+DEFAULT_DATA_QUALITY_EXCLUSIONS = Path("data/reports/data_quality_excluded_symbols.csv")
+
+
+@dataclass(frozen=True)
+class DataQualityExclusionResolution:
+    path: Path | None
+    symbols: set[str]
+    mode: str
+    message: str
 
 
 def main() -> int:
@@ -160,6 +218,13 @@ def main() -> int:
     fetch_toss_parser.add_argument("--pages", type=int, default=5, help="200-candle pages to request")
     fetch_toss_parser.add_argument("--interval", choices=["1d", "1m"], default="1d")
 
+    data_check_parser = subparsers.add_parser("data-check", help="Validate candle CSV files and dataset freshness")
+    data_check_parser.add_argument("--path", required=True, help="Candle CSV file or directory of symbol CSV files")
+    data_check_parser.add_argument("--as-of", default=date.today().isoformat())
+    data_check_parser.add_argument("--max-stale-days", type=int, default=7)
+    data_check_parser.add_argument("--exclude-output", default=None, help="Optional CSV of blocked symbols to exclude")
+    data_check_parser.add_argument("--diagnose-output", default=None, help="Optional CSV with per-symbol diagnosis rows")
+
     gdelt_parser = subparsers.add_parser("fetch-gdelt-events", help="Download GDELT news into event-score CSV")
     gdelt_parser.add_argument("--symbol", required=True, help="Symbol to write into event CSV, e.g. 005930")
     gdelt_parser.add_argument("--query", required=True, help="GDELT query, e.g. Samsung Electronics")
@@ -174,6 +239,16 @@ def main() -> int:
     google_news_parser.add_argument("--output", required=True, help="Output event CSV path")
     google_news_parser.add_argument("--language", default="ko")
     google_news_parser.add_argument("--country", default="KR")
+
+    social_parser = subparsers.add_parser("import-social-events", help="Convert SNS/social CSV export into event-score CSV")
+    social_parser.add_argument("--input", required=True, help="Input CSV with date/timestamp, text/title, and optional engagement")
+    social_parser.add_argument("--output", required=True, help="Output event CSV path")
+    social_parser.add_argument("--symbol", default=None, help="Default symbol if the input CSV has no symbol column")
+    social_parser.add_argument("--source", default="sns", help="Default source/platform, e.g. sns, x, blog")
+
+    merge_events_parser = subparsers.add_parser("merge-events", help="Merge news/SNS/disclosure event CSV files")
+    merge_events_parser.add_argument("--input", action="append", required=True, help="Input event CSV path. Can be repeated.")
+    merge_events_parser.add_argument("--output", required=True, help="Output merged event CSV path")
 
     dart_parser = subparsers.add_parser("fetch-dart-events", help="Download OpenDART disclosures into event-score CSV")
     dart_parser.add_argument("--symbol", default=None, help="KRX symbol, e.g. 005930")
@@ -248,6 +323,18 @@ def main() -> int:
     pykrx_missing_ohlcv_parser.add_argument("--data-dir", default="data/krx_expanded")
     pykrx_missing_ohlcv_parser.add_argument("--output", default="data/reports/krx_missing_ohlcv_targets.csv")
     pykrx_missing_ohlcv_parser.add_argument("--limit", type=int, default=None)
+    pykrx_missing_ohlcv_parser.add_argument(
+        "--fetch-plan-output",
+        default="data/reports/krx_missing_ohlcv_fetch_plan.csv",
+        help="Write a conservative fetch-loop execution plan CSV.",
+    )
+    pykrx_missing_ohlcv_parser.add_argument("--start", default="2024-01-01")
+    pykrx_missing_ohlcv_parser.add_argument("--end", default="2026-06-18")
+    pykrx_missing_ohlcv_parser.add_argument("--report-dir", default="data/reports")
+    pykrx_missing_ohlcv_parser.add_argument("--batch-size", type=int, default=50)
+    pykrx_missing_ohlcv_parser.add_argument("--max-batches", type=int, default=1)
+    pykrx_missing_ohlcv_parser.add_argument("--batch-timeout-seconds", type=float, default=300.0)
+    pykrx_missing_ohlcv_parser.add_argument("--batch-pause-seconds", type=float, default=10.0)
 
     pykrx_missing_batches_parser = subparsers.add_parser(
         "fetch-pykrx-missing-ohlcv-batches",
@@ -288,6 +375,11 @@ def main() -> int:
     pykrx_missing_loop_parser.add_argument("--batch-timeout-seconds", type=float, default=300.0)
     pykrx_missing_loop_parser.add_argument("--batch-pause-seconds", type=float, default=10.0)
     pykrx_missing_loop_parser.add_argument("--python-executable", default=None)
+    pykrx_missing_loop_parser.add_argument(
+        "--summary-output",
+        default="data/reports/krx_missing_ohlcv_fetch_summary.csv",
+        help="Write subprocess loop operational summary CSV.",
+    )
 
     paper_scalp_parser = subparsers.add_parser("paper-scalp", help="Run paper scalping with Toss REST market data")
     paper_scalp_parser.add_argument("--symbol", required=True, help="KRX symbol, e.g. 005930")
@@ -373,6 +465,10 @@ def main() -> int:
     leader_swing_parser.add_argument("--exit-ma-window", type=int, default=10)
     leader_swing_parser.add_argument("--liquidity-top-n", type=int, default=100)
     leader_swing_parser.add_argument("--max-positions", type=int, default=5)
+    leader_swing_parser.add_argument("--max-position-weight", type=float, default=0.15)
+    leader_swing_parser.add_argument("--cash-buffer-weight", type=float, default=0.02)
+    leader_swing_parser.add_argument("--max-position-adv-pct", type=float, default=0.10)
+    leader_swing_parser.add_argument("--max-loss-per-position-pct", type=float, default=1.0)
     leader_swing_parser.add_argument("--max-holding-days", type=int, default=20)
     leader_swing_parser.add_argument("--min-short-return-pct", type=float, default=5.0)
     leader_swing_parser.add_argument("--min-long-return-pct", type=float, default=0.0)
@@ -383,6 +479,7 @@ def main() -> int:
     leader_swing_parser.add_argument("--event-lookback-days", type=int, default=0)
     leader_swing_parser.add_argument("--min-entry-event-score", type=float, default=-0.2)
     leader_swing_parser.add_argument("--force-exit-event-score", type=float, default=-0.8)
+    leader_swing_parser.add_argument("--event-source-weights", default=None, help="Comma list such as news=1,sns=0.25,dart=0.5")
 
     leader_regime_parser = subparsers.add_parser(
         "leader-regime",
@@ -390,6 +487,7 @@ def main() -> int:
     )
     leader_regime_parser.add_argument("--data-dir", default="data/krx_long")
     leader_regime_parser.add_argument("--events", default=None)
+    leader_regime_parser.add_argument("--event-source-weights", default=None, help="Comma list such as news=1,sns=0.25,dart=0.5")
     leader_regime_parser.add_argument("--initial-cash", type=float, default=10_000_000)
     leader_regime_parser.add_argument("--fee-rate", type=float, default=0.00015)
     leader_regime_parser.add_argument("--tax-rate", type=float, default=0.0018)
@@ -506,10 +604,12 @@ def main() -> int:
     monthly_plan_parser.add_argument("--output", default="data/reports/monthly_order_plan.csv")
     monthly_plan_parser.add_argument("--decision-output", default="data/reports/monthly_decision.csv")
     monthly_plan_parser.add_argument("--risk-output", default="data/reports/monthly_risk_report.csv")
+    monthly_plan_parser.add_argument("--summary-output", default="data/reports/monthly_order_plan_summary.md")
     monthly_plan_parser.add_argument("--performance-report", default="data/reports/monthly_performance_audit.csv")
     monthly_plan_parser.add_argument("--performance-warn-scale", type=float, default=0.1)
     monthly_plan_parser.add_argument("--performance-block-scale", type=float, default=0.0)
     monthly_plan_parser.add_argument("--require-performance-report", action="store_true")
+    monthly_plan_parser.add_argument("--max-report-age-days", type=int, default=45)
     monthly_plan_parser.add_argument("--train-years", type=int, default=5)
     monthly_plan_parser.add_argument("--train-start", default=None)
     monthly_plan_parser.add_argument("--presets", default="balanced")
@@ -529,8 +629,11 @@ def main() -> int:
     monthly_plan_parser.add_argument("--market-volatility-min-scale", type=float, default=0.25)
     monthly_plan_parser.add_argument("--drawdown-guard-trigger-pct", type=float, default=-15.0)
     monthly_plan_parser.add_argument("--drawdown-guard-scale", type=float, default=0.75)
+    monthly_plan_parser.add_argument("--drawdown-guard-deep-trigger-pct", type=float, default=0.0)
+    monthly_plan_parser.add_argument("--drawdown-guard-deep-scale", type=float, default=0.5)
     monthly_plan_parser.add_argument("--daily-drawdown-stop-pct", type=float, default=0.0)
     monthly_plan_parser.add_argument("--daily-drawdown-cooldown-days", type=int, default=20)
+    monthly_plan_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
     monthly_plan_parser.add_argument("--weak-breadth-min-train-avg-excess-pct", type=float, default=10.0)
     monthly_plan_parser.add_argument("--cash-buffer-weight", type=float, default=0.01)
     monthly_plan_parser.add_argument("--max-position-weight", type=float, default=0.15)
@@ -542,13 +645,31 @@ def main() -> int:
     monthly_plan_parser.add_argument("--liquidity-risk-reference-top-n", type=int, default=100)
     monthly_plan_parser.add_argument("--liquidity-risk-min-scale", type=float, default=0.8)
     monthly_plan_parser.add_argument("--liquidity-risk-min-top-n", type=int, default=20)
+    monthly_plan_parser.add_argument("--liquidity-adv-window-days", type=int, default=20)
+    monthly_plan_parser.add_argument("--warn-adv-participation-rate", type=float, default=0.05)
+    monthly_plan_parser.add_argument("--max-adv-participation-rate", type=float, default=0.10)
+    monthly_plan_parser.add_argument("--liquidity-missing-adv-status", choices=["WARN", "BLOCK"], default="BLOCK")
+    monthly_plan_parser.add_argument("--liquidity-base-slippage-rate", type=float, default=0.0005)
+    monthly_plan_parser.add_argument("--liquidity-impact-multiplier", type=float, default=0.05)
     monthly_plan_parser.add_argument("--point-in-time-min-history-days", type=int, default=252)
     monthly_plan_parser.add_argument("--point-in-time-min-reference-price", type=float, default=1_000)
     monthly_plan_parser.add_argument("--point-in-time-max-trailing-return-pct", type=float, default=300.0)
     monthly_plan_parser.add_argument("--point-in-time-trailing-return-days", type=int, default=252)
     monthly_plan_parser.add_argument("--point-in-time-universe", default=None, help="CSV with date,symbol snapshots")
+    monthly_plan_parser.add_argument("--universe-filter-report", default="data/reports/universe_filter_report.csv")
+    monthly_plan_parser.add_argument("--exclude-symbols", default=None, help="CSV or text file of symbols to exclude")
+    monthly_plan_parser.add_argument(
+        "--ignore-data-quality-exclusions",
+        action="store_true",
+        help="Do not auto-apply data/reports/data_quality_excluded_symbols.csv",
+    )
     monthly_plan_parser.add_argument("--market-beta-symbol", default="069500")
     monthly_plan_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
+    monthly_plan_parser.add_argument("--events", default=None, help="CSV with weighted news/SNS/disclosure event scores")
+    monthly_plan_parser.add_argument("--event-lookback-days", type=int, default=5)
+    monthly_plan_parser.add_argument("--min-entry-event-score", type=float, default=-0.2)
+    monthly_plan_parser.add_argument("--event-weight", type=float, default=0.25)
+    monthly_plan_parser.add_argument("--event-source-weights", default=None, help="Comma list such as news=1,sns=0.25,dart=0.5")
     monthly_plan_parser.add_argument("--min-trade-value", type=float, default=10_000)
     monthly_plan_parser.add_argument("--kill-switch-file", default="data/KILL_SWITCH")
     monthly_plan_parser.add_argument("--max-total-target-weight", type=float, default=1.0)
@@ -594,8 +715,11 @@ def main() -> int:
     monthly_backtest_parser.add_argument("--market-volatility-min-scale", type=float, default=0.25)
     monthly_backtest_parser.add_argument("--drawdown-guard-trigger-pct", type=float, default=-15.0)
     monthly_backtest_parser.add_argument("--drawdown-guard-scale", type=float, default=0.75)
+    monthly_backtest_parser.add_argument("--drawdown-guard-deep-trigger-pct", type=float, default=0.0)
+    monthly_backtest_parser.add_argument("--drawdown-guard-deep-scale", type=float, default=0.5)
     monthly_backtest_parser.add_argument("--daily-drawdown-stop-pct", type=float, default=0.0)
     monthly_backtest_parser.add_argument("--daily-drawdown-cooldown-days", type=int, default=20)
+    monthly_backtest_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
     monthly_backtest_parser.add_argument("--weak-breadth-min-train-avg-excess-pct", type=float, default=10.0)
     monthly_backtest_parser.add_argument("--cash-buffer-weight", type=float, default=0.01)
     monthly_backtest_parser.add_argument("--max-position-weight", type=float, default=0.15)
@@ -612,8 +736,20 @@ def main() -> int:
     monthly_backtest_parser.add_argument("--point-in-time-max-trailing-return-pct", type=float, default=300.0)
     monthly_backtest_parser.add_argument("--point-in-time-trailing-return-days", type=int, default=252)
     monthly_backtest_parser.add_argument("--point-in-time-universe", default=None, help="CSV with date,symbol snapshots")
+    monthly_backtest_parser.add_argument("--universe-filter-report", default="data/reports/universe_filter_report.csv")
+    monthly_backtest_parser.add_argument("--exclude-symbols", default=None, help="CSV or text file of symbols to exclude")
+    monthly_backtest_parser.add_argument(
+        "--ignore-data-quality-exclusions",
+        action="store_true",
+        help="Do not auto-apply data/reports/data_quality_excluded_symbols.csv",
+    )
     monthly_backtest_parser.add_argument("--market-beta-symbol", default="069500")
     monthly_backtest_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
+    monthly_backtest_parser.add_argument("--events", default=None, help="CSV with weighted news/SNS/disclosure event scores")
+    monthly_backtest_parser.add_argument("--event-lookback-days", type=int, default=5)
+    monthly_backtest_parser.add_argument("--min-entry-event-score", type=float, default=-0.2)
+    monthly_backtest_parser.add_argument("--event-weight", type=float, default=0.25)
+    monthly_backtest_parser.add_argument("--event-source-weights", default=None, help="Comma list such as news=1,sns=0.25,dart=0.5")
     monthly_backtest_parser.add_argument(
         "--stress-exclude-return-above",
         type=float,
@@ -621,9 +757,55 @@ def main() -> int:
         help="Validation-only: exclude symbols whose full-period return is above this pct",
     )
     monthly_backtest_parser.add_argument("--deployment-gate-output", default="data/reports/monthly_deployment_gate.csv")
+    monthly_backtest_parser.add_argument(
+        "--concentration-output",
+        default="data/reports/monthly_performance_concentration.csv",
+    )
     monthly_backtest_parser.add_argument("--min-deployment-excess-pct", type=float, default=0.0)
     monthly_backtest_parser.add_argument("--max-deployment-drawdown-pct", type=float, default=-25.0)
     monthly_backtest_parser.add_argument("--allow-universe-bias-warning", action="store_true")
+
+    monthly_attribution_parser = subparsers.add_parser(
+        "monthly-attribution",
+        help="Run monthly rebalance backtest and save drawdown/PnL attribution reports",
+    )
+    monthly_attribution_parser.add_argument("--data-dir", default="data/krx_expanded")
+    monthly_attribution_parser.add_argument("--start", required=True)
+    monthly_attribution_parser.add_argument("--end", required=True)
+    monthly_attribution_parser.add_argument("--initial-cash", type=float, default=10_000_000)
+    monthly_attribution_parser.add_argument("--fee-rate", type=float, default=0.00015)
+    monthly_attribution_parser.add_argument("--tax-rate", type=float, default=0.0018)
+    monthly_attribution_parser.add_argument("--slippage-rate", type=float, default=0.0005)
+    monthly_attribution_parser.add_argument("--min-trade-value", type=float, default=10_000)
+    monthly_attribution_parser.add_argument("--presets", default="balanced")
+    monthly_attribution_parser.add_argument("--cash-buffer-weight", type=float, default=0.01)
+    monthly_attribution_parser.add_argument("--max-position-weight", type=float, default=0.15)
+    monthly_attribution_parser.add_argument("--candidate-pool-size", type=int, default=7)
+    monthly_attribution_parser.add_argument("--drawdown-guard-trigger-pct", type=float, default=-15.0)
+    monthly_attribution_parser.add_argument("--drawdown-guard-scale", type=float, default=0.75)
+    monthly_attribution_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
+    monthly_attribution_parser.add_argument("--point-in-time-min-history-days", type=int, default=252)
+    monthly_attribution_parser.add_argument("--point-in-time-universe", default=None, help="CSV with date,symbol snapshots")
+    monthly_attribution_parser.add_argument("--exclude-symbols", default=None, help="CSV or text file of symbols to exclude")
+    monthly_attribution_parser.add_argument(
+        "--ignore-data-quality-exclusions",
+        action="store_true",
+        help="Do not auto-apply data/reports/data_quality_excluded_symbols.csv",
+    )
+    monthly_attribution_parser.add_argument(
+        "--stress-exclude-return-above",
+        type=float,
+        default=None,
+        help="Exclude symbols whose full-period return is above this pct before attribution",
+    )
+    monthly_attribution_parser.add_argument(
+        "--monthly-output",
+        default="data/reports/monthly_drawdown_attribution.csv",
+    )
+    monthly_attribution_parser.add_argument(
+        "--symbol-output",
+        default="data/reports/monthly_symbol_attribution.csv",
+    )
 
     monthly_validate_parser = subparsers.add_parser(
         "monthly-validate",
@@ -656,8 +838,11 @@ def main() -> int:
     monthly_validate_parser.add_argument("--market-volatility-min-scale", type=float, default=0.25)
     monthly_validate_parser.add_argument("--drawdown-guard-trigger-pct", type=float, default=-15.0)
     monthly_validate_parser.add_argument("--drawdown-guard-scale", type=float, default=0.75)
+    monthly_validate_parser.add_argument("--drawdown-guard-deep-trigger-pct", type=float, default=0.0)
+    monthly_validate_parser.add_argument("--drawdown-guard-deep-scale", type=float, default=0.5)
     monthly_validate_parser.add_argument("--daily-drawdown-stop-pct", type=float, default=0.0)
     monthly_validate_parser.add_argument("--daily-drawdown-cooldown-days", type=int, default=20)
+    monthly_validate_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
     monthly_validate_parser.add_argument("--weak-breadth-min-train-avg-excess-pct", type=float, default=10.0)
     monthly_validate_parser.add_argument("--cash-buffer-weight", type=float, default=0.01)
     monthly_validate_parser.add_argument("--max-position-weight", type=float, default=0.15)
@@ -674,8 +859,20 @@ def main() -> int:
     monthly_validate_parser.add_argument("--point-in-time-max-trailing-return-pct", type=float, default=300.0)
     monthly_validate_parser.add_argument("--point-in-time-trailing-return-days", type=int, default=252)
     monthly_validate_parser.add_argument("--point-in-time-universe", default=None, help="CSV with date,symbol snapshots")
+    monthly_validate_parser.add_argument("--universe-filter-report", default="data/reports/universe_filter_report.csv")
+    monthly_validate_parser.add_argument("--exclude-symbols", default=None, help="CSV or text file of symbols to exclude")
+    monthly_validate_parser.add_argument(
+        "--ignore-data-quality-exclusions",
+        action="store_true",
+        help="Do not auto-apply data/reports/data_quality_excluded_symbols.csv",
+    )
     monthly_validate_parser.add_argument("--market-beta-symbol", default="069500")
     monthly_validate_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
+    monthly_validate_parser.add_argument("--events", default=None, help="CSV with weighted news/SNS/disclosure event scores")
+    monthly_validate_parser.add_argument("--event-lookback-days", type=int, default=5)
+    monthly_validate_parser.add_argument("--min-entry-event-score", type=float, default=-0.2)
+    monthly_validate_parser.add_argument("--event-weight", type=float, default=0.25)
+    monthly_validate_parser.add_argument("--event-source-weights", default=None, help="Comma list such as news=1,sns=0.25,dart=0.5")
     monthly_validate_parser.add_argument("--scenario-output", default="data/reports/monthly_validation_scenarios.csv")
     monthly_validate_parser.add_argument(
         "--data-quality-output",
@@ -684,11 +881,118 @@ def main() -> int:
     monthly_validate_parser.add_argument("--data-quality-min-rows", type=int, default=252)
     monthly_validate_parser.add_argument("--coverage-output", default="data/reports/monthly_universe_price_coverage.csv")
     monthly_validate_parser.add_argument("--performance-output", default="data/reports/monthly_performance_audit.csv")
+    monthly_validate_parser.add_argument(
+        "--concentration-output",
+        default="data/reports/monthly_performance_concentration.csv",
+    )
+    monthly_validate_parser.add_argument(
+        "--failure-output",
+        default="data/reports/monthly_validation_failures.csv",
+    )
+    monthly_validate_parser.add_argument(
+        "--remediation-output",
+        default="data/reports/monthly_validation_remediation.csv",
+    )
+    monthly_validate_parser.add_argument(
+        "--sweep-plan-output",
+        default="data/reports/monthly_validation_sweep_plan.csv",
+    )
+    monthly_validate_parser.add_argument(
+        "--run-sweep-results",
+        action="store_true",
+        help="Run planned validation sweep experiments on their target scenarios",
+    )
+    monthly_validate_parser.add_argument(
+        "--sweep-experiment-id",
+        action="append",
+        default=None,
+        help="Run only the named sweep experiment. Can be repeated.",
+    )
+    monthly_validate_parser.add_argument(
+        "--sweep-limit",
+        type=int,
+        default=None,
+        help="Run at most this many selected sweep experiments.",
+    )
+    monthly_validate_parser.add_argument(
+        "--sweep-result-output",
+        default="data/reports/monthly_validation_sweep_results.csv",
+    )
     monthly_validate_parser.add_argument("--coverage-min-pct", type=float, default=80.0)
     monthly_validate_parser.add_argument("--deployment-gate-output", default="data/reports/monthly_deployment_gate.csv")
     monthly_validate_parser.add_argument("--min-deployment-excess-pct", type=float, default=0.0)
     monthly_validate_parser.add_argument("--max-deployment-drawdown-pct", type=float, default=-25.0)
     monthly_validate_parser.add_argument("--allow-universe-bias-warning", action="store_true")
+
+    monthly_compare_parser = subparsers.add_parser(
+        "monthly-compare-validation",
+        help="Compare baseline and candidate monthly validation scenario CSV reports",
+    )
+    monthly_compare_parser.add_argument("--baseline", required=True)
+    monthly_compare_parser.add_argument("--candidate", required=True)
+    monthly_compare_parser.add_argument("--baseline-label", default="baseline")
+    monthly_compare_parser.add_argument("--candidate-label", default="candidate")
+    monthly_compare_parser.add_argument("--output", default="data/reports/monthly_validation_comparison.csv")
+    monthly_compare_parser.add_argument(
+        "--delta-output",
+        default=None,
+        help="Optional per-scenario comparison delta CSV output",
+    )
+    monthly_compare_parser.add_argument(
+        "--decision-output",
+        default="data/reports/monthly_validation_candidate_decision.csv",
+        help="Candidate adoption decision report derived from comparison deltas",
+    )
+
+    monthly_candidate_followup_parser = subparsers.add_parser(
+        "monthly-candidate-followup",
+        help="Create full-validation and comparison commands for improved sweep candidates",
+    )
+    monthly_candidate_followup_parser.add_argument(
+        "--sweep-results",
+        default="data/reports/monthly_validation_sweep_results.csv",
+    )
+    monthly_candidate_followup_parser.add_argument("--data-dir", default="data/krx_expanded")
+    monthly_candidate_followup_parser.add_argument("--start", default="2024-01-01")
+    monthly_candidate_followup_parser.add_argument("--end", default="2026-06-18")
+    monthly_candidate_followup_parser.add_argument(
+        "--baseline-scenarios",
+        default="data/reports/monthly_validation_scenarios_pit_universe.csv",
+    )
+    monthly_candidate_followup_parser.add_argument(
+        "--point-in-time-universe",
+        default="data/krx_metadata/krx_universe_monthly.csv",
+    )
+    monthly_candidate_followup_parser.add_argument("--reports-dir", default="data/reports")
+    monthly_candidate_followup_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_validation_candidate_followup.csv",
+    )
+    monthly_candidate_followup_parser.add_argument("--max-candidates", type=int, default=None)
+
+    monthly_failure_patterns_parser = subparsers.add_parser(
+        "monthly-failure-patterns",
+        help="Aggregate baseline and candidate validation deltas into persistent-failure diagnostics",
+    )
+    monthly_failure_patterns_parser.add_argument(
+        "--baseline",
+        default="data/reports/monthly_validation_scenarios_pit_universe.csv",
+    )
+    monthly_failure_patterns_parser.add_argument(
+        "--delta-report",
+        action="append",
+        default=None,
+        help="Candidate scenario delta CSV. Can be repeated.",
+    )
+    monthly_failure_patterns_parser.add_argument(
+        "--delta-glob",
+        default="data/reports/monthly_validation_comparison_deltas_*.csv",
+        help="Glob for candidate scenario delta CSVs when --delta-report is omitted or supplemented.",
+    )
+    monthly_failure_patterns_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_validation_failure_patterns.csv",
+    )
 
     production_check_parser = subparsers.add_parser(
         "production-check",
@@ -708,15 +1012,93 @@ def main() -> int:
         "--validation-scenarios",
         default="data/reports/monthly_validation_scenarios_pit_universe.csv",
     )
+    production_check_parser.add_argument(
+        "--validation-failures",
+        default="data/reports/monthly_validation_failures.csv",
+    )
+    production_check_parser.add_argument(
+        "--validation-remediation",
+        default="data/reports/monthly_validation_remediation.csv",
+    )
+    production_check_parser.add_argument(
+        "--validation-sweep-plan",
+        default="data/reports/monthly_validation_sweep_plan.csv",
+    )
+    production_check_parser.add_argument(
+        "--validation-sweep-results",
+        default="data/reports/monthly_validation_sweep_results.csv",
+    )
+    production_check_parser.add_argument(
+        "--validation-comparison",
+        default="data/reports/monthly_validation_comparison.csv",
+    )
+    production_check_parser.add_argument(
+        "--validation-comparison-deltas",
+        default="data/reports/monthly_validation_comparison_deltas.csv",
+    )
+    production_check_parser.add_argument(
+        "--validation-candidate-decision",
+        default="data/reports/monthly_validation_candidate_decision.csv",
+    )
+    production_check_parser.add_argument(
+        "--validation-candidate-followup",
+        default="data/reports/monthly_validation_candidate_followup.csv",
+    )
+    production_check_parser.add_argument(
+        "--validation-failure-patterns",
+        default="data/reports/monthly_validation_failure_patterns.csv",
+    )
     production_check_parser.add_argument("--risk-report", default="data/reports/monthly_risk_report.csv")
     production_check_parser.add_argument(
         "--coverage-report",
         default="data/reports/monthly_universe_price_coverage.csv",
     )
     production_check_parser.add_argument(
+        "--missing-ohlcv-targets",
+        default="data/reports/krx_missing_ohlcv_targets.csv",
+        help="Prioritized missing KRX OHLCV target plan produced by plan-pykrx-missing-ohlcv.",
+    )
+    production_check_parser.add_argument(
+        "--missing-ohlcv-fetch-plan",
+        default="data/reports/krx_missing_ohlcv_fetch_plan.csv",
+        help="Safe fetch-loop plan produced by plan-pykrx-missing-ohlcv.",
+    )
+    production_check_parser.add_argument(
+        "--missing-ohlcv-fetch-summary",
+        default="data/reports/krx_missing_ohlcv_fetch_summary.csv",
+        help="Latest fetch-loop execution summary CSV.",
+    )
+    production_check_parser.add_argument(
+        "--coverage-warning-min-pct",
+        type=float,
+        default=90.0,
+        help="Warn when point-in-time universe price coverage falls below this percentage.",
+    )
+    production_check_parser.add_argument(
         "--performance-report",
         default="data/reports/monthly_performance_audit.csv",
     )
+    production_check_parser.add_argument(
+        "--performance-concentration-report",
+        default="data/reports/monthly_performance_concentration.csv",
+    )
+    production_check_parser.add_argument(
+        "--drawdown-attribution-report",
+        default="data/reports/stress_exclude_500pct_monthly_attribution.csv",
+    )
+    production_check_parser.add_argument(
+        "--symbol-attribution-report",
+        default="data/reports/stress_exclude_500pct_symbol_attribution.csv",
+    )
+    production_check_parser.add_argument("--max-report-age-days", type=int, default=45)
+    production_check_parser.add_argument("--data-quality-path", default=None)
+    production_check_parser.add_argument(
+        "--data-quality-exclusions",
+        default=str(DEFAULT_DATA_QUALITY_EXCLUSIONS),
+        help="Default blocked-symbol report expected to be applied to monthly reports",
+    )
+    production_check_parser.add_argument("--max-data-stale-days", type=int, default=7)
+    production_check_parser.add_argument("--as-of", default=date.today().isoformat())
     production_check_parser.add_argument("--output", default="data/reports/production_readiness.csv")
     production_check_parser.add_argument(
         "--markdown-output",
@@ -729,7 +1111,150 @@ def main() -> int:
         help="Return a non-zero exit code for WARN as well as BLOCK; use before live execution",
     )
 
+    health_parser = subparsers.add_parser(
+        "health-check",
+        help="Check operational health for reports, scalper data, schemas, and logs",
+    )
+    health_parser.add_argument("--root", default=".")
+    health_parser.add_argument("--max-report-age-hours", type=float, default=1080.0)
+    health_parser.add_argument("--block-report-age-hours", type=float, default=1440.0)
+    health_parser.add_argument("--scalper-dir", default="data/scalper")
+    health_parser.add_argument(
+        "--scalper-mode",
+        choices=["required", "warn", "off"],
+        default="required",
+        help="Scalper monitoring policy: required blocks stale data, warn degrades to WARN, off disables it.",
+    )
+    health_parser.add_argument("--max-scalper-age-hours", type=float, default=24.0)
+    health_parser.add_argument("--block-scalper-age-hours", type=float, default=72.0)
+    health_parser.add_argument("--logs-dir", default="logs")
+    health_parser.add_argument("--json-output", default="data/reports/health_status.json")
+    health_parser.add_argument("--markdown-output", default="data/reports/health_status.md")
+    health_parser.add_argument("--allow-blocked-exit-zero", action="store_true")
+    health_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Return a non-zero exit code for WARN as well as BLOCK",
+    )
+
     args = parser.parse_args()
+    if args.command == "data-check":
+        path = Path(args.path)
+        if path.is_file():
+            result = validate_candle_csv(
+                path,
+                as_of_date=args.as_of,
+                max_stale_days=args.max_stale_days,
+            )
+        else:
+            result = validate_dataset_freshness(
+                path,
+                as_of_date=args.as_of,
+                max_stale_days=args.max_stale_days,
+            )
+        print(f"data_quality_status  {result.status}")
+        print(f"latest_date  {result.latest_date or ''}")
+        print(f"stale_days  {'' if result.stale_days is None else result.stale_days}")
+        print(f"rows_checked  {result.rows_checked}")
+        if result.issues:
+            print("issues  " + "; ".join(result.issues[:10]))
+        if result.warnings:
+            print("warnings  " + "; ".join(result.warnings[:10]))
+        if args.exclude_output:
+            saved = save_data_quality_exclusions(result, args.exclude_output)
+            print(f"exclude_output  {args.exclude_output} symbols={saved}")
+        if args.diagnose_output:
+            diagnoses = diagnose_candle_dataset(
+                path,
+                as_of_date=args.as_of,
+                max_stale_days=args.max_stale_days,
+            )
+            saved = save_data_quality_diagnostics(diagnoses, args.diagnose_output)
+            print(f"diagnose_output  {args.diagnose_output} rows={saved}")
+        return 2 if result.status == "BLOCK" else 0
+
+    if args.command == "monthly-compare-validation":
+        baseline_rows = _read_csv_dicts(Path(args.baseline))
+        candidate_rows = _read_csv_dicts(Path(args.candidate))
+        comparison = compare_monthly_validation_reports(
+            baseline_rows,
+            candidate_rows,
+            baseline_label=args.baseline_label,
+            candidate_label=args.candidate_label,
+        )
+        save_monthly_validation_comparison([comparison], args.output)
+        if args.delta_output:
+            delta_rows = compare_monthly_validation_scenario_deltas(
+                baseline_rows,
+                candidate_rows,
+                baseline_label=args.baseline_label,
+                candidate_label=args.candidate_label,
+            )
+            saved_delta_rows = save_monthly_validation_scenario_deltas(delta_rows, args.delta_output)
+            print(f"delta_report  {args.delta_output} rows={saved_delta_rows}")
+            decision_rows = build_monthly_validation_candidate_decision(comparison, delta_rows)
+            save_monthly_validation_candidate_decision(decision_rows, args.decision_output)
+            print(f"candidate_decision_report  {args.decision_output}")
+        print(f"comparison_status  {comparison['status']}")
+        print(f"baseline_failed_required  {comparison['baseline_failed_required']}")
+        print(f"candidate_failed_required  {comparison['candidate_failed_required']}")
+        print(f"failed_delta  {comparison['failed_delta']}")
+        print(f"comparison_report  {args.output}")
+        return 0
+
+    if args.command == "monthly-candidate-followup":
+        sweep_rows = _read_csv_dicts(Path(args.sweep_results))
+        rows = build_monthly_validation_candidate_followup_rows(
+            sweep_rows,
+            data_dir=args.data_dir,
+            start=args.start,
+            end=args.end,
+            baseline_scenarios=args.baseline_scenarios,
+            reports_dir=args.reports_dir,
+            point_in_time_universe=args.point_in_time_universe,
+            max_candidates=args.max_candidates,
+        )
+        saved = save_monthly_validation_candidate_followup_rows(rows, args.output)
+        print(f"candidate_followup_report  {args.output} rows={saved}")
+        if rows:
+            print(f"top_candidate  {rows[0]['experiment_id']}")
+            print(f"validation_command  {rows[0]['validation_command']}")
+            print(f"comparison_command  {rows[0]['comparison_command']}")
+        else:
+            print("top_candidate  none")
+        return 0
+
+    if args.command == "monthly-failure-patterns":
+        baseline_rows = _read_csv_dicts(Path(args.baseline))
+        delta_paths: list[Path] = []
+        for raw_path in args.delta_report or []:
+            delta_paths.append(Path(raw_path))
+        if args.delta_glob:
+            glob_path = Path(args.delta_glob)
+            parent = glob_path.parent if str(glob_path.parent) else Path(".")
+            delta_paths.extend(sorted(parent.glob(glob_path.name)))
+        unique_delta_paths: list[Path] = []
+        seen_delta_paths: set[Path] = set()
+        for path in delta_paths:
+            normalized = path.resolve() if path.exists() else path
+            if normalized in seen_delta_paths:
+                continue
+            seen_delta_paths.add(normalized)
+            if path.exists():
+                unique_delta_paths.append(path)
+        delta_rows: list[dict[str, str]] = []
+        for path in unique_delta_paths:
+            delta_rows.extend(_read_csv_dicts(path))
+        rows = analyze_monthly_validation_failure_patterns(baseline_rows, delta_rows)
+        saved = save_monthly_validation_failure_patterns(rows, args.output)
+        print(f"failure_pattern_report  {args.output} rows={saved}")
+        print(f"delta_reports  {len(unique_delta_paths)}")
+        if rows:
+            print(f"top_pattern  {rows[0]['scenario']} {rows[0]['pattern_status']}")
+        else:
+            print("top_pattern  none")
+        return 0
+
     if args.command == "production-check":
         required_artifacts = args.required_artifact
         if required_artifacts is None:
@@ -745,9 +1270,30 @@ def main() -> int:
             required_artifacts=[Path(path) for path in required_artifacts],
             deployment_gate_path=args.deployment_gate_file,
             validation_scenarios_path=args.validation_scenarios,
+            validation_failures_path=args.validation_failures,
+            validation_remediation_path=args.validation_remediation,
+            validation_sweep_plan_path=args.validation_sweep_plan,
+            validation_sweep_results_path=args.validation_sweep_results,
+            validation_comparison_path=args.validation_comparison,
+            validation_comparison_delta_path=args.validation_comparison_deltas,
+            validation_candidate_decision_path=args.validation_candidate_decision,
+            validation_candidate_followup_path=args.validation_candidate_followup,
+            validation_failure_patterns_path=args.validation_failure_patterns,
             risk_report_path=args.risk_report,
             coverage_report_path=args.coverage_report,
+            missing_ohlcv_targets_path=args.missing_ohlcv_targets,
+            missing_ohlcv_fetch_plan_path=args.missing_ohlcv_fetch_plan,
+            missing_ohlcv_fetch_summary_path=args.missing_ohlcv_fetch_summary,
+            coverage_warning_min_pct=args.coverage_warning_min_pct,
             performance_report_path=args.performance_report,
+            performance_concentration_path=args.performance_concentration_report,
+            drawdown_attribution_path=args.drawdown_attribution_report,
+            symbol_attribution_path=args.symbol_attribution_report,
+            max_report_age_days=args.max_report_age_days,
+            data_quality_path=args.data_quality_path,
+            data_quality_exclusions_path=args.data_quality_exclusions,
+            max_data_stale_days=args.max_data_stale_days,
+            as_of_date=args.as_of,
         )
         status = readiness_status(checks)
         save_readiness_report(checks, args.output)
@@ -758,6 +1304,33 @@ def main() -> int:
         exit_code = readiness_exit_code(status, strict=args.strict)
         if exit_code and not args.allow_blocked_exit_zero:
             return exit_code
+        return 0
+
+    if args.command == "health-check":
+        root = Path(args.root)
+        report = evaluate_health(
+            root=root,
+            max_report_age_hours=args.max_report_age_hours,
+            block_report_age_hours=args.block_report_age_hours,
+            scalper_dir=args.scalper_dir,
+            scalper_mode=args.scalper_mode,
+            max_scalper_age_hours=args.max_scalper_age_hours,
+            block_scalper_age_hours=args.block_scalper_age_hours,
+            logs_dir=args.logs_dir,
+        )
+        json_output = _resolve_output_path(root, args.json_output)
+        markdown_output = _resolve_output_path(root, args.markdown_output)
+        save_health_json(report, json_output)
+        save_health_markdown(report, markdown_output)
+        print(f"health_status  {report.status}")
+        print(f"health_json  {json_output}")
+        print(f"health_markdown  {markdown_output}")
+        for check in report.checks:
+            print(f"check  {check.name} {check.status} {check.detail} action={check.suggested_action}")
+        if report.status == "BLOCK" and not args.allow_blocked_exit_zero:
+            return 2
+        if report.status == "WARN" and args.strict:
+            return 2
         return 0
 
     if args.command == "fetch-toss":
@@ -797,6 +1370,17 @@ def main() -> int:
         rows = rss_to_event_rows(rss_text, symbol=args.symbol)
         saved = save_event_rows(rows, args.output)
         print(f"saved {saved} events to {args.output}")
+        return 0
+
+    if args.command == "import-social-events":
+        rows = load_social_posts_csv(args.input, symbol=args.symbol, default_source=args.source)
+        saved = save_event_rows(rows, args.output)
+        print(f"saved {saved} social events to {args.output}")
+        return 0
+
+    if args.command == "merge-events":
+        saved = merge_event_files(args.input, args.output)
+        print(f"merged {saved} events to {args.output}")
         return 0
 
     if args.command == "fetch-dart-events":
@@ -935,15 +1519,30 @@ def main() -> int:
         targets = build_missing_ohlcv_targets(
             universe_rows,
             available_symbols=available_ohlcv_symbols(args.data_dir),
+            available_symbol_dates=available_ohlcv_symbol_dates(args.data_dir),
         )
         if args.limit is not None:
             targets = targets[: args.limit]
         saved = save_missing_ohlcv_targets(targets, args.output)
+        fetch_plan_rows = build_missing_ohlcv_fetch_plan(
+            targets,
+            batch_size=args.batch_size,
+            max_batches=args.max_batches,
+            batch_timeout_seconds=args.batch_timeout_seconds,
+            batch_pause_seconds=args.batch_pause_seconds,
+            universe_file=args.universe_file,
+            data_dir=args.data_dir,
+            targets_output=args.output,
+            report_dir=args.report_dir,
+            start=args.start,
+            end=args.end,
+        )
+        save_missing_ohlcv_fetch_plan(fetch_plan_rows, args.fetch_plan_output)
         print(f"saved {saved} missing OHLCV targets to {args.output}")
+        print(f"fetch_plan  {args.fetch_plan_output}")
         print(
             "next_fetch_command  "
-            f"python -m backtester fetch-pykrx-universe-ohlcv --symbols-file \"{args.output}\" "
-            f"--start 2024-01-01 --end 2026-06-18 --output-dir \"{args.data_dir}\""
+            f"{fetch_plan_rows[0]['recommended_command']}"
         )
         return 0
 
@@ -994,6 +1593,7 @@ def main() -> int:
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
+        save_missing_ohlcv_loop_summary(summary, args.summary_output)
         print("Missing OHLCV subprocess loop summary")
         print(f"status  {summary['status']}")
         print(f"attempted_batches  {summary['attempted_batches']}")
@@ -1003,6 +1603,7 @@ def main() -> int:
         print(f"saved  {summary['saved']}")
         print(f"remaining_targets  {summary['remaining_targets']}")
         print(f"targets_output  {args.targets_output}")
+        print(f"summary_output  {args.summary_output}")
         return 0 if summary["status"] == "completed" else 1
 
     if args.command == "leader-swing":
@@ -1021,13 +1622,17 @@ def main() -> int:
                 exit_ma_window=args.exit_ma_window,
                 liquidity_top_n=args.liquidity_top_n,
                 max_positions=args.max_positions,
+                max_position_weight=args.max_position_weight,
+                cash_buffer_weight=args.cash_buffer_weight,
+                max_position_adv_pct=args.max_position_adv_pct,
+                max_loss_per_position_pct=args.max_loss_per_position_pct,
                 max_holding_days=args.max_holding_days,
                 min_short_return_pct=args.min_short_return_pct,
                 min_long_return_pct=args.min_long_return_pct,
                 stop_loss_pct=args.stop_loss_pct,
                 market_filter_window=args.market_filter_window,
                 market_breadth_threshold=args.market_breadth_threshold,
-                event_scores=load_event_scores(args.events) if args.events else None,
+                event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
                 event_lookback_days=args.event_lookback_days,
                 min_entry_event_score=args.min_entry_event_score,
                 force_exit_event_score=args.force_exit_event_score,
@@ -1046,7 +1651,7 @@ def main() -> int:
         return 0
 
     if args.command == "leader-regime":
-        event_scores = load_event_scores(args.events) if args.events else None
+        event_scores = load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None
         common = {
             "initial_cash": args.initial_cash,
             "fee_rate": args.fee_rate,
@@ -1239,18 +1844,33 @@ def main() -> int:
         return 0
 
     if args.command == "monthly-plan":
+        data_quality_exclusions = _resolve_data_quality_exclusions(
+            args.exclude_symbols,
+            ignore=args.ignore_data_quality_exclusions,
+        )
         last_rebalance_date = args.last_rebalance_date or load_last_rebalance_date(args.state_file)
         if not is_monthly_rebalance_due(as_of_date=args.as_of, last_rebalance_date=last_rebalance_date):
             save_order_plan([], args.output)
             print("monthly rebalance not due")
+            _print_data_quality_exclusions(data_quality_exclusions)
             print(f"order_plan  {args.output}")
             return 0
-        symbol_candles = exclude_invalid_price_symbols(load_symbol_candles(args.data_dir))
+        symbol_candles = _apply_resolved_excluded_symbols(
+            exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
+            data_quality_exclusions,
+        )
         presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
         point_in_time_universe = (
             load_point_in_time_universe(args.point_in_time_universe)
             if args.point_in_time_universe
             else None
+        )
+        _save_universe_filter_report_if_needed(
+            symbol_candles,
+            point_in_time_universe,
+            as_of_dates=[args.as_of],
+            min_history_days=args.point_in_time_min_history_days,
+            output_path=args.universe_filter_report,
         )
         reference_prices = latest_reference_prices(symbol_candles, as_of_date=args.as_of)
         positions = load_positions(args.positions)
@@ -1281,8 +1901,11 @@ def main() -> int:
                 market_volatility_min_scale=args.market_volatility_min_scale,
                 drawdown_guard_trigger_pct=args.drawdown_guard_trigger_pct,
                 drawdown_guard_scale=args.drawdown_guard_scale,
+                drawdown_guard_deep_trigger_pct=args.drawdown_guard_deep_trigger_pct,
+                drawdown_guard_deep_scale=args.drawdown_guard_deep_scale,
                 daily_drawdown_stop_pct=args.daily_drawdown_stop_pct,
                 daily_drawdown_cooldown_days=args.daily_drawdown_cooldown_days,
+                position_trailing_stop_pct=args.position_trailing_stop_pct,
                 weak_breadth_min_train_avg_excess_pct=args.weak_breadth_min_train_avg_excess_pct,
                 cash_buffer_weight=args.cash_buffer_weight,
                 max_position_weight=args.max_position_weight,
@@ -1301,6 +1924,10 @@ def main() -> int:
                 point_in_time_universe=point_in_time_universe,
                 market_beta_symbol=args.market_beta_symbol,
                 market_beta_proxy_size=args.market_beta_proxy_size,
+                event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
+                event_lookback_days=args.event_lookback_days,
+                min_entry_event_score=args.min_entry_event_score,
+                event_weight=args.event_weight,
             ),
             portfolio_value=portfolio_value,
             reference_prices=reference_prices,
@@ -1324,6 +1951,13 @@ def main() -> int:
             cash=args.cash,
             reference_prices=reference_prices,
             min_trade_value=args.min_trade_value,
+            symbol_candles=symbol_candles,
+            adv_window_days=args.liquidity_adv_window_days,
+            base_slippage_rate=args.liquidity_base_slippage_rate,
+            impact_slippage_multiplier=args.liquidity_impact_multiplier,
+            warn_adv_participation_rate=args.warn_adv_participation_rate,
+            max_adv_participation_rate=args.max_adv_participation_rate,
+            liquidity_missing_adv_status=args.liquidity_missing_adv_status,
         )
         deployment_gate = load_deployment_gate(args.deployment_gate_file)
         risk_checks = validate_pre_trade_risk(
@@ -1338,6 +1972,9 @@ def main() -> int:
                 max_signal_age_days=args.max_signal_age_days,
                 max_daily_loss_pct=args.max_daily_loss_pct,
                 block_skip_orders=not args.allow_skip_orders,
+                max_adv_participation_rate=args.max_adv_participation_rate,
+                warn_adv_participation_rate=args.warn_adv_participation_rate,
+                liquidity_missing_adv_status=args.liquidity_missing_adv_status,
             ),
             kill_switch_path=args.kill_switch_file,
             deployment_gate=deployment_gate,
@@ -1347,10 +1984,32 @@ def main() -> int:
             day_start_equity=args.day_start_equity,
             current_equity=portfolio_value,
         )
+        risk_checks.extend(
+            validate_report_freshness(
+                {
+                    "deployment_gate": args.deployment_gate_file,
+                    "performance_report": args.performance_report,
+                },
+                as_of_date=args.as_of,
+                max_age_days=args.max_report_age_days,
+            )
+        )
+        risk_checks.extend(_data_quality_exclusion_risk_checks(data_quality_exclusions))
         gate_status = risk_status(risk_checks)
-        orders = mark_order_plan_execution(orders, risk_status_value=gate_status)
+        orders = mark_order_plan_execution(
+            orders,
+            risk_status_value=gate_status,
+            production_trading_enabled=is_production_trading_enabled(),
+        )
         save_monthly_decision(decision, args.decision_output)
         save_order_plan(orders, args.output)
+        save_order_plan_summary(
+            decision=decision,
+            orders=orders,
+            risk_checks=risk_checks,
+            risk_status_value=gate_status,
+            output_path=args.summary_output,
+        )
         save_risk_report(risk_checks, args.risk_output)
         if args.state_file and gate_status == "PASS":
             save_rebalance_state(decision, args.state_file)
@@ -1362,8 +2021,10 @@ def main() -> int:
         print(f"targets  {','.join(decision.target_weights.keys()) if decision.target_weights else 'cash'}")
         print(f"orders  {len(orders)}")
         print(f"risk_status  {gate_status}")
+        _print_data_quality_exclusions(data_quality_exclusions)
         print(f"decision_report  {args.decision_output}")
         print(f"order_plan  {args.output}")
+        print(f"order_summary  {args.summary_output}")
         print(f"risk_report  {args.risk_output}")
         if args.deployment_gate_file:
             print(f"deployment_gate  {args.deployment_gate_file if deployment_gate else 'missing'}")
@@ -1383,11 +2044,25 @@ def main() -> int:
         return risk_exit_code(gate_status)
 
     if args.command == "monthly-backtest":
-        symbol_candles = exclude_invalid_price_symbols(load_symbol_candles(args.data_dir))
+        data_quality_exclusions = _resolve_data_quality_exclusions(
+            args.exclude_symbols,
+            ignore=args.ignore_data_quality_exclusions,
+        )
+        symbol_candles = _apply_resolved_excluded_symbols(
+            exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
+            data_quality_exclusions,
+        )
         point_in_time_universe = (
             load_point_in_time_universe(args.point_in_time_universe)
             if args.point_in_time_universe
             else None
+        )
+        _save_universe_filter_report_if_needed(
+            symbol_candles,
+            point_in_time_universe,
+            as_of_dates=monthly_rebalance_signal_dates(symbol_candles, start=args.start, end=args.end),
+            min_history_days=args.point_in_time_min_history_days,
+            output_path=args.universe_filter_report,
         )
         if args.stress_exclude_return_above is not None:
             symbol_candles = exclude_extreme_period_return_symbols(
@@ -1426,8 +2101,11 @@ def main() -> int:
                 market_volatility_min_scale=args.market_volatility_min_scale,
                 drawdown_guard_trigger_pct=args.drawdown_guard_trigger_pct,
                 drawdown_guard_scale=args.drawdown_guard_scale,
+                drawdown_guard_deep_trigger_pct=args.drawdown_guard_deep_trigger_pct,
+                drawdown_guard_deep_scale=args.drawdown_guard_deep_scale,
                 daily_drawdown_stop_pct=args.daily_drawdown_stop_pct,
                 daily_drawdown_cooldown_days=args.daily_drawdown_cooldown_days,
+                position_trailing_stop_pct=args.position_trailing_stop_pct,
                 weak_breadth_min_train_avg_excess_pct=args.weak_breadth_min_train_avg_excess_pct,
                 cash_buffer_weight=args.cash_buffer_weight,
                 max_position_weight=args.max_position_weight,
@@ -1446,10 +2124,15 @@ def main() -> int:
                 point_in_time_universe=point_in_time_universe,
                 market_beta_symbol=args.market_beta_symbol,
                 market_beta_proxy_size=args.market_beta_proxy_size,
+                event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
+                event_lookback_days=args.event_lookback_days,
+                min_entry_event_score=args.min_entry_event_score,
+                event_weight=args.event_weight,
             ),
         )
         print("Monthly rebalance backtest")
         print(f"period  {args.start}..{args.end}")
+        _print_data_quality_exclusions(data_quality_exclusions)
         print(f"initial_cash  {result.initial_cash:.0f}")
         print(f"final_equity  {result.final_equity:.0f}")
         print(f"total_return_%  {result.total_return_pct:.2f}")
@@ -1458,6 +2141,20 @@ def main() -> int:
         print(f"max_drawdown_%  {result.max_drawdown_pct:.2f}")
         print(f"decisions  {len(result.decisions)}")
         print(f"trades  {result.trade_count}")
+        concentration_row = analyze_monthly_performance_concentration(
+            result,
+            symbol_candles=symbol_candles,
+            source=f"monthly-backtest:{args.start}..{args.end}",
+        )
+        if args.concentration_output:
+            save_monthly_performance_concentration([concentration_row], args.concentration_output)
+            print(
+                "performance_concentration  "
+                f"status={concentration_row['concentration_status']} "
+                f"top_1_month={float(concentration_row['top_1_month_contribution']):.4f} "
+                f"top_5_symbol={float(concentration_row['top_5_symbol_contribution']):.4f} "
+                f"report={args.concentration_output}"
+            )
         bias = diagnose_universe_bias(symbol_candles, start=args.start, end=args.end)
         deployment_gate = build_deployment_gate(
             result,
@@ -1465,7 +2162,10 @@ def main() -> int:
             min_excess_return_pct=args.min_deployment_excess_pct,
             max_drawdown_pct=args.max_deployment_drawdown_pct,
             allow_universe_bias_warning=args.allow_universe_bias_warning,
-            source=f"monthly-backtest:{args.start}..{args.end}",
+            source=_source_with_data_quality_exclusions(
+                f"monthly-backtest:{args.start}..{args.end}",
+                data_quality_exclusions,
+            ),
         )
         if args.deployment_gate_output:
             save_deployment_gate(deployment_gate, args.deployment_gate_output)
@@ -1479,13 +2179,110 @@ def main() -> int:
             print(f"deployment_gate_report  {args.deployment_gate_output}")
         return 0
 
+    if args.command == "monthly-attribution":
+        data_quality_exclusions = _resolve_data_quality_exclusions(
+            args.exclude_symbols,
+            ignore=args.ignore_data_quality_exclusions,
+        )
+        symbol_candles = _apply_resolved_excluded_symbols(
+            exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
+            data_quality_exclusions,
+        )
+        point_in_time_universe = (
+            load_point_in_time_universe(args.point_in_time_universe)
+            if args.point_in_time_universe
+            else None
+        )
+        if args.stress_exclude_return_above is not None:
+            symbol_candles = exclude_extreme_period_return_symbols(
+                symbol_candles,
+                start=args.start,
+                end=args.end,
+                max_period_return_pct=args.stress_exclude_return_above,
+            )
+        presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
+        result = run_monthly_rebalance_backtest(
+            symbol_candles,
+            start=args.start,
+            end=args.end,
+            initial_cash=args.initial_cash,
+            fee_rate=args.fee_rate,
+            tax_rate=args.tax_rate,
+            slippage_rate=args.slippage_rate,
+            min_trade_value=args.min_trade_value,
+            config=MonthlyRebalanceConfig(
+                presets=presets,
+                cash_buffer_weight=args.cash_buffer_weight,
+                max_position_weight=args.max_position_weight,
+                candidate_pool_size=args.candidate_pool_size,
+                drawdown_guard_trigger_pct=args.drawdown_guard_trigger_pct,
+                drawdown_guard_scale=args.drawdown_guard_scale,
+                position_trailing_stop_pct=args.position_trailing_stop_pct,
+                point_in_time_min_history_days=args.point_in_time_min_history_days,
+                point_in_time_universe=point_in_time_universe,
+            ),
+        )
+        monthly_rows = analyze_monthly_drawdown_attribution(result)
+        symbol_rows = analyze_symbol_realized_pnl_attribution(result)
+        save_monthly_attribution_rows(monthly_rows, args.monthly_output)
+        save_monthly_attribution_rows(
+            symbol_rows,
+            args.symbol_output,
+            columns=SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS,
+        )
+
+        def row_float(row: dict[str, str], key: str) -> float:
+            try:
+                return float(row.get(key, "") or 0.0)
+            except ValueError:
+                return 0.0
+
+        worst_month = min(monthly_rows, key=lambda row: row_float(row, "equity_change"), default={})
+        worst_symbol = min(symbol_rows, key=lambda row: row_float(row, "realized_pnl"), default={})
+        print("Monthly attribution")
+        print(f"period  {args.start}..{args.end}")
+        _print_data_quality_exclusions(data_quality_exclusions)
+        print(f"total_return_%  {result.total_return_pct:.2f}")
+        print(f"excess_%  {result.excess_return_pct:.2f}")
+        print(f"max_drawdown_%  {result.max_drawdown_pct:.2f}")
+        print(f"monthly_rows  {len(monthly_rows)}")
+        print(f"symbol_rows  {len(symbol_rows)}")
+        if worst_month:
+            print(
+                "worst_month  "
+                f"{worst_month.get('month', '')} change={worst_month.get('equity_change', '')} "
+                f"drawdown={worst_month.get('worst_drawdown_pct', '')}%"
+            )
+        if worst_symbol:
+            print(
+                "worst_symbol  "
+                f"{worst_symbol.get('symbol', '')} realized_pnl={worst_symbol.get('realized_pnl', '')}"
+            )
+        print(f"monthly_attribution_report  {args.monthly_output}")
+        print(f"symbol_attribution_report  {args.symbol_output}")
+        return 0
+
     if args.command == "monthly-validate":
-        symbol_candles = exclude_invalid_price_symbols(load_symbol_candles(args.data_dir))
+        data_quality_exclusions = _resolve_data_quality_exclusions(
+            args.exclude_symbols,
+            ignore=args.ignore_data_quality_exclusions,
+        )
+        symbol_candles = _apply_resolved_excluded_symbols(
+            exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
+            data_quality_exclusions,
+        )
         presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
         point_in_time_universe = (
             load_point_in_time_universe(args.point_in_time_universe)
             if args.point_in_time_universe
             else None
+        )
+        _save_universe_filter_report_if_needed(
+            symbol_candles,
+            point_in_time_universe,
+            as_of_dates=monthly_rebalance_signal_dates(symbol_candles, start=args.start, end=args.end),
+            min_history_days=args.point_in_time_min_history_days,
+            output_path=args.universe_filter_report,
         )
         config = MonthlyRebalanceConfig(
             train_years=args.train_years,
@@ -1507,8 +2304,11 @@ def main() -> int:
             market_volatility_min_scale=args.market_volatility_min_scale,
             drawdown_guard_trigger_pct=args.drawdown_guard_trigger_pct,
             drawdown_guard_scale=args.drawdown_guard_scale,
+            drawdown_guard_deep_trigger_pct=args.drawdown_guard_deep_trigger_pct,
+            drawdown_guard_deep_scale=args.drawdown_guard_deep_scale,
             daily_drawdown_stop_pct=args.daily_drawdown_stop_pct,
             daily_drawdown_cooldown_days=args.daily_drawdown_cooldown_days,
+            position_trailing_stop_pct=args.position_trailing_stop_pct,
             weak_breadth_min_train_avg_excess_pct=args.weak_breadth_min_train_avg_excess_pct,
             cash_buffer_weight=args.cash_buffer_weight,
             max_position_weight=args.max_position_weight,
@@ -1527,6 +2327,10 @@ def main() -> int:
             point_in_time_universe=point_in_time_universe,
             market_beta_symbol=args.market_beta_symbol,
             market_beta_proxy_size=args.market_beta_proxy_size,
+            event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
+            event_lookback_days=args.event_lookback_days,
+            min_entry_event_score=args.min_entry_event_score,
+            event_weight=args.event_weight,
         )
         cases = generate_monthly_validation_cases(symbol_candles, start=args.start, end=args.end)
         data_quality_rows = audit_monthly_validation_data(
@@ -1542,6 +2346,7 @@ def main() -> int:
                 symbol_candles,
                 point_in_time_universe,
                 min_coverage_pct=args.coverage_min_pct,
+                excluded_symbols=data_quality_exclusions.symbols,
             )
             save_universe_price_coverage_rows(coverage_rows, args.coverage_output)
         regular_cases = [case for case in cases if case.category != "walk_forward"]
@@ -1599,13 +2404,66 @@ def main() -> int:
                     "deployable": False,
                     "reason": f"data_quality_blocks:{len(data_quality_blocks)}",
                 }
-            )
+        )
+        validation_source = _source_with_data_quality_exclusions(
+            f"monthly-validate:{args.start}..{args.end}",
+            data_quality_exclusions,
+        )
+        for row in rows:
+            row["source"] = validation_source
         save_monthly_validation_rows(rows, args.scenario_output)
+        failure_rows = analyze_monthly_validation_failures(rows)
+        save_monthly_validation_failures(failure_rows, args.failure_output)
+        remediation_rows = analyze_monthly_validation_remediation(failure_rows)
+        save_monthly_validation_remediation(remediation_rows, args.remediation_output)
+        sweep_plan_rows = build_monthly_validation_sweep_plan(remediation_rows, base_config=config)
+        save_monthly_validation_sweep_plan(sweep_plan_rows, args.sweep_plan_output)
+        sweep_result_rows: list[dict[str, object]] = []
+        selected_sweep_plan_rows = sweep_plan_rows
+        if args.run_sweep_results:
+            selected_sweep_plan_rows = filter_monthly_validation_sweep_plan(
+                sweep_plan_rows,
+                experiment_ids=args.sweep_experiment_id,
+                limit=args.sweep_limit,
+            )
+            sweep_result_rows = run_monthly_validation_sweep_results(
+                symbol_candles,
+                cases=cases,
+                sweep_plan_rows=selected_sweep_plan_rows,
+                base_config=config,
+                baseline_rows=rows,
+                initial_cash=args.initial_cash,
+                fee_rate=args.fee_rate,
+                tax_rate=args.tax_rate,
+                slippage_rate=args.slippage_rate,
+                min_trade_value=args.min_trade_value,
+                min_excess_return_pct=args.min_deployment_excess_pct,
+                max_drawdown_pct=args.max_deployment_drawdown_pct,
+                allow_universe_bias_warning=args.allow_universe_bias_warning,
+            )
+            save_monthly_validation_sweep_results(sweep_result_rows, args.sweep_result_output)
+        concentration_result = run_monthly_rebalance_backtest(
+            symbol_candles,
+            start=args.start,
+            end=args.end,
+            initial_cash=args.initial_cash,
+            fee_rate=args.fee_rate,
+            tax_rate=args.tax_rate,
+            slippage_rate=args.slippage_rate,
+            min_trade_value=args.min_trade_value,
+            config=config,
+        )
+        concentration_row = analyze_monthly_performance_concentration(
+            concentration_result,
+            symbol_candles=symbol_candles,
+            source=validation_source,
+        )
+        save_monthly_performance_concentration([concentration_row], args.concentration_output)
         performance_rows = build_monthly_performance_audit(rows)
         save_monthly_performance_audit_rows(performance_rows, args.performance_output)
         deployment_gate = build_monthly_validation_gate(
             rows,
-            source=f"monthly-validate:{args.start}..{args.end}",
+            source=validation_source,
         )
         save_deployment_gate(deployment_gate, args.deployment_gate_output)
         failed_required = [
@@ -1615,14 +2473,28 @@ def main() -> int:
         ]
         print("Monthly validation summary")
         print(f"period  {args.start}..{args.end}")
+        _print_data_quality_exclusions(data_quality_exclusions)
         print(f"scenarios  {len(rows)}")
         print(f"walk_forward_scenarios  {len(walk_forward_cases)}")
         print(f"failed_required  {len(failed_required)}")
         print(f"data_quality_blocks  {len(data_quality_blocks)}")
         print(f"deployment_gate  deployable={deployment_gate.deployable} reason={deployment_gate.reason}")
         print(f"scenario_report  {args.scenario_output}")
+        print(f"failure_report  {args.failure_output} rows={len(failure_rows)}")
+        print(f"remediation_report  {args.remediation_output} rows={len(remediation_rows)}")
+        print(f"sweep_plan_report  {args.sweep_plan_output} rows={len(sweep_plan_rows)}")
+        if args.run_sweep_results:
+            print(f"sweep_selected_experiments  {len(selected_sweep_plan_rows)}")
+            print(f"sweep_result_report  {args.sweep_result_output} rows={len(sweep_result_rows)}")
         print(f"data_quality_report  {args.data_quality_output}")
         print(f"performance_report  {args.performance_output}")
+        print(
+            "performance_concentration  "
+            f"status={concentration_row['concentration_status']} "
+            f"top_1_month={float(concentration_row['top_1_month_contribution']):.4f} "
+            f"top_5_symbol={float(concentration_row['top_5_symbol_contribution']):.4f} "
+            f"report={args.concentration_output}"
+        )
         if point_in_time_universe is not None:
             coverage_blocks = [row for row in coverage_rows if row["status"] == "BLOCK"]
             print(f"coverage_blocks  {len(coverage_blocks)}")
@@ -1803,6 +2675,7 @@ def _add_common_args_without_data(parser: argparse.ArgumentParser) -> None:
 def _add_news_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--news-filter", action="store_true", help="Apply event sentiment filter to strategy signals")
     parser.add_argument("--events", default=None, help="CSV with date,symbol,source,title,sentiment_score,importance_score")
+    parser.add_argument("--event-source-weights", default=None, help="Comma list such as news=1,sns=0.25,dart=0.5")
     parser.add_argument("--symbol", default=None, help="Symbol for event score lookup, e.g. 005930")
     parser.add_argument("--min-buy-score", type=float, default=-0.2)
     parser.add_argument("--force-sell-score", type=float, default=-0.8)
@@ -1815,6 +2688,13 @@ def _add_flow_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min-flow-score", type=float, default=-0.2)
     parser.add_argument("--force-flow-sell-score", type=float, default=-0.8)
     parser.add_argument("--flow-scale-value", type=float, default=100_000_000.0)
+
+
+def _resolve_output_path(root: Path, value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return root / path
 
 
 def _apply_optional_filters(strategy: Strategy, args: argparse.Namespace) -> Strategy:
@@ -1830,12 +2710,185 @@ def _arg_or_default(value, default):
     return default if value is None else value
 
 
+def _parse_source_weights(value: str | None) -> dict[str, float] | None:
+    if not value:
+        return None
+    weights: dict[str, float] = {}
+    for part in value.split(","):
+        item = part.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise SystemExit(f"invalid source weight '{item}', expected source=weight")
+        source, weight = item.split("=", 1)
+        source = source.strip()
+        if not source:
+            raise SystemExit(f"invalid source weight '{item}', source is empty")
+        weights[source] = float(weight)
+    return weights or None
+
+
+def _apply_excluded_symbols(
+    symbol_candles: dict[str, list],
+    exclude_symbols_path: str | None,
+) -> dict[str, list]:
+    excluded = _load_excluded_symbols(exclude_symbols_path)
+    if not excluded:
+        return symbol_candles
+    return {symbol: candles for symbol, candles in symbol_candles.items() if _normalize_symbol(symbol) not in excluded}
+
+
+def _resolve_data_quality_exclusions(
+    explicit_path: str | None,
+    *,
+    ignore: bool = False,
+) -> DataQualityExclusionResolution:
+    if ignore:
+        return DataQualityExclusionResolution(
+            path=None,
+            symbols=set(),
+            mode="ignored",
+            message="ignored",
+        )
+    if explicit_path:
+        path = Path(explicit_path)
+        symbols = _load_excluded_symbols(str(path))
+        return DataQualityExclusionResolution(
+            path=path,
+            symbols=symbols,
+            mode="explicit",
+            message=f"explicit:{path} symbols={len(symbols)}",
+        )
+    default_path = DEFAULT_DATA_QUALITY_EXCLUSIONS
+    if default_path.exists():
+        symbols = _load_excluded_symbols(str(default_path))
+        return DataQualityExclusionResolution(
+            path=default_path,
+            symbols=symbols,
+            mode="auto",
+            message=f"auto:{default_path} symbols={len(symbols)}",
+        )
+    return DataQualityExclusionResolution(
+        path=None,
+        symbols=set(),
+        mode="missing",
+        message=f"WARN default_missing:{default_path}",
+    )
+
+
+def _apply_resolved_excluded_symbols(
+    symbol_candles: dict[str, list],
+    resolution: DataQualityExclusionResolution,
+) -> dict[str, list]:
+    if not resolution.symbols:
+        return symbol_candles
+    return {
+        symbol: candles
+        for symbol, candles in symbol_candles.items()
+        if _normalize_symbol(symbol) not in resolution.symbols
+    }
+
+
+def _print_data_quality_exclusions(resolution: DataQualityExclusionResolution) -> None:
+    print(f"data_quality_exclusions  {resolution.message}")
+
+
+def _source_with_data_quality_exclusions(
+    source: str,
+    resolution: DataQualityExclusionResolution,
+) -> str:
+    if resolution.mode in {"auto", "explicit"} and resolution.path is not None:
+        note = f"data_quality_exclusions={resolution.mode}:{resolution.path};excluded_symbols={len(resolution.symbols)}"
+    else:
+        note = f"data_quality_exclusions={resolution.mode}"
+    return f"{source};{note}"
+
+
+def _data_quality_exclusion_risk_checks(resolution: DataQualityExclusionResolution) -> list[RiskCheck]:
+    if resolution.mode not in {"auto", "explicit"}:
+        return []
+    return [
+        RiskCheck(
+            "data_quality_exclusions",
+            "PASS",
+            f"{resolution.mode}:{resolution.path}; excluded_symbols={len(resolution.symbols)}",
+        )
+    ]
+
+
+def _save_universe_filter_report_if_needed(
+    symbol_candles: dict[str, list],
+    point_in_time_universe: dict[str, set[str]] | None,
+    *,
+    as_of_dates: list[str],
+    min_history_days: int,
+    output_path: str | None,
+) -> int:
+    if not point_in_time_universe or not output_path:
+        return 0
+    rows = build_universe_filter_report(
+        symbol_candles,
+        point_in_time_universe,
+        as_of_dates=as_of_dates,
+        min_history_days=min_history_days,
+    )
+    saved = save_universe_filter_report(rows, output_path)
+    reasons = Counter(str(row.get("reason", "unknown")) or "unknown" for row in rows)
+    reason_summary = ",".join(f"{reason}={count}" for reason, count in sorted(reasons.items())) or "none"
+    print(f"universe_filter_report  {output_path} excluded={saved} reasons={reason_summary}")
+    return saved
+
+
+def _load_monthly_symbol_candles(data_dir: str, exclude_symbols_path: Path | str | None) -> dict[str, list]:
+    ignore_paths = {Path(exclude_symbols_path)} if exclude_symbols_path else set()
+    return load_symbol_candles(data_dir, ignore_paths=ignore_paths)
+
+
+def _read_csv_dicts(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8-sig") as f:
+        return list(csv.DictReader(f))
+
+
+def _load_excluded_symbols(path: str | None) -> set[str]:
+    if not path:
+        return set()
+    csv_path = Path(path)
+    if not csv_path.exists():
+        raise SystemExit(f"exclude symbols file not found: {csv_path}")
+    text = csv_path.read_text(encoding="utf-8-sig")
+    first_line = next((line for line in text.splitlines() if line.strip()), "")
+    if "," in first_line:
+        with csv_path.open(newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            if reader.fieldnames is None or "symbol" not in reader.fieldnames:
+                raise SystemExit(f"exclude symbols CSV must include symbol column: {csv_path}")
+            return {
+                normalized
+                for normalized in (_normalize_symbol(row.get("symbol", "")) for row in reader)
+                if normalized
+            }
+    return {
+        normalized
+        for normalized in (_normalize_symbol(line) for line in text.splitlines())
+        if normalized and not normalized.startswith("#")
+    }
+
+
+def _normalize_symbol(value: str | None) -> str:
+    text = str(value or "").strip().strip("'").strip('"')
+    if not text:
+        return ""
+    if text.isdigit():
+        return text.zfill(6)
+    return text.upper()
+
+
 def _news_filtered(strategy: Strategy, args: argparse.Namespace) -> Strategy:
     if not args.events or not args.symbol:
         raise SystemExit("--events and --symbol are required with --news-filter")
     return NewsFilteredStrategy(
         base_strategy=strategy,
-        event_scores=load_event_scores(args.events),
+        event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)),
         symbol=args.symbol,
         min_buy_score=args.min_buy_score,
         force_sell_score=args.force_sell_score,

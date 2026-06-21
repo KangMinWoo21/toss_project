@@ -1,6 +1,7 @@
 import csv
+import os
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -9,23 +10,39 @@ from backtester.monthly_rebalance import (
     MonthlyValidationCase,
     MonthlyRebalanceConfig,
     MonthlyBacktestResult,
+    MonthlyBacktestTrade,
     MonthlyDecision,
     PerformanceGuard,
     Position,
+    RiskCheck,
     RiskLimits,
     audit_monthly_validation_data,
     audit_point_in_time_price_coverage,
+    analyze_monthly_performance_concentration,
+    analyze_monthly_drawdown_attribution,
+    analyze_monthly_validation_failures,
+    analyze_monthly_validation_failure_patterns,
+    analyze_monthly_validation_remediation,
+    analyze_symbol_realized_pnl_attribution,
+    build_monthly_validation_sweep_plan,
+    build_monthly_validation_candidate_decision,
+    build_monthly_validation_candidate_followup_rows,
+    compare_monthly_validation_scenario_deltas,
+    compare_monthly_validation_reports,
+    run_monthly_validation_sweep_results,
     apply_performance_guard,
     build_deployment_gate,
     build_monthly_performance_audit,
     build_monthly_validation_gate,
     compress_decision_to_buyable_targets,
     build_order_plan,
+    build_universe_filter_report,
     decide_monthly_allocation,
     diagnose_universe_bias,
     equal_weight_buy_hold_period_return,
     exclude_invalid_price_symbols,
     exclude_top_period_return_symbols,
+    filter_monthly_validation_sweep_plan,
     filter_symbol_candles_by_universe,
     generate_monthly_validation_cases,
     is_monthly_rebalance_due,
@@ -44,13 +61,31 @@ from backtester.monthly_rebalance import (
     run_monthly_validation_suite,
     save_rebalance_state,
     save_monthly_performance_audit_rows,
+    save_monthly_performance_concentration,
+    save_monthly_validation_rows,
+    save_monthly_validation_failures,
+    save_monthly_validation_remediation,
+    save_monthly_validation_sweep_plan,
+    save_monthly_validation_sweep_results,
+    save_monthly_validation_comparison,
+    save_monthly_validation_candidate_decision,
+    save_monthly_validation_candidate_followup_rows,
+    save_monthly_validation_failure_patterns,
+    save_monthly_validation_scenario_deltas,
+    save_monthly_attribution_rows,
     save_order_plan,
+    save_order_plan_summary,
+    save_universe_filter_report,
     save_universe_price_coverage_rows,
     select_buyable_targets,
     scale_monthly_decision_targets,
+    event_score_multipliers,
+    filter_symbols_by_event_score,
     target_weights_for_symbols,
+    validate_report_freshness,
     validate_pre_trade_risk,
 )
+from backtester.events import EventScoreStore
 from backtester.models import Candle
 
 
@@ -137,6 +172,8 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(MonthlyRebalanceConfig().market_volatility_filter_days, 0)
         self.assertEqual(MonthlyRebalanceConfig().drawdown_guard_trigger_pct, -15.0)
         self.assertEqual(MonthlyRebalanceConfig().drawdown_guard_scale, 0.75)
+        self.assertEqual(MonthlyRebalanceConfig().drawdown_guard_deep_trigger_pct, 0.0)
+        self.assertEqual(MonthlyRebalanceConfig().drawdown_guard_deep_scale, 0.5)
         self.assertEqual(MonthlyRebalanceConfig().daily_drawdown_stop_pct, 0.0)
         self.assertEqual(MonthlyRebalanceConfig().cash_buffer_weight, 0.01)
         self.assertEqual(MonthlyRebalanceConfig().max_position_weight, 0.15)
@@ -291,6 +328,39 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(risk_status(checks), "WARN")
         self.assertIn("performance_guard", {check.name for check in checks if check.status == "WARN"})
 
+    def test_report_freshness_blocks_stale_validation_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            report = Path(temp_dir) / "performance.csv"
+            report.write_text("name,status,detail\nrequired_scenarios,PASS,ok\n", encoding="utf-8")
+            stale_timestamp = datetime(2026, 4, 1, 12, 0).timestamp()
+            os.utime(report, (stale_timestamp, stale_timestamp))
+
+            checks = validate_report_freshness(
+                {"performance_report": report},
+                as_of_date="2026-06-20",
+                max_age_days=30,
+            )
+
+        self.assertEqual(risk_status(checks), "BLOCK")
+        self.assertEqual(checks[0].name, "performance_report_freshness")
+        self.assertIn("age 80d exceeds 30d", checks[0].detail)
+
+    def test_report_freshness_passes_recent_validation_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            report = Path(temp_dir) / "deployment.csv"
+            report.write_text("deployable,reason\nTrue,passed\n", encoding="utf-8")
+            recent_timestamp = datetime(2026, 6, 10, 12, 0).timestamp()
+            os.utime(report, (recent_timestamp, recent_timestamp))
+
+            checks = validate_report_freshness(
+                {"deployment_gate": report},
+                as_of_date="2026-06-20",
+                max_age_days=30,
+            )
+
+        self.assertEqual(risk_status(checks), "PASS")
+        self.assertEqual(checks[0].name, "deployment_gate_freshness")
+
     def test_load_performance_guard_warn_uses_configured_scale(self):
         with TemporaryDirectory() as temp_dir:
             report = Path(temp_dir) / "performance.csv"
@@ -419,6 +489,915 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(count, 1)
         self.assertIn("walk_forward_margin", text)
+
+    def test_performance_concentration_warns_when_one_month_dominates(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000_000,
+            final_equity=2_040_000,
+            total_return_pct=104.0,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=104.0,
+            max_drawdown_pct=0.0,
+            trade_count=0,
+            decisions=[],
+            trades=[],
+            dates=[
+                "2024-01-31",
+                "2024-02-29",
+                "2024-03-31",
+                "2024-04-30",
+                "2024-05-31",
+                "2024-06-30",
+            ],
+            equity_curve=[1_010_000, 1_020_000, 2_000_000, 2_010_000, 2_020_000, 2_040_000],
+        )
+
+        row = analyze_monthly_performance_concentration(result)
+
+        self.assertIn(row["concentration_status"], {"WARN", "BLOCK"})
+        self.assertGreater(float(row["top_1_month_contribution"]), 0.7)
+        self.assertEqual(row["best_month"], "2024-03")
+        self.assertIn("top_1_month_contribution", row["concentration_reasons"])
+
+    def test_performance_concentration_passes_when_monthly_returns_are_distributed(self):
+        equities = []
+        current = 1_000_000.0
+        dates = []
+        for month in range(1, 9):
+            current *= 1.02
+            dates.append(f"2024-{month:02d}-28")
+            equities.append(current)
+        result = MonthlyBacktestResult(
+            initial_cash=1_000_000,
+            final_equity=equities[-1],
+            total_return_pct=17.0,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=17.0,
+            max_drawdown_pct=0.0,
+            trade_count=0,
+            decisions=[],
+            trades=[],
+            dates=dates,
+            equity_curve=equities,
+        )
+
+        row = analyze_monthly_performance_concentration(result)
+
+        self.assertEqual(row["concentration_status"], "PASS")
+        self.assertLess(float(row["top_1_month_contribution"]), 0.2)
+        self.assertGreater(float(row["positive_month_ratio"]), 0.9)
+
+    def test_performance_concentration_detects_symbol_contribution_concentration(self):
+        trades = [
+            MonthlyBacktestTrade("2024-01-02", "BIG", "BUY", 100, 100, 0, "test"),
+            MonthlyBacktestTrade("2024-06-28", "BIG", "SELL", 200, 100, 0, "test"),
+        ]
+        for index in range(9):
+            symbol = f"S{index}"
+            trades.extend(
+                [
+                    MonthlyBacktestTrade("2024-01-02", symbol, "BUY", 100, 10, 0, "test"),
+                    MonthlyBacktestTrade("2024-06-28", symbol, "SELL", 105, 10, 0, "test"),
+                ]
+            )
+        result = MonthlyBacktestResult(
+            initial_cash=1_000_000,
+            final_equity=1_010_450,
+            total_return_pct=1.045,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=1.045,
+            max_drawdown_pct=0.0,
+            trade_count=len(trades),
+            decisions=[],
+            trades=trades,
+            dates=["2024-01-31", "2024-02-29", "2024-03-31", "2024-04-30", "2024-05-31", "2024-06-30"],
+            equity_curve=[1_001_000, 1_002_000, 1_003_000, 1_004_000, 1_005_000, 1_010_450],
+        )
+
+        row = analyze_monthly_performance_concentration(result)
+
+        self.assertIn(row["concentration_status"], {"WARN", "BLOCK"})
+        self.assertGreater(float(row["top_5_symbol_contribution"]), 0.9)
+        self.assertIn("top_5_symbol_contribution", row["concentration_reasons"])
+
+    def test_save_monthly_performance_concentration_writes_report(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "concentration.csv"
+            count = save_monthly_performance_concentration(
+                [
+                    {
+                        "source": "unit",
+                        "start": "2024-01-01",
+                        "end": "2024-06-30",
+                        "top_1_month_contribution": 0.1,
+                        "top_3_month_contribution": 0.3,
+                        "top_5_symbol_contribution": 0.4,
+                        "best_month": "2024-01",
+                        "worst_month": "2024-02",
+                        "positive_month_ratio": 0.8,
+                        "rolling_3m_return_min": 0.02,
+                        "rolling_6m_return_min": 0.04,
+                        "max_recovery_months_if_possible": 0,
+                        "concentration_status": "PASS",
+                        "concentration_reasons": "",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(count, 1)
+        self.assertIn("top_1_month_contribution", text)
+
+    def test_save_monthly_validation_rows_preserves_source_marker(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "validation.csv"
+            save_monthly_validation_rows(
+                [
+                    {
+                        "name": "full_period",
+                        "category": "duration",
+                        "required": True,
+                        "deployable": True,
+                        "reason": "passed",
+                        "source": "monthly-validate;data_quality_exclusions=auto:data/reports/data_quality_excluded_symbols.csv",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertIn("source", text.splitlines()[0])
+        self.assertIn("data_quality_exclusions=auto:", text)
+
+    def test_analyze_monthly_validation_failures_adds_actions_and_parameter_hints(self):
+        rows = [
+            {
+                "name": "stress_exclude_500pct_winners",
+                "category": "stress",
+                "required": True,
+                "deployable": False,
+                "reason": "max_drawdown_breach",
+                "max_drawdown_pct": "-28.0",
+                "excess_return_pct": "12.0",
+                "trade_count": "335",
+            },
+            {
+                "name": "walk_forward_005",
+                "category": "walk_forward",
+                "required": True,
+                "deployable": False,
+                "reason": "negative_excess_return",
+                "max_drawdown_pct": "-20.5",
+                "excess_return_pct": "-5.5",
+                "trade_count": "42",
+            },
+            {
+                "name": "walk_forward_003",
+                "category": "walk_forward",
+                "required": True,
+                "deployable": False,
+                "reason": "train_window_rejected",
+                "train_excess_return_pct": "-1.3",
+                "excess_return_pct": "8.7",
+                "trade_count": "47",
+            },
+        ]
+
+        diagnostics = analyze_monthly_validation_failures(rows)
+        by_name = {row["name"]: row for row in diagnostics}
+
+        self.assertEqual(by_name["stress_exclude_500pct_winners"]["failed_metric"], "max_drawdown_pct")
+        self.assertEqual(by_name["stress_exclude_500pct_winners"]["suggested_action"], "REDUCE_DRAWDOWN")
+        self.assertIn("max_position_weight", by_name["stress_exclude_500pct_winners"]["parameter_hints"])
+        self.assertEqual(by_name["walk_forward_005"]["suggested_action"], "IMPROVE_WEAK_WINDOW_DEFENSE")
+        self.assertIn("cash_buffer_weight", by_name["walk_forward_005"]["parameter_hints"])
+        self.assertEqual(by_name["walk_forward_003"]["suggested_action"], "KEEP_TRAIN_WINDOW_REJECTED")
+
+    def test_save_monthly_validation_failures_writes_actionable_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "validation_failures.csv"
+            saved = save_monthly_validation_failures(
+                [
+                    {
+                        "name": "walk_forward_005",
+                        "category": "walk_forward",
+                        "reason": "negative_excess_return",
+                        "severity": "BLOCK",
+                        "failed_metric": "excess_return_pct",
+                        "metric_value": "-5.5",
+                        "threshold": "0.0",
+                        "suggested_action": "IMPROVE_WEAK_WINDOW_DEFENSE",
+                        "parameter_hints": "increase cash_buffer_weight",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("suggested_action", text.splitlines()[0])
+        self.assertIn("IMPROVE_WEAK_WINDOW_DEFENSE", text)
+
+    def test_analyze_monthly_validation_remediation_prioritizes_actions(self):
+        failures = [
+            {
+                "name": "regime_sideways",
+                "category": "regime",
+                "reason": "negative_excess_return",
+                "severity": "BLOCK",
+                "failed_metric": "excess_return_pct",
+                "metric_value": "-7.1648",
+                "suggested_action": "IMPROVE_WEAK_WINDOW_DEFENSE",
+                "parameter_hints": "increase cash_buffer_weight; tighten min_train_positive_ratio",
+                "start": "2024-10-14",
+                "end": "2025-04-17",
+            },
+            {
+                "name": "walk_forward_005",
+                "category": "walk_forward",
+                "reason": "negative_excess_return",
+                "severity": "BLOCK",
+                "failed_metric": "excess_return_pct",
+                "metric_value": "-5.5812",
+                "suggested_action": "IMPROVE_WEAK_WINDOW_DEFENSE",
+                "parameter_hints": "increase cash_buffer_weight; tighten min_train_positive_ratio",
+                "start": "2026-01-28",
+                "end": "2026-04-30",
+            },
+            {
+                "name": "stress_exclude_500pct_winners",
+                "category": "stress",
+                "reason": "max_drawdown_breach",
+                "severity": "BLOCK",
+                "failed_metric": "max_drawdown_pct",
+                "metric_value": "-28.0835",
+                "suggested_action": "REDUCE_DRAWDOWN",
+                "parameter_hints": "lower max_position_weight; increase cash_buffer_weight",
+                "start": "2024-01-02",
+                "end": "2026-06-18",
+            },
+        ]
+
+        rows = analyze_monthly_validation_remediation(failures)
+
+        self.assertEqual(rows[0]["suggested_action"], "IMPROVE_WEAK_WINDOW_DEFENSE")
+        self.assertEqual(rows[0]["failure_count"], 2)
+        self.assertEqual(rows[0]["worst_metric_value"], "-7.1648")
+        self.assertEqual(rows[0]["priority"], "P1")
+        self.assertIn("cash_buffer_weight", rows[0]["parameter_hints"])
+        self.assertIn("regime_sideways", rows[0]["affected_scenarios"])
+        self.assertEqual(rows[1]["suggested_action"], "REDUCE_DRAWDOWN")
+
+    def test_save_monthly_validation_remediation_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "remediation.csv"
+            saved = save_monthly_validation_remediation(
+                [
+                    {
+                        "priority": "P1",
+                        "suggested_action": "REDUCE_DRAWDOWN",
+                        "failure_count": 1,
+                        "blocked_count": 1,
+                        "affected_categories": "stress",
+                        "affected_scenarios": "stress_exclude_500pct_winners",
+                        "failed_metrics": "max_drawdown_pct",
+                        "worst_metric_value": "-28.0835",
+                        "parameter_hints": "lower max_position_weight",
+                        "next_experiment": "Test lower max_position_weight.",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("next_experiment", text.splitlines()[0])
+        self.assertIn("REDUCE_DRAWDOWN", text)
+
+    def test_build_monthly_validation_sweep_plan_creates_weak_window_candidates(self):
+        remediation_rows = [
+            {
+                "priority": "P1",
+                "suggested_action": "IMPROVE_WEAK_WINDOW_DEFENSE",
+                "failure_count": 3,
+                "blocked_count": 3,
+                "affected_scenarios": "regime_sideways; walk_forward_001; walk_forward_005",
+                "worst_metric_value": "-7.1648",
+            },
+            {
+                "priority": "P1",
+                "suggested_action": "REDUCE_DRAWDOWN",
+                "failure_count": 1,
+                "blocked_count": 1,
+                "affected_scenarios": "stress_exclude_500pct_winners",
+                "worst_metric_value": "-28.0835",
+            },
+        ]
+
+        rows = build_monthly_validation_sweep_plan(
+            remediation_rows,
+            base_config=MonthlyRebalanceConfig(
+                cash_buffer_weight=0.01,
+                min_train_positive_ratio=0.5,
+                candidate_pool_size=7,
+                max_position_weight=0.15,
+                drawdown_guard_scale=0.75,
+                market_volatility_min_scale=0.25,
+            ),
+        )
+
+        by_id = {row["experiment_id"]: row for row in rows}
+        self.assertIn("weak_defense_cash_05", by_id)
+        self.assertEqual(by_id["weak_defense_cash_05"]["cash_buffer_weight"], "0.05")
+        self.assertEqual(by_id["weak_defense_cash_05"]["candidate_pool_size"], "5")
+        self.assertIn("regime_sideways", by_id["weak_defense_cash_05"]["target_scenarios"])
+        self.assertIn("drawdown_guard_stronger", by_id)
+        self.assertEqual(by_id["drawdown_guard_stronger"]["max_position_weight"], "0.1")
+        self.assertEqual(by_id["drawdown_guard_stronger"]["market_volatility_min_scale"], "0.5")
+        self.assertIn("drawdown_guard_very_strict", by_id)
+        self.assertEqual(by_id["drawdown_guard_very_strict"]["max_position_weight"], "0.08")
+        self.assertEqual(by_id["drawdown_guard_very_strict"]["drawdown_guard_scale"], "0.35")
+        self.assertEqual(by_id["drawdown_guard_very_strict"]["market_volatility_min_scale"], "0.65")
+        self.assertIn("drawdown_cash_buffer_05", by_id)
+        self.assertEqual(by_id["drawdown_cash_buffer_05"]["cash_buffer_weight"], "0.05")
+        self.assertEqual(by_id["drawdown_cash_buffer_05"]["max_position_weight"], "0.1")
+        self.assertIn("position_stop_12", by_id)
+        self.assertEqual(by_id["position_stop_12"]["position_trailing_stop_pct"], "-12")
+        self.assertIn("weak_cash_10_position_stop_12", by_id)
+        combo = by_id["weak_cash_10_position_stop_12"]
+        self.assertEqual(combo["cash_buffer_weight"], "0.1")
+        self.assertEqual(combo["min_train_positive_ratio"], "0.6")
+        self.assertEqual(combo["candidate_pool_size"], "5")
+        self.assertEqual(combo["position_trailing_stop_pct"], "-12")
+        self.assertIn("regime_sideways", combo["target_scenarios"])
+        self.assertIn("stress_exclude_500pct_winners", combo["target_scenarios"])
+
+    def test_filter_monthly_validation_sweep_plan_filters_in_plan_order_and_limits(self):
+        rows = [
+            {"experiment_id": "weak_defense_cash_05"},
+            {"experiment_id": "position_stop_12"},
+            {"experiment_id": "weak_cash_10_position_stop_12"},
+        ]
+
+        filtered = filter_monthly_validation_sweep_plan(
+            rows,
+            experiment_ids=["weak_cash_10_position_stop_12", "weak_defense_cash_05"],
+            limit=1,
+        )
+
+        self.assertEqual([row["experiment_id"] for row in filtered], ["weak_defense_cash_05"])
+
+    def test_filter_monthly_validation_sweep_plan_rejects_negative_limit(self):
+        with self.assertRaises(ValueError):
+            filter_monthly_validation_sweep_plan(
+                [{"experiment_id": "weak_defense_cash_05"}],
+                limit=-1,
+            )
+
+    def test_save_monthly_validation_sweep_plan_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "sweep_plan.csv"
+            saved = save_monthly_validation_sweep_plan(
+                [
+                    {
+                        "priority": "P1",
+                        "suggested_action": "IMPROVE_WEAK_WINDOW_DEFENSE",
+                        "experiment_id": "weak_defense_cash_05",
+                        "target_scenarios": "regime_sideways",
+                        "cash_buffer_weight": "0.05",
+                        "min_train_positive_ratio": "0.55",
+                        "candidate_pool_size": "5",
+                        "max_position_weight": "",
+                        "drawdown_guard_scale": "",
+                        "market_volatility_min_scale": "",
+                        "expected_effect": "Reduce weak-window exposure.",
+                        "risk_note": "Re-run validation before adopting.",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("experiment_id", text.splitlines()[0])
+        self.assertIn("weak_defense_cash_05", text)
+
+    def test_run_monthly_validation_sweep_results_marks_improvement(self):
+        cases = [
+            MonthlyValidationCase(
+                name="regime_sideways",
+                category="regime",
+                start="2024-01-01",
+                end="2024-03-31",
+            )
+        ]
+        baseline_rows = [
+            {
+                "name": "regime_sideways",
+                "required": True,
+                "deployable": False,
+                "reason": "negative_excess_return",
+            }
+        ]
+        plan_rows = [
+            {
+                "priority": "P1",
+                "suggested_action": "IMPROVE_WEAK_WINDOW_DEFENSE",
+                "experiment_id": "weak_defense_cash_05",
+                "target_scenarios": "regime_sideways",
+                "cash_buffer_weight": "0.05",
+                "min_train_positive_ratio": "0.55",
+                "candidate_pool_size": "5",
+                "risk_note": "Re-run validation before adopting.",
+            }
+        ]
+        calls = []
+
+        def runner(symbol_candles, *, start, end, config, **kwargs):
+            calls.append(config)
+            return _monthly_result(
+                excess_return_pct=1.2 if config.cash_buffer_weight == 0.05 else -3.0,
+                max_drawdown_pct=-8.0,
+            )
+
+        rows = run_monthly_validation_sweep_results(
+            {"005930": [_candle("2024-01-02", 100), _candle("2024-03-29", 110)]},
+            cases=cases,
+            sweep_plan_rows=plan_rows,
+            base_config=MonthlyRebalanceConfig(cash_buffer_weight=0.01, candidate_pool_size=7),
+            baseline_rows=baseline_rows,
+            backtest_runner=runner,
+        )
+
+        self.assertEqual(rows[0]["status"], "IMPROVED")
+        self.assertEqual(rows[0]["failed_required"], 0)
+        self.assertEqual(rows[0]["baseline_failed_required"], 1)
+        self.assertEqual(rows[0]["failed_delta"], -1)
+        self.assertEqual(rows[0]["validation_scope"], "TARGET_ONLY")
+        self.assertEqual(rows[0]["adoption_status"], "FULL_VALIDATION_REQUIRED")
+        self.assertIn("monthly-validate", rows[0]["adoption_requirements"])
+        self.assertIn("--cash-buffer-weight 0.05", rows[0]["candidate_validation_args"])
+        self.assertIn("--min-train-positive-ratio 0.55", rows[0]["candidate_validation_args"])
+        self.assertIn("--candidate-pool-size 5", rows[0]["candidate_validation_args"])
+        self.assertEqual(calls[0].cash_buffer_weight, 0.05)
+        self.assertEqual(calls[0].candidate_pool_size, 5)
+
+    def test_save_monthly_validation_sweep_results_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "sweep_results.csv"
+            saved = save_monthly_validation_sweep_results(
+                [
+                    {
+                        "experiment_id": "weak_defense_cash_05",
+                        "suggested_action": "IMPROVE_WEAK_WINDOW_DEFENSE",
+                        "status": "IMPROVED",
+                        "target_scenarios": "regime_sideways",
+                        "scenario_count": 1,
+                        "failed_required": 0,
+                        "baseline_failed_required": 1,
+                        "failed_delta": -1,
+                        "min_excess_return_pct": "1.2",
+                        "worst_drawdown_pct": "-8",
+                        "trade_count": 1,
+                        "config_changes": "cash_buffer_weight=0.05",
+                        "result_summary": "failed_required 1 -> 0",
+                        "risk_note": "Re-run validation before adopting.",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("failed_delta", text.splitlines()[0])
+        self.assertIn("candidate_validation_args", text.splitlines()[0])
+        self.assertIn("--cash-buffer-weight 0.05", text)
+        self.assertIn("adoption_status", text.splitlines()[0])
+        self.assertIn("IMPROVED", text)
+        self.assertIn("FULL_VALIDATION_REQUIRED", text)
+
+    def test_build_monthly_validation_candidate_followup_rows_prioritizes_full_validation_candidates(self):
+        rows = build_monthly_validation_candidate_followup_rows(
+            [
+                {
+                    "experiment_id": "unchanged",
+                    "status": "UNCHANGED",
+                    "adoption_status": "PAPER_DIAGNOSTIC_ONLY",
+                    "failed_delta": "0",
+                    "candidate_validation_args": "--cash-buffer-weight 0.05",
+                },
+                {
+                    "experiment_id": "weak_cash_10_position_stop_12",
+                    "status": "IMPROVED",
+                    "adoption_status": "FULL_VALIDATION_REQUIRED",
+                    "failed_delta": "-2",
+                    "candidate_validation_args": "--cash-buffer-weight 0.1 --position-trailing-stop-pct -12",
+                    "risk_note": "Plan only.",
+                },
+            ],
+            data_dir="data/krx_expanded",
+            start="2024-01-01",
+            end="2026-06-18",
+            baseline_scenarios="data/reports/monthly_validation_scenarios_pit_universe.csv",
+            reports_dir="data/reports",
+            point_in_time_universe="data/krx_metadata/krx_universe_monthly.csv",
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["priority_rank"], 1)
+        self.assertEqual(row["experiment_id"], "weak_cash_10_position_stop_12")
+        self.assertIn("monthly-validate", row["validation_command"])
+        self.assertIn("--cash-buffer-weight 0.1", row["validation_command"])
+        self.assertIn("--position-trailing-stop-pct -12", row["validation_command"])
+        self.assertIn("monthly_validation_candidate_weak_cash_10_position_stop_12.csv", row["candidate_scenario_output"])
+        isolated_output_flags = [
+            "--data-quality-output",
+            "--coverage-output",
+            "--performance-output",
+            "--concentration-output",
+            "--failure-output",
+            "--remediation-output",
+            "--sweep-plan-output",
+            "--universe-filter-report",
+        ]
+        for flag in isolated_output_flags:
+            self.assertIn(flag, row["validation_command"])
+            self.assertIn("weak_cash_10_position_stop_12", row["validation_command"])
+        self.assertIn("monthly_validation_failures_candidate_weak_cash_10_position_stop_12.csv", row["validation_command"])
+        self.assertIn("monthly_performance_audit_candidate_weak_cash_10_position_stop_12.csv", row["validation_command"])
+        self.assertIn("monthly-compare-validation", row["comparison_command"])
+        self.assertIn("--candidate-label weak_cash_10_position_stop_12", row["comparison_command"])
+
+    def test_save_monthly_validation_candidate_followup_rows_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "followup.csv"
+            saved = save_monthly_validation_candidate_followup_rows(
+                [
+                    {
+                        "priority_rank": 1,
+                        "experiment_id": "weak_cash_10_position_stop_12",
+                        "status": "IMPROVED",
+                        "failed_delta": "-2",
+                        "candidate_validation_args": "--cash-buffer-weight 0.1",
+                        "validation_command": "python -m backtester monthly-validate --cash-buffer-weight 0.1",
+                        "comparison_command": "python -m backtester monthly-compare-validation",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("validation_command", text.splitlines()[0])
+        self.assertIn("weak_cash_10_position_stop_12", text)
+
+    def test_analyze_monthly_validation_failure_patterns_flags_persistent_and_regression(self):
+        baseline_rows = [
+            {"name": "stress", "required": True, "deployable": False, "reason": "max_drawdown_breach"},
+            {"name": "walk_001", "required": True, "deployable": False, "reason": "negative_excess_return"},
+            {"name": "walk_002", "required": True, "deployable": True, "reason": "passed"},
+        ]
+        delta_rows = [
+            {
+                "name": "stress",
+                "candidate_label": "cash_10",
+                "classification": "RESOLVED",
+                "diagnostic": "candidate_fixed_required_failure",
+            },
+            {
+                "name": "walk_001",
+                "candidate_label": "cash_10",
+                "classification": "UNCHANGED_FAILURE",
+                "diagnostic": "same_failure_persists",
+            },
+            {
+                "name": "walk_002",
+                "candidate_label": "cash_10",
+                "classification": "NEW_FAILURE",
+                "diagnostic": "selection_or_exposure_drag",
+            },
+            {
+                "name": "stress",
+                "candidate_label": "stop_12",
+                "classification": "UNCHANGED_FAILURE",
+                "diagnostic": "same_failure_persists",
+            },
+            {
+                "name": "walk_001",
+                "candidate_label": "stop_12",
+                "classification": "UNCHANGED_FAILURE",
+                "diagnostic": "same_failure_persists",
+            },
+            {
+                "name": "walk_002",
+                "candidate_label": "stop_12",
+                "classification": "NEW_FAILURE",
+                "diagnostic": "selection_or_exposure_drag",
+            },
+        ]
+
+        rows = analyze_monthly_validation_failure_patterns(baseline_rows, delta_rows)
+        by_name = {row["scenario"]: row for row in rows}
+
+        self.assertEqual(by_name["walk_001"]["pattern_status"], "PERSISTENT_BLOCK")
+        self.assertEqual(by_name["walk_001"]["failed_candidate_count"], 2)
+        self.assertEqual(by_name["walk_001"]["unchanged_failure_candidate_count"], 2)
+        self.assertIn("same_failure_persists", by_name["walk_001"]["dominant_diagnostic"])
+        self.assertEqual(by_name["walk_001"]["suggested_action"], "REVIEW_PERSISTENT_FAILURE")
+        self.assertEqual(by_name["walk_002"]["pattern_status"], "REGRESSION_RISK")
+        self.assertEqual(by_name["walk_002"]["new_failure_candidate_count"], 2)
+        self.assertEqual(by_name["walk_002"]["suggested_action"], "AVOID_REGRESSION_CONFIGS")
+
+    def test_save_monthly_validation_failure_patterns_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "failure_patterns.csv"
+            saved = save_monthly_validation_failure_patterns(
+                [
+                    {
+                        "scenario": "walk_001",
+                        "baseline_failed": True,
+                        "failed_candidate_count": 2,
+                        "new_failure_candidate_count": 0,
+                        "resolved_candidate_count": 0,
+                        "unchanged_failure_candidate_count": 2,
+                        "dominant_diagnostic": "same_failure_persists",
+                        "pattern_status": "PERSISTENT_BLOCK",
+                        "suggested_action": "REVIEW_PERSISTENT_FAILURE",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("pattern_status", text.splitlines()[0])
+        self.assertIn("walk_001", text)
+        self.assertIn("PERSISTENT_BLOCK", text)
+
+    def test_compare_monthly_validation_reports_detects_shifted_failures(self):
+        baseline_rows = [
+            {"name": "stress", "required": True, "deployable": False, "reason": "max_drawdown_breach", "excess_return_pct": "5", "max_drawdown_pct": "-28"},
+            {"name": "walk_001", "required": True, "deployable": False, "reason": "negative_excess_return", "excess_return_pct": "-1", "max_drawdown_pct": "-25"},
+            {"name": "walk_002", "required": True, "deployable": True, "reason": "passed", "excess_return_pct": "1", "max_drawdown_pct": "-5"},
+        ]
+        candidate_rows = [
+            {"name": "stress", "required": True, "deployable": True, "reason": "passed", "excess_return_pct": "6", "max_drawdown_pct": "-24"},
+            {"name": "walk_001", "required": True, "deployable": False, "reason": "negative_excess_return", "excess_return_pct": "-2", "max_drawdown_pct": "-23"},
+            {"name": "walk_002", "required": True, "deployable": False, "reason": "negative_excess_return", "excess_return_pct": "-0.2", "max_drawdown_pct": "-4"},
+        ]
+
+        comparison = compare_monthly_validation_reports(
+            baseline_rows,
+            candidate_rows,
+            baseline_label="baseline",
+            candidate_label="weak_defense_cash_10",
+        )
+
+        self.assertEqual(comparison["status"], "REJECT")
+        self.assertEqual(comparison["baseline_failed_required"], 2)
+        self.assertEqual(comparison["candidate_failed_required"], 2)
+        self.assertEqual(comparison["failed_delta"], 0)
+        self.assertEqual(comparison["resolved_failures"], "stress")
+        self.assertEqual(comparison["new_failures"], "walk_002")
+        self.assertIn("new failures", comparison["summary"])
+
+    def test_compare_monthly_validation_scenario_deltas_classifies_each_scenario(self):
+        baseline_rows = [
+            {"name": "stress", "required": True, "deployable": False, "reason": "max_drawdown_breach", "excess_return_pct": "5", "max_drawdown_pct": "-28", "trade_count": "10"},
+            {"name": "walk_001", "required": True, "deployable": False, "reason": "negative_excess_return", "excess_return_pct": "-1", "max_drawdown_pct": "-25", "trade_count": "8"},
+            {"name": "walk_002", "required": True, "deployable": True, "reason": "passed", "excess_return_pct": "1", "max_drawdown_pct": "-5", "trade_count": "4"},
+        ]
+        candidate_rows = [
+            {"name": "stress", "required": True, "deployable": True, "reason": "passed", "excess_return_pct": "6", "max_drawdown_pct": "-24", "trade_count": "11"},
+            {"name": "walk_001", "required": True, "deployable": False, "reason": "negative_excess_return", "excess_return_pct": "-2", "max_drawdown_pct": "-23", "trade_count": "7"},
+            {"name": "walk_002", "required": True, "deployable": False, "reason": "negative_excess_return", "excess_return_pct": "-0.2", "max_drawdown_pct": "-4", "trade_count": "2"},
+        ]
+
+        rows = compare_monthly_validation_scenario_deltas(
+            baseline_rows,
+            candidate_rows,
+            baseline_label="baseline",
+            candidate_label="candidate",
+        )
+
+        by_name = {row["name"]: row for row in rows}
+        self.assertEqual(by_name["stress"]["classification"], "RESOLVED")
+        self.assertEqual(by_name["walk_001"]["classification"], "UNCHANGED_FAILURE")
+        self.assertEqual(by_name["walk_002"]["classification"], "NEW_FAILURE")
+        self.assertEqual(by_name["walk_002"]["excess_return_delta"], "-1.2")
+        self.assertEqual(by_name["walk_002"]["trade_count_delta"], "-2")
+        self.assertIn("over_defense_or_filter_drag", by_name["walk_002"]["diagnostic"])
+
+    def test_compare_monthly_validation_scenario_deltas_diagnoses_new_failure_modes(self):
+        baseline_rows = [
+            {"name": "regime_bear", "required": True, "deployable": True, "reason": "passed", "excess_return_pct": "4", "max_drawdown_pct": "-12", "trade_count": "20"},
+            {"name": "walk_004", "required": True, "deployable": True, "reason": "passed", "excess_return_pct": "10", "max_drawdown_pct": "-8", "trade_count": "15"},
+        ]
+        candidate_rows = [
+            {"name": "regime_bear", "required": True, "deployable": False, "reason": "negative_excess_return", "excess_return_pct": "-2", "max_drawdown_pct": "-14", "trade_count": "45"},
+            {"name": "walk_004", "required": True, "deployable": False, "reason": "train_window_rejected", "excess_return_pct": "5", "max_drawdown_pct": "-5", "trade_count": "16"},
+        ]
+
+        rows = compare_monthly_validation_scenario_deltas(baseline_rows, candidate_rows)
+
+        by_name = {row["name"]: row for row in rows}
+        self.assertEqual(by_name["regime_bear"]["diagnostic"], "selection_or_exposure_drag")
+        self.assertEqual(by_name["walk_004"]["diagnostic"], "train_gate_regression")
+
+    def test_save_monthly_validation_scenario_deltas_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "deltas.csv"
+            saved = save_monthly_validation_scenario_deltas(
+                [
+                    {
+                        "name": "walk_002",
+                        "classification": "NEW_FAILURE",
+                        "baseline_label": "baseline",
+                        "candidate_label": "candidate",
+                        "baseline_deployable": "True",
+                        "candidate_deployable": "False",
+                        "baseline_reason": "passed",
+                        "candidate_reason": "negative_excess_return",
+                        "baseline_excess_return_pct": "1",
+                        "candidate_excess_return_pct": "-0.2",
+                        "excess_return_delta": "-1.2",
+                        "baseline_max_drawdown_pct": "-5",
+                        "candidate_max_drawdown_pct": "-4",
+                        "max_drawdown_delta": "1",
+                        "baseline_trade_count": "4",
+                        "candidate_trade_count": "2",
+                        "trade_count_delta": "-2",
+                        "diagnostic": "over_defense_or_filter_drag",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("classification", text.splitlines()[0])
+        self.assertIn("NEW_FAILURE", text)
+
+    def test_save_monthly_validation_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "comparison.csv"
+            saved = save_monthly_validation_comparison(
+                [
+                    {
+                        "baseline_label": "baseline",
+                        "candidate_label": "candidate",
+                        "status": "REJECT",
+                        "baseline_failed_required": 2,
+                        "candidate_failed_required": 2,
+                        "failed_delta": 0,
+                        "resolved_failures": "stress",
+                        "new_failures": "walk_002",
+                        "unchanged_failures": "walk_001",
+                        "summary": "No net improvement.",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("new_failures", text.splitlines()[0])
+        self.assertIn("REJECT", text)
+
+    def test_build_monthly_validation_candidate_decision_rejects_new_failures(self):
+        decision = build_monthly_validation_candidate_decision(
+            {
+                "candidate_label": "weak_cash10_stop12",
+                "status": "REJECT",
+                "baseline_failed_required": 5,
+                "candidate_failed_required": 6,
+                "failed_delta": 1,
+                "resolved_failures": "stress; walk_001",
+                "new_failures": "regime_bear; walk_002",
+                "unchanged_failures": "walk_005",
+            },
+            [
+                {"classification": "NEW_FAILURE", "diagnostic": "selection_or_exposure_drag", "name": "regime_bear"},
+                {"classification": "NEW_FAILURE", "diagnostic": "train_gate_regression", "name": "walk_002"},
+                {"classification": "RESOLVED", "diagnostic": "candidate_fixed_required_failure", "name": "stress"},
+            ],
+        )
+
+        self.assertEqual(decision[0]["candidate_label"], "weak_cash10_stop12")
+        self.assertEqual(decision[0]["decision"], "REJECT")
+        self.assertIn("new_failures=2", decision[0]["decision_reasons"])
+        self.assertIn("selection_or_exposure_drag=1", decision[0]["new_failure_diagnostics"])
+        self.assertIn("regime_bear", decision[0]["new_failure_names"])
+        self.assertIn("stress", decision[0]["resolved_failure_names"])
+        self.assertIn("Do not adopt", decision[0]["recommendation"])
+
+    def test_save_monthly_validation_candidate_decision_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "candidate_decision.csv"
+            saved = save_monthly_validation_candidate_decision(
+                [
+                    {
+                        "candidate_label": "candidate",
+                        "comparison_status": "REJECT",
+                        "decision": "REJECT",
+                        "decision_reasons": "new_failures=1",
+                        "baseline_failed_required": 5,
+                        "candidate_failed_required": 6,
+                        "failed_delta": 1,
+                        "resolved_count": 1,
+                        "new_failure_count": 1,
+                        "unchanged_failure_count": 5,
+                        "new_failure_diagnostics": "selection_or_exposure_drag=1",
+                        "recommendation": "Do not adopt.",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("decision_reasons", text.splitlines()[0])
+        self.assertIn("REJECT", text)
+
+    def test_analyze_monthly_drawdown_attribution_groups_equity_losses(self):
+        result = _monthly_result(excess_return_pct=-5.0, max_drawdown_pct=-15.0)
+        result = MonthlyBacktestResult(
+            initial_cash=1_000,
+            final_equity=920,
+            total_return_pct=-8.0,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=-8.0,
+            max_drawdown_pct=-15.0,
+            trade_count=0,
+            decisions=[],
+            trades=[],
+            dates=["2024-01-02", "2024-01-31", "2024-02-01", "2024-02-29"],
+            equity_curve=[1_050, 1_000, 980, 920],
+        )
+
+        rows = analyze_monthly_drawdown_attribution(result)
+
+        by_month = {row["month"]: row for row in rows}
+        self.assertEqual(by_month["2024-01"]["equity_change"], "0")
+        self.assertEqual(by_month["2024-02"]["equity_change"], "-80")
+        self.assertEqual(by_month["2024-02"]["status"], "LOSS")
+        self.assertEqual(by_month["2024-02"]["worst_drawdown_pct"], "-12.381")
+
+    def test_analyze_symbol_realized_pnl_attribution_uses_fifo(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000,
+            final_equity=900,
+            total_return_pct=-10.0,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=-10.0,
+            max_drawdown_pct=-10.0,
+            trade_count=4,
+            decisions=[],
+            trades=[
+                MonthlyBacktestTrade("2024-01-02", "AAA", "BUY", 100, 5, 500, "entry"),
+                MonthlyBacktestTrade("2024-01-03", "AAA", "BUY", 90, 5, 50, "entry"),
+                MonthlyBacktestTrade("2024-02-01", "AAA", "SELL", 80, 6, 530, "exit"),
+                MonthlyBacktestTrade("2024-02-02", "BBB", "SELL", 50, 2, 630, "orphan"),
+            ],
+            dates=["2024-01-02", "2024-02-02"],
+            equity_curve=[1_000, 900],
+        )
+
+        rows = analyze_symbol_realized_pnl_attribution(result)
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["AAA"]["realized_pnl"], "-110")
+        self.assertEqual(by_symbol["AAA"]["open_quantity"], "4")
+        self.assertEqual(by_symbol["AAA"]["status"], "LOSS")
+        self.assertEqual(by_symbol["BBB"]["unmatched_sell_quantity"], "2")
+
+    def test_save_monthly_attribution_rows_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "monthly.csv"
+            saved = save_monthly_attribution_rows(
+                [
+                    {
+                        "month": "2024-02",
+                        "start_date": "2024-02-01",
+                        "end_date": "2024-02-29",
+                        "start_equity": "1000",
+                        "end_equity": "920",
+                        "equity_change": "-80",
+                        "return_pct": "-8",
+                        "worst_equity": "920",
+                        "worst_drawdown_pct": "-12.381",
+                        "status": "LOSS",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("worst_drawdown_pct", text.splitlines()[0])
+        self.assertIn("LOSS", text)
 
     def test_deployment_gate_rejects_universe_bias_warning(self):
         gate = build_deployment_gate(
@@ -649,6 +1628,49 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(rows[0]["status"], "BLOCK")
         self.assertIn("BBB", rows[0]["missing_preview"])
         self.assertEqual(rows[1]["status"], "PASS")
+
+    def test_audit_point_in_time_price_coverage_separates_data_quality_exclusions(self):
+        rows = audit_point_in_time_price_coverage(
+            {
+                "AAA": [_candle("2024-01-15", 100)],
+            },
+            {
+                "2024-01-31": {"AAA", "BBB", "CCC"},
+            },
+            min_coverage_pct=80.0,
+            excluded_symbols={"BBB"},
+        )
+
+        self.assertEqual(rows[0]["universe_symbols"], 2)
+        self.assertEqual(rows[0]["covered_symbols"], 1)
+        self.assertEqual(rows[0]["missing_symbols"], 1)
+        self.assertEqual(rows[0]["excluded_symbols"], 1)
+        self.assertIn("CCC", rows[0]["missing_preview"])
+        self.assertNotIn("BBB", rows[0]["missing_preview"])
+
+    def test_audit_point_in_time_price_coverage_excludes_metadata_filtered_members(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "universe.csv"
+            path.write_text(
+                "snapshot_date,symbol,name,market\n"
+                "2024-01-31,111111,정상기업,KOSPI\n"
+                "2024-01-31,222222,신한제13호스팩,KOSDAQ\n"
+                "2024-01-31,333333,대신증권우,KOSPI\n",
+                encoding="utf-8",
+            )
+            universe = load_point_in_time_universe(path)
+
+            rows = audit_point_in_time_price_coverage(
+                {"111111": [_candle("2024-01-15", 100)]},
+                universe,
+                min_coverage_pct=80.0,
+            )
+
+        self.assertEqual(rows[0]["universe_symbols"], 1)
+        self.assertEqual(rows[0]["covered_symbols"], 1)
+        self.assertEqual(rows[0]["missing_symbols"], 0)
+        self.assertEqual(rows[0]["coverage_pct"], 100.0)
+        self.assertEqual(rows[0]["status"], "PASS")
 
     def test_save_universe_price_coverage_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
@@ -910,6 +1932,50 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(decision.target_weights, {"AAA": 0.2, "BBB": 0.1})
         self.assertEqual(decision.reason, "selected_monthly_alpha_drawdown_guard")
 
+    def test_filter_symbols_by_event_score_blocks_negative_weighted_news(self):
+        store = EventScoreStore(
+            {
+                ("AAA", "2024-01-09"): -0.9,
+                ("BBB", "2024-01-09"): 0.2,
+            }
+        )
+
+        symbols = filter_symbols_by_event_score(
+            ["AAA", "BBB"],
+            event_scores=store,
+            signal_date="2024-01-10",
+            lookback_days=5,
+            min_entry_event_score=-0.2,
+        )
+
+        self.assertEqual(symbols, ["BBB"])
+
+    def test_event_score_multipliers_overweight_positive_news_without_future_data(self):
+        store = EventScoreStore(
+            {
+                ("AAA", "2024-01-09"): 0.5,
+                ("AAA", "2024-01-11"): -1.0,
+                ("BBB", "2024-01-09"): 0.0,
+            }
+        )
+
+        multipliers = event_score_multipliers(
+            ["AAA", "BBB"],
+            event_scores=store,
+            signal_date="2024-01-10",
+            lookback_days=5,
+            event_weight=0.4,
+        )
+        weights = target_weights_for_symbols(
+            ["AAA", "BBB"],
+            target_budget=0.9,
+            max_position_weight=1.0,
+            symbol_multipliers=multipliers,
+        )
+
+        self.assertGreater(multipliers["AAA"], multipliers["BBB"])
+        self.assertGreater(weights["AAA"], weights["BBB"])
+
     def test_load_point_in_time_universe_groups_symbols_by_snapshot_date(self):
         with TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "universe.csv"
@@ -925,6 +1991,142 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(universe["2024-01-31"], {"005930", "000660"})
         self.assertEqual(universe["2024-02-29"], {"005930"})
+
+    def test_point_in_time_universe_uses_snapshot_date_without_future_snapshots(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "universe.csv"
+            path.write_text(
+                "snapshot_date,symbol,name,market\n"
+                "2024-01-31,111111,Old,KOSPI\n"
+                "2024-02-29,222222,Future,KOSPI\n",
+                encoding="utf-8",
+            )
+
+            universe = load_point_in_time_universe(path)
+            filtered = filter_symbol_candles_by_universe(
+                {
+                    "111111": [_candle("2024-01-01", 100), _candle("2024-01-31", 101)],
+                    "222222": [_candle("2024-01-01", 100), _candle("2024-01-31", 101)],
+                },
+                universe,
+                signal_date="2024-02-15",
+                min_history_days=1,
+            )
+
+        self.assertEqual(set(filtered), {"111111"})
+
+    def test_point_in_time_universe_excludes_after_delisting_and_before_listing(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "universe.csv"
+            path.write_text(
+                "snapshot_date,symbol,name,market,listed_date,delisted_date\n"
+                "2024-03-31,111111,Live,KOSPI,2020-01-01,\n"
+                "2024-03-31,222222,Delisted,KOSPI,2020-01-01,2024-03-01\n"
+                "2024-03-31,333333,Not Yet,KOSPI,2024-04-01,\n",
+                encoding="utf-8",
+            )
+
+            universe = load_point_in_time_universe(path)
+            filtered = filter_symbol_candles_by_universe(
+                {
+                    "111111": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                    "222222": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                    "333333": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                },
+                universe,
+                signal_date="2024-03-31",
+                min_history_days=1,
+            )
+
+        self.assertEqual(set(filtered), {"111111"})
+
+    def test_point_in_time_universe_excludes_untradable_suspended_and_managed(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "universe.csv"
+            path.write_text(
+                "snapshot_date,symbol,name,market,tradable,is_suspended,is_managed\n"
+                "2024-03-31,111111,Ok,KOSPI,true,false,false\n"
+                "2024-03-31,222222,Untradable,KOSPI,false,false,false\n"
+                "2024-03-31,333333,Suspended,KOSPI,true,true,false\n"
+                "2024-03-31,444444,Managed,KOSPI,true,false,true\n",
+                encoding="utf-8",
+            )
+
+            universe = load_point_in_time_universe(path)
+            filtered = filter_symbol_candles_by_universe(
+                {
+                    "111111": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                    "222222": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                    "333333": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                    "444444": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                },
+                universe,
+                signal_date="2024-03-31",
+                min_history_days=1,
+            )
+
+        self.assertEqual(set(filtered), {"111111"})
+
+    def test_legacy_point_in_time_universe_infers_spac_and_preferred_from_name(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "universe.csv"
+            path.write_text(
+                "snapshot_date,symbol,name,market\n"
+                "2024-03-31,111111,정상기업,KOSPI\n"
+                "2024-03-31,222222,신한제13호스팩,KOSDAQ\n"
+                "2024-03-31,333333,대신증권우,KOSPI\n",
+                encoding="utf-8",
+            )
+
+            universe = load_point_in_time_universe(path)
+            filtered = filter_symbol_candles_by_universe(
+                {
+                    "111111": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                    "222222": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                    "333333": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                },
+                universe,
+                signal_date="2024-03-31",
+                min_history_days=1,
+            )
+
+        self.assertEqual(set(filtered), {"111111"})
+
+    def test_universe_filter_report_records_exclusion_reasons(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "universe.csv"
+            output = root / "universe_filter_report.csv"
+            path.write_text(
+                "snapshot_date,symbol,name,market,listed_date,delisted_date,tradable,is_suspended\n"
+                "2024-03-31,111111,Ok,KOSPI,2020-01-01,,true,false\n"
+                "2024-03-31,222222,Delisted,KOSPI,2020-01-01,2024-03-01,true,false\n"
+                "2024-03-31,333333,New,KOSPI,2024-03-01,,true,false\n"
+                "2024-03-31,444444,Suspended,KOSPI,2020-01-01,,true,true\n",
+                encoding="utf-8",
+            )
+            universe = load_point_in_time_universe(path)
+
+            rows = build_universe_filter_report(
+                {
+                    "111111": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                    "222222": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                    "333333": [_candle("2024-03-29", 101)],
+                    "444444": [_candle("2024-01-01", 100), _candle("2024-03-29", 101)],
+                },
+                universe,
+                as_of_dates=["2024-03-31"],
+                min_history_days=2,
+            )
+            saved = save_universe_filter_report(rows, output)
+            text = output.read_text(encoding="utf-8")
+
+        reasons = {row["symbol"]: row["reason"] for row in rows}
+        self.assertEqual(saved, 3)
+        self.assertEqual(reasons["222222"], "delisted")
+        self.assertEqual(reasons["333333"], "insufficient_history")
+        self.assertEqual(reasons["444444"], "suspended")
+        self.assertIn("reason", text)
 
     def test_filter_symbol_candles_by_universe_uses_latest_snapshot_before_signal_date(self):
         universe = {
@@ -1007,6 +2209,61 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(orders[0].action, "SKIP")
         self.assertEqual(orders[0].reason, "target_value_below_one_share")
 
+    def test_build_order_plan_adds_adv_liquidity_and_cost_estimates(self):
+        candles = [
+            _candle(f"2026-05-{day:02d}", 1_000)
+            for day in range(20, 32)
+        ] + [
+            _candle(f"2026-06-{day:02d}", 1_000)
+            for day in range(1, 9)
+        ]
+        orders = build_order_plan(
+            MonthlyDecision(
+                as_of_date="2026-06-10",
+                signal_date="2026-06-09",
+                mode="alpha",
+                selected_preset="balanced",
+                target_weights={"111111": 0.1},
+                reason="liquidity-test",
+            ),
+            positions=[],
+            cash=1_000_000,
+            reference_prices={"111111": 1_000},
+            min_trade_value=0,
+            symbol_candles={"111111": candles},
+            base_slippage_rate=0.001,
+            impact_slippage_multiplier=0.02,
+            warn_adv_participation_rate=0.15,
+            max_adv_participation_rate=0.2,
+        )
+
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(orders[0].adv_20d, 1_000_000)
+        self.assertAlmostEqual(orders[0].adv_participation_rate, 0.1)
+        self.assertEqual(orders[0].liquidity_status, "PASS")
+        self.assertAlmostEqual(orders[0].estimated_slippage_rate, 0.003)
+        self.assertAlmostEqual(orders[0].estimated_total_cost, 300)
+
+    def test_build_order_plan_blocks_when_adv_is_unavailable(self):
+        orders = build_order_plan(
+            MonthlyDecision(
+                as_of_date="2026-06-20",
+                signal_date="2026-06-19",
+                mode="alpha",
+                selected_preset="balanced",
+                target_weights={"111111": 0.1},
+                reason="liquidity-test",
+            ),
+            positions=[],
+            cash=1_000_000,
+            reference_prices={"111111": 10_000},
+            min_trade_value=0,
+            symbol_candles={"111111": []},
+        )
+
+        self.assertEqual(orders[0].liquidity_status, "BLOCK")
+        self.assertIn("adv_unavailable", orders[0].liquidity_reason)
+
     def test_warn_order_plan_is_not_execution_allowed(self):
         orders = build_order_plan(
             MonthlyDecision(
@@ -1028,8 +2285,10 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertFalse(guarded[0].execution_allowed)
         self.assertEqual(guarded[0].execution_mode, "blocked")
         self.assertEqual(guarded[0].execution_block_reason, "risk_status_WARN")
+        self.assertEqual(guarded[0].risk_status, "BLOCKED")
+        self.assertIn("risk_status_WARN", guarded[0].risk_reasons)
 
-    def test_pass_order_plan_is_execution_allowed(self):
+    def test_pass_order_plan_is_blocked_when_production_trading_disabled(self):
         orders = build_order_plan(
             MonthlyDecision(
                 as_of_date="2026-06-20",
@@ -1047,9 +2306,39 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         guarded = mark_order_plan_execution(orders, risk_status_value="PASS")
 
+        self.assertFalse(guarded[0].execution_allowed)
+        self.assertEqual(guarded[0].execution_mode, "blocked")
+        self.assertEqual(guarded[0].execution_block_reason, "production_trading_disabled")
+        self.assertEqual(guarded[0].risk_status, "BLOCKED")
+        self.assertIn("production_trading_disabled", guarded[0].risk_reasons)
+
+    def test_pass_order_plan_is_execution_allowed_only_when_enabled(self):
+        orders = build_order_plan(
+            MonthlyDecision(
+                as_of_date="2026-06-20",
+                signal_date="2026-06-19",
+                mode="alpha",
+                selected_preset="balanced",
+                target_weights={"111111": 0.1},
+                reason="unit-test",
+            ),
+            positions=[],
+            cash=1_000_000,
+            reference_prices={"111111": 10_000},
+            min_trade_value=0,
+        )
+
+        guarded = mark_order_plan_execution(
+            orders,
+            risk_status_value="PASS",
+            production_trading_enabled=True,
+        )
+
         self.assertTrue(guarded[0].execution_allowed)
         self.assertEqual(guarded[0].execution_mode, "live_ready")
         self.assertEqual(guarded[0].execution_block_reason, "")
+        self.assertEqual(guarded[0].risk_status, "PASS")
+        self.assertEqual(guarded[0].risk_reasons, "")
 
     def test_save_order_plan_writes_execution_guard_columns(self):
         orders = build_order_plan(
@@ -1076,6 +2365,81 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(row["execution_allowed"], "False")
         self.assertEqual(row["execution_mode"], "blocked")
         self.assertEqual(row["execution_block_reason"], "risk_status_WARN")
+        self.assertEqual(row["risk_status"], "BLOCKED")
+        self.assertIn("risk_status_WARN", row["risk_reasons"])
+        self.assertIn("adv_20d", row)
+        self.assertIn("adv_participation_rate", row)
+        self.assertIn("liquidity_status", row)
+        self.assertIn("liquidity_reason", row)
+        self.assertIn("estimated_slippage_rate", row)
+        self.assertIn("estimated_total_cost", row)
+
+    def test_save_order_plan_summary_warns_when_orders_are_blocked(self):
+        decision = MonthlyDecision(
+            as_of_date="2026-06-20",
+            signal_date="2026-06-19",
+            mode="alpha",
+            selected_preset="balanced",
+            target_weights={"111111": 0.1},
+            reason="unit-test",
+        )
+        orders = build_order_plan(
+            decision,
+            positions=[],
+            cash=1_000_000,
+            reference_prices={"111111": 10_000},
+            min_trade_value=0,
+        )
+        guarded = mark_order_plan_execution(orders, risk_status_value="WARN")
+        checks = [RiskCheck("performance_guard", "WARN", "thin walk-forward margin")]
+
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "order_summary.md"
+            save_order_plan_summary(
+                decision=decision,
+                orders=guarded,
+                risk_checks=checks,
+                risk_status_value="WARN",
+                output_path=output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertIn("Execution status: BLOCKED", text)
+        self.assertIn("risk_status_WARN", text)
+        self.assertIn("performance_guard", text)
+        self.assertIn("BUY orders: 1", text)
+        self.assertIn("Total buy value: 100000", text)
+
+    def test_save_order_plan_summary_lists_risk_block_reasons_without_orders(self):
+        decision = MonthlyDecision(
+            as_of_date="2026-06-21",
+            signal_date="2026-06-18",
+            mode="alpha",
+            selected_preset="balanced",
+            target_weights={},
+            reason="performance_block_scale_0",
+        )
+        checks = [
+            RiskCheck("deployment_gate", "BLOCK", "failed_required_scenarios:walk_forward_001"),
+            RiskCheck("performance_guard", "BLOCK", "target_scale=0.0000"),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "order_summary.md"
+            save_order_plan_summary(
+                decision=decision,
+                orders=[],
+                risk_checks=checks,
+                risk_status_value="BLOCK",
+                output_path=output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertIn("Execution status: BLOCKED", text)
+        self.assertIn("Risk status: BLOCK", text)
+        self.assertNotIn("- none", text)
+        self.assertIn("deployment_gate: failed_required_scenarios:walk_forward_001", text)
+        self.assertIn("performance_guard: target_scale=0.0000", text)
 
     def test_target_weights_cap_single_position_exposure(self):
         weights = target_weights_for_symbols(
@@ -1297,6 +2661,89 @@ class MonthlyRebalanceTests(unittest.TestCase):
             ("2024-02-05", "SELL", "daily_drawdown_stop"),
         ])
         self.assertAlmostEqual(result.final_equity, 700)
+
+    def test_position_trailing_stop_liquidates_on_next_open(self):
+        def decision_provider(symbol_candles, *, as_of_date, config):
+            latest_seen = max(candle.date for candles in symbol_candles.values() for candle in candles)
+            return MonthlyDecision(
+                as_of_date=as_of_date,
+                signal_date=latest_seen,
+                mode="alpha",
+                selected_preset="unit",
+                target_weights={"111111": 1.0},
+                reason="unit-test",
+            )
+
+        result = run_monthly_rebalance_backtest(
+            {
+                "111111": [
+                    _candle("2024-01-31", 100, 100),
+                    _candle("2024-02-01", 100, 100),
+                    _candle("2024-02-02", 85, 85),
+                    _candle("2024-02-05", 80, 80),
+                ]
+            },
+            start="2024-02-01",
+            end="2024-02-05",
+            initial_cash=1_000,
+            fee_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
+            min_trade_value=0.0,
+            config=MonthlyRebalanceConfig(position_trailing_stop_pct=-10.0),
+            decision_provider=decision_provider,
+        )
+
+        self.assertEqual([(trade.date, trade.action, trade.reason) for trade in result.trades], [
+            ("2024-02-01", "BUY", "unit-test"),
+            ("2024-02-05", "SELL", "position_trailing_stop"),
+        ])
+        self.assertAlmostEqual(result.final_equity, 800)
+
+    def test_deep_drawdown_guard_uses_stronger_scale_on_monthly_rebalance(self):
+        def decision_provider(symbol_candles, *, as_of_date, config):
+            latest_seen = max(candle.date for candles in symbol_candles.values() for candle in candles)
+            return MonthlyDecision(
+                as_of_date=as_of_date,
+                signal_date=latest_seen,
+                mode="alpha",
+                selected_preset="unit",
+                target_weights={"111111": 1.0},
+                reason="unit-test",
+            )
+
+        result = run_monthly_rebalance_backtest(
+            {
+                "111111": [
+                    _candle("2024-01-31", 100, 100),
+                    _candle("2024-02-01", 100, 100),
+                    _candle("2024-02-02", 70, 70),
+                    _candle("2024-03-01", 70, 70),
+                ]
+            },
+            start="2024-02-01",
+            end="2024-03-01",
+            initial_cash=1_000,
+            fee_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
+            min_trade_value=0.0,
+            config=self._config_with_deep_drawdown_guard(),
+            decision_provider=decision_provider,
+        )
+
+        self.assertEqual([(trade.date, trade.action, trade.quantity, trade.reason) for trade in result.trades], [
+            ("2024-02-01", "BUY", 10, "unit-test"),
+            ("2024-03-01", "SELL", 7, "unit-test_deep_drawdown_guard"),
+        ])
+
+    def _config_with_deep_drawdown_guard(self):
+        return MonthlyRebalanceConfig(
+            drawdown_guard_trigger_pct=-10.0,
+            drawdown_guard_scale=0.75,
+            drawdown_guard_deep_trigger_pct=-20.0,
+            drawdown_guard_deep_scale=0.25,
+        )
 
 
 if __name__ == "__main__":
