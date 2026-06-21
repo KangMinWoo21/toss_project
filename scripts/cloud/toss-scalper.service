@@ -1,0 +1,26 @@
+[Unit]
+Description=Toss Invest paper scalper data collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=minwoo0180
+Group=minwoo0180
+WorkingDirectory=%h/toss-stock-bot
+Environment=REPO_DIR=%h/toss-stock-bot
+Environment=KR_SYMBOLS=005930,000660
+Environment=US_SYMBOLS=AAPL,NVDA,TSLA,QQQ
+Environment=ITERATIONS_PER_SYMBOL=1
+Environment=INTERVAL_SECONDS=1
+Environment=IDLE_SECONDS=60
+Environment=MAX_SPREAD_PCT=0.2
+Environment=VOLUME_SPIKE_MULTIPLIER=3.0
+Environment=IMBALANCE_THRESHOLD=1.5
+EnvironmentFile=%h/toss-stock-bot/.env
+ExecStart=/usr/bin/bash %h/toss-stock-bot/scripts/cloud/run_auto_scalper.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
