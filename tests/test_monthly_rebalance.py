@@ -21,6 +21,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_performance_concentration,
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
+    analyze_monthly_direct_alpha_selection,
     analyze_monthly_validation_failures,
     analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
@@ -77,6 +78,7 @@ from backtester.monthly_rebalance import (
     save_monthly_validation_scenario_deltas,
     save_monthly_attribution_rows,
     save_monthly_decision_attribution,
+    save_monthly_direct_alpha_selection,
     save_order_plan,
     save_order_plan_summary,
     save_universe_filter_report,
@@ -2121,6 +2123,84 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("direct_candidate_count=", diagnostics)
         self.assertIn("best_direct_total_return_pct=", diagnostics)
         self.assertIn("best_direct_buy_hold_return_pct=", diagnostics)
+
+    def test_analyze_monthly_direct_alpha_selection_explains_selected_and_rejected_symbols(self):
+        symbol_candles = {
+            "AAA": _trend_candles_with_volume("2024-01-01", 220, close=100, step=1.2, volume=10_000),
+            "BBB": _trend_candles_with_volume("2024-01-01", 220, close=100, step=1.0, volume=9_000),
+            "CCC": _trend_candles_with_volume("2024-01-01", 220, close=100, step=0.8, volume=8_000),
+            "DDD": _trend_candles_with_volume("2024-01-01", 220, close=100, step=0.6, volume=7_000),
+            "EEE": _trend_candles_with_volume("2024-01-01", 220, close=100, step=0.4, volume=6_000),
+            "FFF": _trend_candles_with_volume("2024-01-01", 220, close=100, step=0.2, volume=5_000),
+            "PENNY": _trend_candles_with_volume("2024-01-01", 220, close=10, step=0.01, volume=20_000),
+            "OUT": _trend_candles_with_volume("2024-01-01", 220, close=100, step=2.0, volume=30_000),
+        }
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2024-08-07",
+            start="2024-08-08",
+            end="2024-09-30",
+        )
+
+        rows = analyze_monthly_direct_alpha_selection(
+            symbol_candles,
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                presets=("balanced",),
+                point_in_time_universe={"2024-08-07": {"AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "PENNY"}},
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=50,
+                point_in_time_liquidity_top_n=6,
+                point_in_time_liquidity_window_days=20,
+                min_rows_per_window=20,
+                start_grace_days=0,
+                train_stability_years=1,
+            ),
+        )
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["AAA"]["selection_status"], "selected")
+        self.assertEqual(by_symbol["AAA"]["selection_weight"], "0.2")
+        self.assertGreater(float(by_symbol["AAA"]["momentum_score_pct"]), float(by_symbol["FFF"]["momentum_score_pct"]))
+        self.assertEqual(by_symbol["FFF"]["selection_status"], "rejected")
+        self.assertEqual(by_symbol["FFF"]["rejection_reason"], "below_selected_rank")
+        self.assertEqual(by_symbol["AAA"]["raw_symbols"], 8)
+        self.assertEqual(by_symbol["AAA"]["universe_symbols"], 7)
+        self.assertEqual(by_symbol["AAA"]["pit_symbols"], 6)
+        self.assertEqual(by_symbol["AAA"]["liquid_symbols"], 6)
+        self.assertEqual(by_symbol["AAA"]["train_symbols"], 6)
+        self.assertEqual(by_symbol["AAA"]["universe_removed"], 1)
+        self.assertEqual(by_symbol["AAA"]["pit_filter_removed"], 1)
+        self.assertEqual(by_symbol["AAA"]["liquidity_removed"], 0)
+        self.assertIn("benchmark_avg_return_pct", by_symbol["AAA"])
+        self.assertIn("candidate_excess_return_pct", by_symbol["AAA"])
+        self.assertIn("candidate_trade_count", by_symbol["AAA"])
+        self.assertIn("candidate_buy_count", by_symbol["AAA"])
+        self.assertIn("candidate_sell_count", by_symbol["AAA"])
+        self.assertIn("candidate_unique_traded_symbols", by_symbol["AAA"])
+
+    def test_save_monthly_direct_alpha_selection_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "direct_alpha_selection.csv"
+            saved = save_monthly_direct_alpha_selection(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "preset": "balanced",
+                        "symbol": "AAA",
+                        "selection_status": "selected",
+                        "momentum_score_pct": "12.3",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,preset,symbol", text.splitlines()[0])
+        self.assertIn("walk_forward_unit", text)
 
     def test_generate_monthly_validation_cases_includes_duration_regime_and_stress(self):
         cases = generate_monthly_validation_cases(

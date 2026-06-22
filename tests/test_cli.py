@@ -3,7 +3,7 @@ import sys
 import unittest
 import os
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -37,6 +37,17 @@ class CliTests(unittest.TestCase):
                 f"2024-03-01,{base},{base + 1},{base - 1},{base},1000\n",
                 encoding="utf-8",
             )
+
+    def _write_trend_price_file(self, data_dir: Path, symbol: str, *, close: float, step: float, volume: int) -> str:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        start = datetime.fromisoformat("2024-01-01")
+        lines = ["date,open,high,low,close,volume"]
+        for index in range(220):
+            day = (start + timedelta(days=index)).date().isoformat()
+            price = close + step * index
+            lines.append(f"{day},{price},{price + 1},{max(1, price - 1)},{price},{volume}")
+        (data_dir / f"{symbol}.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return (start + timedelta(days=219)).date().isoformat()
 
     def test_compare_command_prints_strategy_table(self):
         completed = subprocess.run(
@@ -779,8 +790,11 @@ class CliTests(unittest.TestCase):
                     str(output),
                 ],
             )
-            with output.open(encoding="utf-8") as f:
-                rows = list(csv.DictReader(f))
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("delta_reports  1", completed.stdout)
@@ -822,8 +836,11 @@ class CliTests(unittest.TestCase):
                     str(output),
                 ],
             )
-            with output.open(encoding="utf-8") as f:
-                rows = list(csv.DictReader(f))
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("delta_reports  1", completed.stdout)
@@ -998,6 +1015,80 @@ class CliTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(rows[0]["evidence_gaps"], "")
         self.assertIn("attribution_reports  2", completed.stdout)
+
+    def test_monthly_direct_alpha_diagnostics_cli_writes_selection_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data_dir = root / "prices"
+            train_end = self._write_trend_price_file(data_dir, "AAA", close=100, step=1.2, volume=10_000)
+            for symbol, step, volume in [
+                ("BBB", 1.0, 9_000),
+                ("CCC", 0.8, 8_000),
+                ("DDD", 0.6, 7_000),
+                ("EEE", 0.4, 6_000),
+                ("FFF", 0.2, 5_000),
+                ("PENNY", 0.01, 20_000),
+                ("OUT", 2.0, 30_000),
+            ]:
+                self._write_trend_price_file(
+                    data_dir,
+                    symbol,
+                    close=10 if symbol == "PENNY" else 100,
+                    step=step,
+                    volume=volume,
+                )
+            baseline = root / "baseline.csv"
+            baseline.write_text(
+                "name,category,required,train_start,train_end,start,end,deployable,reason\n"
+                f"walk_forward_unit,walk_forward,True,2024-01-01,{train_end},2024-08-08,2024-09-30,False,train_window_rejected\n",
+                encoding="utf-8",
+            )
+            universe = root / "universe.csv"
+            universe.write_text(
+                "date,symbol\n"
+                + "".join(f"{train_end},{symbol}\n" for symbol in ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "PENNY"]),
+                encoding="utf-8",
+            )
+            output = root / "direct_alpha_selection.csv"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-direct-alpha-diagnostics",
+                    "--data-dir",
+                    str(data_dir),
+                    "--baseline",
+                    str(baseline),
+                    "--scenario",
+                    "walk_forward_unit",
+                    "--point-in-time-universe",
+                    str(universe),
+                    "--point-in-time-min-history-days",
+                    "20",
+                    "--point-in-time-min-reference-price",
+                    "50",
+                    "--point-in-time-liquidity-top-n",
+                    "6",
+                    "--point-in-time-liquidity-window-days",
+                    "20",
+                    "--min-rows-per-window",
+                    "20",
+                    "--start-grace-days",
+                    "0",
+                    "--output",
+                    str(output),
+                ],
+            )
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("direct_alpha_selection_report", completed.stdout)
+        self.assertTrue(any(row["symbol"] == "AAA" and row["selection_status"] == "selected" for row in rows))
+        self.assertTrue(any(row["symbol"] == "FFF" and row["rejection_reason"] == "below_selected_rank" for row in rows))
 
     def test_monthly_compare_validation_cli_writes_comparison(self):
         with TemporaryDirectory() as temp_dir:

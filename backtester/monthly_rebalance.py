@@ -449,6 +449,42 @@ VALIDATION_FAILURE_DRILLDOWN_COLUMNS = [
     "next_action",
 ]
 
+DIRECT_ALPHA_SELECTION_COLUMNS = [
+    "scenario",
+    "preset",
+    "symbol",
+    "category",
+    "train_start",
+    "train_end",
+    "selection_status",
+    "selection_rank",
+    "selection_weight",
+    "rejection_reason",
+    "momentum_score_pct",
+    "average_trading_value",
+    "symbol_train_return_pct",
+    "benchmark_weight",
+    "benchmark_avg_return_pct",
+    "benchmark_median_return_pct",
+    "candidate_total_return_pct",
+    "candidate_buy_hold_return_pct",
+    "candidate_excess_return_pct",
+    "candidate_max_drawdown_pct",
+    "candidate_trade_count",
+    "candidate_buy_count",
+    "candidate_sell_count",
+    "candidate_unique_traded_symbols",
+    "raw_symbols",
+    "universe_symbols",
+    "pit_symbols",
+    "liquid_symbols",
+    "train_symbols",
+    "universe_removed",
+    "pit_filter_removed",
+    "liquidity_removed",
+    "train_coverage_removed",
+]
+
 PERFORMANCE_CONCENTRATION_COLUMNS = [
     "source",
     "start",
@@ -2592,6 +2628,212 @@ def save_monthly_validation_rows(rows: list[dict[str, Any]], output_path: Path |
         for row in rows:
             writer.writerow({column: row.get(column, "") for column in MONTHLY_VALIDATION_COLUMNS})
     return len(rows)
+
+
+def analyze_monthly_direct_alpha_selection(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    cases: list[MonthlyValidationCase],
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        if not case.train_start or not case.train_end:
+            continue
+        rows.extend(_monthly_direct_alpha_selection_for_case(symbol_candles, case=case, config=config))
+    return rows
+
+
+def save_monthly_direct_alpha_selection(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=DIRECT_ALPHA_SELECTION_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in DIRECT_ALPHA_SELECTION_COLUMNS})
+    return len(rows)
+
+
+def _monthly_direct_alpha_selection_for_case(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    case: MonthlyValidationCase,
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    try:
+        universe_candles = filter_symbol_candles_by_universe(
+            symbol_candles,
+            config.point_in_time_universe,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+        )
+        point_in_time_candles = select_point_in_time_universe(
+            universe_candles,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+            min_reference_price=config.point_in_time_min_reference_price,
+            max_trailing_return_pct=config.point_in_time_max_trailing_return_pct,
+            trailing_return_days=config.point_in_time_trailing_return_days,
+        )
+        decision_candles = (
+            select_liquid_universe(
+                point_in_time_candles,
+                signal_date=case.train_end,
+                top_n=config.point_in_time_liquidity_top_n,
+                window_days=config.point_in_time_liquidity_window_days,
+            )
+            if config.point_in_time_liquidity_top_n > 0
+            else point_in_time_candles
+        )
+        train_candles = slice_asof_symbol_candles(
+            decision_candles,
+            start=case.train_start,
+            end=case.train_end,
+            min_rows=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+        )
+    except ValueError:
+        return []
+    if not train_candles:
+        return []
+
+    counts = {
+        "raw_symbols": len(symbol_candles),
+        "universe_symbols": len(universe_candles),
+        "pit_symbols": len(point_in_time_candles),
+        "liquid_symbols": len(decision_candles),
+        "train_symbols": len(train_candles),
+        "universe_removed": max(0, len(symbol_candles) - len(universe_candles)),
+        "pit_filter_removed": max(0, len(universe_candles) - len(point_in_time_candles)),
+        "liquidity_removed": max(0, len(point_in_time_candles) - len(decision_candles)),
+        "train_coverage_removed": max(0, len(decision_candles) - len(train_candles)),
+    }
+    symbol_returns = dict(_period_symbol_returns(train_candles, start=case.train_start, end=case.train_end))
+    return_values = list(symbol_returns.values())
+    benchmark_avg = mean(return_values) if return_values else None
+    benchmark_median = median(return_values) if return_values else None
+    benchmark_weight = 1 / len(train_candles) if train_candles else 0.0
+
+    rows: list[dict[str, Any]] = []
+    for preset in config.presets:
+        preset_config = momentum_rotation_config_for_preset(preset)
+        candidate_result = run_momentum_rotation_backtest(train_candles, preset_config)
+        candidate_buy_count = sum(1 for trade in candidate_result.trades if trade.action == "BUY")
+        candidate_sell_count = sum(1 for trade in candidate_result.trades if trade.action == "SELL")
+        candidate_unique_symbols = len({trade.symbol for trade in candidate_result.trades})
+        selected_symbols = rank_momentum_targets(train_candles, signal_date=case.train_end, config=preset_config)
+        selected_set = set(selected_symbols)
+        selected_weights = {
+            symbol: 1 / len(selected_symbols)
+            for symbol in selected_symbols
+        } if selected_symbols else {}
+        rank_info = _direct_alpha_rank_info(train_candles, signal_date=case.train_end, config=preset_config)
+        for symbol in sorted(train_candles):
+            info = rank_info.get(symbol, {})
+            selected = symbol in selected_set
+            rejection_reason = "" if selected else str(info.get("rejection_reason", "") or "below_selected_rank")
+            rows.append(
+                {
+                    "scenario": case.name,
+                    "category": case.category,
+                    "train_start": case.train_start,
+                    "train_end": case.train_end,
+                    "preset": preset,
+                    "symbol": symbol,
+                    "selection_status": "selected" if selected else "rejected",
+                    "selection_rank": selected_symbols.index(symbol) + 1 if selected else "",
+                    "selection_weight": _format_optional_float(selected_weights.get(symbol)),
+                    "rejection_reason": rejection_reason,
+                    "momentum_score_pct": _format_optional_float(info.get("momentum_score_pct")),
+                    "average_trading_value": _format_optional_float(info.get("average_trading_value")),
+                    "symbol_train_return_pct": _format_optional_float(symbol_returns.get(symbol)),
+                    "benchmark_weight": _format_optional_float(benchmark_weight),
+                    "benchmark_avg_return_pct": _format_optional_float(benchmark_avg),
+                    "benchmark_median_return_pct": _format_optional_float(benchmark_median),
+                    "candidate_total_return_pct": _format_optional_float(candidate_result.total_return_pct),
+                    "candidate_buy_hold_return_pct": _format_optional_float(candidate_result.buy_hold_return_pct),
+                    "candidate_excess_return_pct": _format_optional_float(candidate_result.excess_return_pct),
+                    "candidate_max_drawdown_pct": _format_optional_float(candidate_result.max_drawdown_pct),
+                    "candidate_trade_count": candidate_result.trade_count,
+                    "candidate_buy_count": candidate_buy_count,
+                    "candidate_sell_count": candidate_sell_count,
+                    "candidate_unique_traded_symbols": candidate_unique_symbols,
+                    **counts,
+                }
+            )
+    return rows
+
+
+def _direct_alpha_rank_info(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    signal_date: str,
+    config: MomentumRotationConfig,
+) -> dict[str, dict[str, Any]]:
+    rows: list[tuple[str, float]] = []
+    info: dict[str, dict[str, Any]] = {}
+    for symbol, candles in symbol_candles.items():
+        sorted_candles = sorted(candles, key=lambda candle: candle.date)
+        signal_index = next((index for index, candle in enumerate(sorted_candles) if candle.date == signal_date), None)
+        if signal_index is None:
+            info[symbol] = {"rejection_reason": "missing_signal_date"}
+            continue
+        lookback_index = signal_index - config.lookback_days
+        if lookback_index < 0:
+            info[symbol] = {"rejection_reason": "insufficient_lookback"}
+            continue
+        signal_close = sorted_candles[signal_index].close
+        base_close = sorted_candles[lookback_index].close
+        if base_close <= 0:
+            info[symbol] = {"rejection_reason": "nonpositive_lookback_price"}
+            continue
+        momentum_pct = (signal_close / base_close - 1) * 100
+        average_trading_value = _average_trading_value_for_signal(
+            sorted_candles,
+            signal_index=signal_index,
+            window_days=config.liquidity_window_days,
+        )
+        symbol_info: dict[str, Any] = {
+            "momentum_score_pct": momentum_pct,
+            "average_trading_value": average_trading_value,
+        }
+        if config.require_positive_momentum and momentum_pct <= 0:
+            symbol_info["rejection_reason"] = "nonpositive_momentum"
+        elif config.max_lookback_return_pct > 0 and momentum_pct > config.max_lookback_return_pct:
+            symbol_info["rejection_reason"] = "max_lookback_return"
+        elif config.min_average_trading_value > 0 and (
+            average_trading_value is None or average_trading_value < config.min_average_trading_value
+        ):
+            symbol_info["rejection_reason"] = "liquidity_threshold"
+        elif config.trend_filter_days > 0:
+            if signal_index + 1 < config.trend_filter_days:
+                symbol_info["rejection_reason"] = "insufficient_trend_history"
+            else:
+                trend_values = sorted_candles[signal_index - config.trend_filter_days + 1 : signal_index + 1]
+                trend_average = sum(candle.close for candle in trend_values) / len(trend_values)
+                if signal_close < trend_average:
+                    symbol_info["rejection_reason"] = "trend_filter_failed"
+        info[symbol] = symbol_info
+        if not symbol_info.get("rejection_reason"):
+            rows.append((symbol, momentum_pct))
+    rows.sort(key=lambda row: row[1], reverse=True)
+    for rank, (symbol, _) in enumerate(rows, start=1):
+        info[symbol]["candidate_rank"] = rank
+        info[symbol].setdefault("rejection_reason", "below_selected_rank")
+    return info
+
+
+def _average_trading_value_for_signal(
+    candles: list[Candle],
+    *,
+    signal_index: int,
+    window_days: int,
+) -> float | None:
+    if window_days <= 0 or signal_index + 1 < window_days:
+        return None
+    values = [candle.close * candle.volume for candle in candles[signal_index - window_days + 1 : signal_index + 1]]
+    return sum(values) / len(values)
 
 
 def analyze_monthly_validation_failures(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 13:59 KST
+Last updated: 2026-06-22 15:19 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 389 tests.
+- `python -m unittest discover -s tests`: PASS, 392 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,43 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added direct-alpha symbol-selection diagnostics:
+
+- New CLI: `python -m backtester monthly-direct-alpha-diagnostics`
+- New report: `data/reports/monthly_direct_alpha_selection_diagnostics.csv`
+- Purpose: explain direct alpha train failures by symbol-level selection evidence inside the PIT/top-liquid train universe.
+- Added CSV fields for:
+  - selected/rejected symbols,
+  - selected weights,
+  - momentum score,
+  - average trading value,
+  - symbol train return,
+  - benchmark average/median return,
+  - candidate total/buy-hold/excess return,
+  - candidate trade/buy/sell/unique-traded-symbol counts,
+  - raw/PIT/liquidity/train universe counts and filter removals.
+- Added deterministic tests for:
+  - direct-alpha selected and rejected symbol rows,
+  - direct-alpha diagnostics CSV saving,
+  - `monthly-direct-alpha-diagnostics` CLI report generation.
+- Generated the report for `walk_forward_003` and `walk_forward_004`.
+- Current report rows: `200` (`2` scenarios x `100` train symbols).
+
+Direct-alpha symbol-selection findings:
+
+- `walk_forward_003`
+  - Selected/rejected: `5 selected`, `95 rejected`.
+  - Rejection reasons: `below_selected_rank=87`, `trend_filter_failed=8`.
+  - Candidate turnover: `trade_count=10`, `buy_count=5`, `sell_count=5`, `unique_traded_symbols=5`.
+  - Candidate performance: `total_return_pct=16.2733`, `buy_hold_return_pct=35.9941`, `excess_return_pct=-19.7208`.
+  - Train-end selected symbols had high momentum and strong train-period returns, so the remaining concern is less "no strong symbols existed" and more whether the direct train benchmark is too strong, the snapshot differs from in-period holdings, or the alpha/turnover path lagged the equal-weight benchmark.
+- `walk_forward_004`
+  - Selected/rejected: `5 selected`, `95 rejected`.
+  - Rejection reasons: `below_selected_rank=91`, `trend_filter_failed=4`.
+  - Candidate turnover: `trade_count=16`, `buy_count=8`, `sell_count=8`, `unique_traded_symbols=8`.
+  - Candidate performance: `total_return_pct=0.4340`, `buy_hold_return_pct=60.5903`, `excess_return_pct=-60.1564`.
+  - The selected train-end symbols were also strong, but the candidate path badly lagged the top-100 liquid benchmark. Next diagnostics should compare actual in-period holdings by rebalance date against the train-end snapshot and benchmark constituents.
 
 Added direct-alpha train-window diagnostics:
 
@@ -72,7 +109,7 @@ Direct-alpha ineligible decomposition:
   - The immediate evidence points to the direct alpha candidate underperforming a strong buy-hold backdrop after PIT and top-100 liquidity filtering.
   - Do not loosen train gates based on this; next diagnostics should compare selected direct-alpha symbols, weights, turnover, and benchmark construction inside the top-100 liquid train universe.
 - Current readiness status counts remain `BLOCK=8`, `PASS=31`, `WARN=8`.
-- Health remains `WARN` for stale scalper data only; latest observed age was about `301` hours.
+- Health remains `WARN` for stale scalper data only; latest observed age was about `302.5` hours.
 
 Improved direct-alpha failure drilldown and report-source safety:
 
@@ -307,6 +344,12 @@ Touched in latest loop:
 Current loop additions:
 
 ```powershell
+python -m unittest discover -s tests
+python -m compileall -q backtester
+python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_direct_alpha_selection_explains_selected_and_rejected_symbols tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_direct_alpha_selection_writes_csv
+python -m unittest tests.test_cli.CliTests.test_monthly_direct_alpha_diagnostics_cli_writes_selection_report
+python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_direct_alpha_selection_explains_selected_and_rejected_symbols tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_direct_alpha_selection_writes_csv tests.test_cli.CliTests.test_monthly_direct_alpha_diagnostics_cli_writes_selection_report
+python -m backtester monthly-direct-alpha-diagnostics --data-dir data/krx_expanded --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --scenario walk_forward_003 --scenario walk_forward_004 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --output data/reports/monthly_direct_alpha_selection_diagnostics.csv
 python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_validation_failure_drilldown_flags_direct_alpha_ineligible tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_validation_failure_drilldown_writes_csv tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_walk_forward_validation_records_direct_train_diagnostics
 python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_walk_forward_validation_records_direct_train_diagnostics
 python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_validation_failure_drilldown_flags_direct_alpha_ineligible tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_validation_failure_drilldown_writes_csv tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_walk_forward_validation_records_direct_train_candidate_scores tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_walk_forward_validation_records_direct_train_diagnostics tests.test_cli.CliTests.test_monthly_failure_drilldown_cli_writes_report

@@ -45,11 +45,13 @@ from .momentum_validation import (
 )
 from .monthly_rebalance import (
     MonthlyRebalanceConfig,
+    MonthlyValidationCase,
     RiskCheck,
     RiskLimits,
     SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS,
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
+    analyze_monthly_direct_alpha_selection,
     analyze_monthly_performance_concentration,
     analyze_monthly_validation_failures,
     analyze_monthly_validation_failure_drilldown,
@@ -95,6 +97,7 @@ from .monthly_rebalance import (
     save_monthly_decision,
     save_monthly_attribution_rows,
     save_monthly_decision_attribution,
+    save_monthly_direct_alpha_selection,
     save_monthly_performance_audit_rows,
     save_monthly_performance_concentration,
     save_monthly_validation_failures,
@@ -1061,6 +1064,41 @@ def main() -> int:
         default="data/reports/monthly_validation_failure_drilldown.csv",
     )
 
+    monthly_direct_alpha_parser = subparsers.add_parser(
+        "monthly-direct-alpha-diagnostics",
+        help="Write paper-only direct alpha symbol-selection diagnostics for walk-forward train windows",
+    )
+    monthly_direct_alpha_parser.add_argument("--data-dir", default="data/krx_expanded")
+    monthly_direct_alpha_parser.add_argument(
+        "--baseline",
+        default="data/reports/monthly_validation_scenarios_pit_universe.csv",
+    )
+    monthly_direct_alpha_parser.add_argument(
+        "--scenario",
+        action="append",
+        default=None,
+        help="Walk-forward scenario name to include. Can be repeated. Defaults to all walk-forward rows.",
+    )
+    monthly_direct_alpha_parser.add_argument(
+        "--point-in-time-universe",
+        default="data/krx_metadata/krx_universe_monthly.csv",
+    )
+    monthly_direct_alpha_parser.add_argument("--presets", default="balanced")
+    monthly_direct_alpha_parser.add_argument("--min-rows-per-window", type=int, default=120)
+    monthly_direct_alpha_parser.add_argument("--start-grace-days", type=int, default=14)
+    monthly_direct_alpha_parser.add_argument("--point-in-time-liquidity-top-n", type=int, default=100)
+    monthly_direct_alpha_parser.add_argument("--point-in-time-liquidity-window-days", type=int, default=20)
+    monthly_direct_alpha_parser.add_argument("--point-in-time-min-history-days", type=int, default=252)
+    monthly_direct_alpha_parser.add_argument("--point-in-time-min-reference-price", type=float, default=1_000.0)
+    monthly_direct_alpha_parser.add_argument("--point-in-time-max-trailing-return-pct", type=float, default=300.0)
+    monthly_direct_alpha_parser.add_argument("--point-in-time-trailing-return-days", type=int, default=252)
+    monthly_direct_alpha_parser.add_argument("--exclude-symbols", default=None)
+    monthly_direct_alpha_parser.add_argument("--ignore-data-quality-exclusions", action="store_true")
+    monthly_direct_alpha_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_direct_alpha_selection_diagnostics.csv",
+    )
+
     production_check_parser = subparsers.add_parser(
         "production-check",
         help="Evaluate whether local data, validation, and risk reports are ready for live trading",
@@ -1344,6 +1382,53 @@ def main() -> int:
             print(f"top_drilldown  {rows[0]['scenario']} {rows[0]['likely_root_cause']}")
         else:
             print("top_drilldown  none")
+        return 0
+
+    if args.command == "monthly-direct-alpha-diagnostics":
+        data_quality_exclusions = _resolve_data_quality_exclusions(
+            args.exclude_symbols,
+            ignore=args.ignore_data_quality_exclusions,
+        )
+        symbol_candles = _apply_resolved_excluded_symbols(
+            exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
+            data_quality_exclusions,
+        )
+        point_in_time_universe = (
+            load_point_in_time_universe(args.point_in_time_universe)
+            if args.point_in_time_universe
+            else None
+        )
+        scenario_filter = set(args.scenario or [])
+        baseline_rows = _read_csv_dicts(Path(args.baseline))
+        cases = [
+            _monthly_validation_case_from_row(row)
+            for row in baseline_rows
+            if str(row.get("category", "")).strip() == "walk_forward"
+            and (not scenario_filter or str(row.get("name", "")).strip() in scenario_filter)
+        ]
+        presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
+        rows = analyze_monthly_direct_alpha_selection(
+            symbol_candles,
+            cases=cases,
+            config=MonthlyRebalanceConfig(
+                presets=presets,
+                min_rows_per_window=args.min_rows_per_window,
+                start_grace_days=args.start_grace_days,
+                point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
+                point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
+                point_in_time_min_history_days=args.point_in_time_min_history_days,
+                point_in_time_min_reference_price=args.point_in_time_min_reference_price,
+                point_in_time_max_trailing_return_pct=args.point_in_time_max_trailing_return_pct,
+                point_in_time_trailing_return_days=args.point_in_time_trailing_return_days,
+                point_in_time_universe=point_in_time_universe,
+            ),
+        )
+        saved = save_monthly_direct_alpha_selection(rows, args.output)
+        print("Monthly direct alpha diagnostics")
+        _print_data_quality_exclusions(data_quality_exclusions)
+        print(f"walk_forward_cases  {len(cases)}")
+        print(f"diagnostic_rows  {saved}")
+        print(f"direct_alpha_selection_report  {args.output}")
         return 0
 
     if args.command == "production-check":
@@ -2936,6 +3021,28 @@ def _save_universe_filter_report_if_needed(
     reason_summary = ",".join(f"{reason}={count}" for reason, count in sorted(reasons.items())) or "none"
     print(f"universe_filter_report  {output_path} excluded={saved} reasons={reason_summary}")
     return saved
+
+
+def _monthly_validation_case_from_row(row: dict[str, str]) -> MonthlyValidationCase:
+    return MonthlyValidationCase(
+        name=str(row.get("name", "")).strip(),
+        category=str(row.get("category", "")).strip(),
+        start=str(row.get("start", "")).strip(),
+        end=str(row.get("end", "")).strip(),
+        train_start=str(row.get("train_start", "")).strip(),
+        train_end=str(row.get("train_end", "")).strip(),
+        required=str(row.get("required", "True")).strip().lower() in {"true", "1", "yes"},
+        slippage_multiplier=_float_or_default(row.get("slippage_multiplier"), 1.0),
+        stress=str(row.get("stress", "")).strip(),
+    )
+
+
+def _float_or_default(value: object, default: float) -> float:
+    try:
+        raw_value = str(value if value is not None else "").strip()
+        return float(raw_value) if raw_value else default
+    except ValueError:
+        return default
 
 
 def _load_monthly_symbol_candles(data_dir: str, exclude_symbols_path: Path | str | None) -> dict[str, list]:
