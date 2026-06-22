@@ -775,6 +775,51 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["candidate_only_symbols"], "DDD")
         self.assertIn("symbol_rotation", rows[0]["diagnostic"])
 
+    def test_monthly_compare_paths_cli_writes_daily_path_delta_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            baseline = root / "baseline_path.csv"
+            candidate = root / "candidate_path.csv"
+            output = root / "path_compare.csv"
+            baseline.write_text(
+                "date,equity,drawdown_pct,cash,exposure,position_count,total_position_quantity,"
+                "position_symbols,turnover_value,estimated_trade_cost\n"
+                "2025-03-03,1000,-5,200,0.8,2,12,AAA;BBB,100,0.1\n",
+                encoding="utf-8",
+            )
+            candidate.write_text(
+                "date,equity,drawdown_pct,cash,exposure,position_count,total_position_quantity,"
+                "position_symbols,turnover_value,estimated_trade_cost\n"
+                "2025-03-03,980,-7,392,0.6,2,10,AAA;CCC,200,0.2\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-paths",
+                    "--baseline",
+                    str(baseline),
+                    "--candidate",
+                    str(candidate),
+                    "--scenario",
+                    "full_period",
+                    "--candidate-label",
+                    "neutral_cap",
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("path_comparison_report", completed.stdout)
+        self.assertIn("equity_regression_days  1", completed.stdout)
+        self.assertEqual(rows[0]["equity_delta"], "-20")
+        self.assertEqual(rows[0]["candidate_only_symbols"], "CCC")
+        self.assertIn("higher_trade_cost", rows[0]["diagnostic"])
+
     def test_monthly_validate_help_includes_failure_diagnostics_output(self):
         completed = subprocess.run(
             [

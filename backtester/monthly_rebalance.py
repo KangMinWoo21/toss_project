@@ -820,6 +820,66 @@ MONTHLY_DECISION_ATTRIBUTION_COMPARISON_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_PATH_ATTRIBUTION_COLUMNS = [
+    "date",
+    "equity",
+    "rolling_peak",
+    "cash",
+    "position_market_value",
+    "exposure",
+    "position_count",
+    "total_position_quantity",
+    "position_symbols",
+    "position_quantities",
+    "buy_value",
+    "sell_value",
+    "turnover_value",
+    "trade_count",
+    "estimated_trade_cost",
+    "drawdown_pct",
+    "daily_return_pct",
+]
+
+MONTHLY_PATH_ATTRIBUTION_COMPARISON_COLUMNS = [
+    "scenario",
+    "candidate_label",
+    "date",
+    "baseline_equity",
+    "candidate_equity",
+    "equity_delta",
+    "baseline_rolling_peak",
+    "candidate_rolling_peak",
+    "rolling_peak_delta",
+    "baseline_drawdown_pct",
+    "candidate_drawdown_pct",
+    "drawdown_delta_pct",
+    "baseline_daily_return_pct",
+    "candidate_daily_return_pct",
+    "daily_return_delta_pct",
+    "baseline_cash",
+    "candidate_cash",
+    "cash_delta",
+    "baseline_exposure",
+    "candidate_exposure",
+    "exposure_delta",
+    "baseline_position_count",
+    "candidate_position_count",
+    "position_count_delta",
+    "baseline_total_position_quantity",
+    "candidate_total_position_quantity",
+    "total_position_quantity_delta",
+    "shared_symbol_count",
+    "baseline_only_symbols",
+    "candidate_only_symbols",
+    "baseline_turnover_value",
+    "candidate_turnover_value",
+    "turnover_delta",
+    "baseline_estimated_trade_cost",
+    "candidate_estimated_trade_cost",
+    "estimated_trade_cost_delta",
+    "diagnostic",
+]
+
 DEPLOYMENT_GATE_COLUMNS = [
     "deployable",
     "reason",
@@ -2081,6 +2141,257 @@ def _monthly_decision_comparison_diagnostics(
     return diagnostics
 
 
+def analyze_monthly_path_attribution(
+    result: MonthlyBacktestResult,
+    *,
+    start: str = "",
+    end: str = "",
+    fee_rate: float = 0.00015,
+    tax_rate: float = 0.0018,
+) -> list[dict[str, str]]:
+    trades_by_date: dict[str, list[MonthlyBacktestTrade]] = {}
+    for trade in result.trades:
+        trades_by_date.setdefault(trade.date, []).append(trade)
+
+    cash = float(result.initial_cash)
+    positions: dict[str, int] = {}
+    rows: list[dict[str, str]] = []
+    peak = float(result.initial_cash)
+    previous_equity: float | None = None
+    for day, raw_equity in zip(result.dates, result.equity_curve):
+        buy_value = 0.0
+        sell_value = 0.0
+        estimated_trade_cost = 0.0
+        trade_count = 0
+        for trade in trades_by_date.get(day, []):
+            gross = float(trade.price) * int(trade.quantity)
+            trade_count += 1
+            if trade.action.upper() == "BUY":
+                positions[trade.symbol] = positions.get(trade.symbol, 0) + int(trade.quantity)
+                buy_value += gross
+                estimated_trade_cost += gross * fee_rate
+            elif trade.action.upper() == "SELL":
+                remaining = positions.get(trade.symbol, 0) - int(trade.quantity)
+                if remaining > 0:
+                    positions[trade.symbol] = remaining
+                else:
+                    positions.pop(trade.symbol, None)
+                sell_value += gross
+                estimated_trade_cost += gross * (fee_rate + tax_rate)
+            cash = float(trade.cash_after)
+
+        equity = float(raw_equity)
+        peak = max(peak, equity)
+        drawdown_pct = (equity / peak - 1.0) * 100.0 if peak > 0 else 0.0
+        daily_return_pct = (
+            (equity / previous_equity - 1.0) * 100.0
+            if previous_equity and previous_equity > 0
+            else 0.0
+        )
+        previous_equity = equity
+        if start and day < start:
+            continue
+        if end and day > end:
+            continue
+
+        active_positions = {symbol: quantity for symbol, quantity in positions.items() if quantity > 0}
+        position_symbols = sorted(active_positions)
+        total_quantity = sum(active_positions.values())
+        position_market_value = equity - cash
+        exposure = position_market_value / equity if equity > 0 else 0.0
+        turnover_value = buy_value + sell_value
+        rows.append(
+            {
+                "date": day,
+                "equity": _format_optional_float(equity),
+                "rolling_peak": _format_optional_float(peak),
+                "cash": _format_optional_float(cash),
+                "position_market_value": _format_optional_float(position_market_value),
+                "exposure": _format_optional_float(exposure),
+                "position_count": str(len(position_symbols)),
+                "total_position_quantity": str(total_quantity),
+                "position_symbols": ";".join(position_symbols),
+                "position_quantities": ";".join(
+                    f"{symbol}:{active_positions[symbol]}" for symbol in position_symbols
+                ),
+                "buy_value": _format_optional_float(buy_value),
+                "sell_value": _format_optional_float(sell_value),
+                "turnover_value": _format_optional_float(turnover_value),
+                "trade_count": str(trade_count),
+                "estimated_trade_cost": _format_optional_float(estimated_trade_cost),
+                "drawdown_pct": _format_optional_float(drawdown_pct),
+                "daily_return_pct": _format_optional_float(daily_return_pct),
+            }
+        )
+    return rows
+
+
+def compare_monthly_path_attribution_reports(
+    baseline_rows: list[dict[str, Any]],
+    candidate_rows: list[dict[str, Any]],
+    *,
+    scenario: str = "",
+    candidate_label: str = "candidate",
+    start: str = "",
+    end: str = "",
+) -> list[dict[str, str]]:
+    baseline_by_date = {
+        str(row.get("date", "")): row
+        for row in baseline_rows
+        if str(row.get("date", ""))
+    }
+    candidate_by_date = {
+        str(row.get("date", "")): row
+        for row in candidate_rows
+        if str(row.get("date", ""))
+    }
+    rows: list[dict[str, str]] = []
+    for day in sorted(set(baseline_by_date) | set(candidate_by_date)):
+        if start and day < start:
+            continue
+        if end and day > end:
+            continue
+        baseline = baseline_by_date.get(day, {})
+        candidate = candidate_by_date.get(day, {})
+        baseline_equity = _float_or_none(baseline.get("equity"))
+        candidate_equity = _float_or_none(candidate.get("equity"))
+        baseline_peak = _float_or_none(baseline.get("rolling_peak"))
+        candidate_peak = _float_or_none(candidate.get("rolling_peak"))
+        baseline_drawdown = _float_or_none(baseline.get("drawdown_pct"))
+        candidate_drawdown = _float_or_none(candidate.get("drawdown_pct"))
+        baseline_daily_return = _float_or_none(baseline.get("daily_return_pct"))
+        candidate_daily_return = _float_or_none(candidate.get("daily_return_pct"))
+        baseline_cash = _float_or_none(baseline.get("cash"))
+        candidate_cash = _float_or_none(candidate.get("cash"))
+        baseline_exposure = _float_or_none(baseline.get("exposure"))
+        candidate_exposure = _float_or_none(candidate.get("exposure"))
+        baseline_count = _float_or_none(baseline.get("position_count"))
+        candidate_count = _float_or_none(candidate.get("position_count"))
+        baseline_quantity = _float_or_none(baseline.get("total_position_quantity"))
+        candidate_quantity = _float_or_none(candidate.get("total_position_quantity"))
+        baseline_turnover = _float_or_none(baseline.get("turnover_value"))
+        candidate_turnover = _float_or_none(candidate.get("turnover_value"))
+        baseline_cost = _float_or_none(baseline.get("estimated_trade_cost"))
+        candidate_cost = _float_or_none(candidate.get("estimated_trade_cost"))
+        baseline_symbols = _path_symbol_list(baseline)
+        candidate_symbols = _path_symbol_list(candidate)
+        baseline_symbol_set = set(baseline_symbols)
+        candidate_symbol_set = set(candidate_symbols)
+        baseline_only = [symbol for symbol in baseline_symbols if symbol not in candidate_symbol_set]
+        candidate_only = [symbol for symbol in candidate_symbols if symbol not in baseline_symbol_set]
+        equity_delta = _optional_delta(candidate_equity, baseline_equity)
+        peak_delta = _optional_delta(candidate_peak, baseline_peak)
+        drawdown_delta = _optional_delta(candidate_drawdown, baseline_drawdown)
+        daily_return_delta = _optional_delta(candidate_daily_return, baseline_daily_return)
+        cash_delta = _optional_delta(candidate_cash, baseline_cash)
+        exposure_delta = _optional_delta(candidate_exposure, baseline_exposure)
+        count_delta = _optional_delta(candidate_count, baseline_count)
+        quantity_delta = _optional_delta(candidate_quantity, baseline_quantity)
+        turnover_delta = _optional_delta(candidate_turnover, baseline_turnover)
+        cost_delta = _optional_delta(candidate_cost, baseline_cost)
+        diagnostics = _monthly_path_comparison_diagnostics(
+            baseline,
+            candidate,
+            equity_delta=equity_delta,
+            drawdown_delta=drawdown_delta,
+            exposure_delta=exposure_delta,
+            quantity_delta=quantity_delta,
+            turnover_delta=turnover_delta,
+            cost_delta=cost_delta,
+            baseline_only=baseline_only,
+            candidate_only=candidate_only,
+        )
+        rows.append(
+            {
+                "scenario": scenario,
+                "candidate_label": candidate_label,
+                "date": day,
+                "baseline_equity": _format_optional_float(baseline_equity),
+                "candidate_equity": _format_optional_float(candidate_equity),
+                "equity_delta": _format_optional_float(equity_delta),
+                "baseline_rolling_peak": _format_optional_float(baseline_peak),
+                "candidate_rolling_peak": _format_optional_float(candidate_peak),
+                "rolling_peak_delta": _format_optional_float(peak_delta),
+                "baseline_drawdown_pct": _format_optional_float(baseline_drawdown),
+                "candidate_drawdown_pct": _format_optional_float(candidate_drawdown),
+                "drawdown_delta_pct": _format_optional_float(drawdown_delta),
+                "baseline_daily_return_pct": _format_optional_float(baseline_daily_return),
+                "candidate_daily_return_pct": _format_optional_float(candidate_daily_return),
+                "daily_return_delta_pct": _format_optional_float(daily_return_delta),
+                "baseline_cash": _format_optional_float(baseline_cash),
+                "candidate_cash": _format_optional_float(candidate_cash),
+                "cash_delta": _format_optional_float(cash_delta),
+                "baseline_exposure": _format_optional_float(baseline_exposure),
+                "candidate_exposure": _format_optional_float(candidate_exposure),
+                "exposure_delta": _format_optional_float(exposure_delta),
+                "baseline_position_count": _format_optional_float(baseline_count),
+                "candidate_position_count": _format_optional_float(candidate_count),
+                "position_count_delta": _format_optional_float(count_delta),
+                "baseline_total_position_quantity": _format_optional_float(baseline_quantity),
+                "candidate_total_position_quantity": _format_optional_float(candidate_quantity),
+                "total_position_quantity_delta": _format_optional_float(quantity_delta),
+                "shared_symbol_count": str(len(baseline_symbol_set & candidate_symbol_set)),
+                "baseline_only_symbols": ";".join(baseline_only),
+                "candidate_only_symbols": ";".join(candidate_only),
+                "baseline_turnover_value": _format_optional_float(baseline_turnover),
+                "candidate_turnover_value": _format_optional_float(candidate_turnover),
+                "turnover_delta": _format_optional_float(turnover_delta),
+                "baseline_estimated_trade_cost": _format_optional_float(baseline_cost),
+                "candidate_estimated_trade_cost": _format_optional_float(candidate_cost),
+                "estimated_trade_cost_delta": _format_optional_float(cost_delta),
+                "diagnostic": ";".join(diagnostics) if diagnostics else "same_path",
+            }
+        )
+    return rows
+
+
+def _path_symbol_list(row: dict[str, Any]) -> list[str]:
+    return [
+        symbol.strip()
+        for symbol in str(row.get("position_symbols", "")).split(";")
+        if symbol.strip()
+    ]
+
+
+def _monthly_path_comparison_diagnostics(
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+    *,
+    equity_delta: float | None,
+    drawdown_delta: float | None,
+    exposure_delta: float | None,
+    quantity_delta: float | None,
+    turnover_delta: float | None,
+    cost_delta: float | None,
+    baseline_only: list[str],
+    candidate_only: list[str],
+) -> list[str]:
+    if not baseline or not candidate:
+        return ["missing_date"]
+    diagnostics: list[str] = []
+    if equity_delta is not None and equity_delta < 0:
+        diagnostics.append("equity_regression")
+    elif equity_delta is not None and equity_delta > 0:
+        diagnostics.append("equity_improved")
+    if drawdown_delta is not None and drawdown_delta < 0:
+        diagnostics.append("drawdown_regression")
+    elif drawdown_delta is not None and drawdown_delta > 0:
+        diagnostics.append("drawdown_improved")
+    if exposure_delta is not None and exposure_delta < 0:
+        diagnostics.append("exposure_reduced")
+    elif exposure_delta is not None and exposure_delta > 0:
+        diagnostics.append("exposure_increased")
+    if quantity_delta is not None and quantity_delta != 0:
+        diagnostics.append("position_quantity_changed")
+    if baseline_only or candidate_only:
+        diagnostics.append("symbol_rotation")
+    if turnover_delta is not None and turnover_delta > 0:
+        diagnostics.append("higher_turnover")
+    if cost_delta is not None and cost_delta > 0:
+        diagnostics.append("higher_trade_cost")
+    return diagnostics
+
+
 def analyze_symbol_realized_pnl_attribution(result: MonthlyBacktestResult) -> list[dict[str, str]]:
     lots: dict[str, list[dict[str, float]]] = {}
     stats: dict[str, dict[str, Any]] = {}
@@ -2464,6 +2775,18 @@ def save_monthly_decision_attribution_comparison(rows: list[dict[str, Any]], out
         rows,
         output_path,
         columns=MONTHLY_DECISION_ATTRIBUTION_COMPARISON_COLUMNS,
+    )
+
+
+def save_monthly_path_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PATH_ATTRIBUTION_COLUMNS)
+
+
+def save_monthly_path_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_PATH_ATTRIBUTION_COMPARISON_COLUMNS,
     )
 
 

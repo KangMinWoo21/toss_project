@@ -23,6 +23,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
+    analyze_monthly_path_attribution,
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
     analyze_monthly_validation_failures,
@@ -37,6 +38,7 @@ from backtester.monthly_rebalance import (
     build_monthly_validation_candidate_followup_rows,
     compare_monthly_attribution_reports,
     compare_monthly_decision_attribution_reports,
+    compare_monthly_path_attribution_reports,
     compare_monthly_validation_scenario_deltas,
     compare_monthly_validation_reports,
     run_monthly_validation_sweep_results,
@@ -89,6 +91,8 @@ from backtester.monthly_rebalance import (
     save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
+    save_monthly_path_attribution,
+    save_monthly_path_attribution_comparison,
     save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
     save_monthly_train_decision_path,
@@ -2078,6 +2082,123 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("target_exposure_delta", text.splitlines()[0])
         self.assertIn("symbol_rotation", text)
+
+    def test_analyze_monthly_path_attribution_reconstructs_cash_positions_turnover_and_cost(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000,
+            final_equity=950,
+            total_return_pct=-5.0,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=-5.0,
+            max_drawdown_pct=-5.0,
+            trade_count=2,
+            decisions=[],
+            trades=[
+                MonthlyBacktestTrade("2025-03-03", "AAA", "BUY", 100, 5, 499.5, "entry"),
+                MonthlyBacktestTrade("2025-03-04", "AAA", "SELL", 90, 2, 679.0, "trim"),
+            ],
+            dates=["2025-03-03", "2025-03-04"],
+            equity_curve=[1_000, 950],
+        )
+
+        rows = analyze_monthly_path_attribution(
+            result,
+            fee_rate=0.001,
+            tax_rate=0.002,
+            start="2025-03-03",
+            end="2025-03-04",
+        )
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["date"], "2025-03-03")
+        self.assertEqual(rows[0]["cash"], "499.5")
+        self.assertEqual(rows[0]["position_symbols"], "AAA")
+        self.assertEqual(rows[0]["position_quantities"], "AAA:5")
+        self.assertEqual(rows[0]["buy_value"], "500")
+        self.assertEqual(rows[0]["estimated_trade_cost"], "0.5")
+        self.assertEqual(rows[1]["rolling_peak"], "1000")
+        self.assertEqual(rows[1]["position_quantities"], "AAA:3")
+        self.assertEqual(rows[1]["sell_value"], "180")
+        self.assertEqual(rows[1]["estimated_trade_cost"], "0.54")
+        self.assertEqual(rows[1]["drawdown_pct"], "-5")
+        self.assertEqual(rows[1]["daily_return_pct"], "-5")
+
+    def test_compare_monthly_path_attribution_reports_flags_equity_and_holding_path_regression(self):
+        rows = compare_monthly_path_attribution_reports(
+            [
+                {
+                    "date": "2025-03-04",
+                    "equity": "1000",
+                    "drawdown_pct": "-5",
+                    "cash": "200",
+                    "rolling_peak": "1100",
+                    "exposure": "0.8",
+                    "position_count": "2",
+                    "total_position_quantity": "12",
+                    "position_symbols": "AAA;BBB",
+                    "turnover_value": "100",
+                    "estimated_trade_cost": "0.1",
+                }
+            ],
+            [
+                {
+                    "date": "2025-03-04",
+                    "equity": "980",
+                    "drawdown_pct": "-7",
+                    "cash": "392",
+                    "rolling_peak": "1150",
+                    "exposure": "0.6",
+                    "position_count": "2",
+                    "total_position_quantity": "10",
+                    "position_symbols": "AAA;CCC",
+                    "turnover_value": "200",
+                    "estimated_trade_cost": "0.2",
+                }
+            ],
+            scenario="full_period",
+            candidate_label="neutral_cap",
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "full_period")
+        self.assertEqual(row["equity_delta"], "-20")
+        self.assertEqual(row["drawdown_delta_pct"], "-2")
+        self.assertEqual(row["cash_delta"], "192")
+        self.assertEqual(row["rolling_peak_delta"], "50")
+        self.assertEqual(row["exposure_delta"], "-0.2")
+        self.assertEqual(row["total_position_quantity_delta"], "-2")
+        self.assertEqual(row["baseline_only_symbols"], "BBB")
+        self.assertEqual(row["candidate_only_symbols"], "CCC")
+        self.assertEqual(row["turnover_delta"], "100")
+        self.assertEqual(row["estimated_trade_cost_delta"], "0.1")
+        self.assertIn("equity_regression", row["diagnostic"])
+        self.assertIn("drawdown_regression", row["diagnostic"])
+        self.assertIn("symbol_rotation", row["diagnostic"])
+        self.assertIn("higher_turnover", row["diagnostic"])
+        self.assertIn("higher_trade_cost", row["diagnostic"])
+
+    def test_save_monthly_path_attribution_reports_write_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path_output = root / "path.csv"
+            compare_output = root / "path_compare.csv"
+            path_saved = save_monthly_path_attribution(
+                [{"date": "2025-03-04", "equity": "980", "diagnostic": "unit"}],
+                path_output,
+            )
+            compare_saved = save_monthly_path_attribution_comparison(
+                [{"date": "2025-03-04", "diagnostic": "equity_regression"}],
+                compare_output,
+            )
+            path_text = path_output.read_text(encoding="utf-8")
+            compare_text = compare_output.read_text(encoding="utf-8")
+
+        self.assertEqual(path_saved, 1)
+        self.assertEqual(compare_saved, 1)
+        self.assertIn("rolling_peak", path_text.splitlines()[0])
+        self.assertIn("estimated_trade_cost_delta", compare_text.splitlines()[0])
+        self.assertIn("equity_regression", compare_text)
 
     def test_analyze_monthly_recovery_attribution_summarizes_exposure_and_loss_symbols(self):
         result = MonthlyBacktestResult(

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 19:04 KST
+Last updated: 2026-06-22 19:05 KST
 
 ## Objective
 
@@ -27,15 +27,212 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 411 tests.
+- `python -m unittest discover -s tests`: PASS, 419 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
-- Candidate follow-up state: all completed full-validation candidates remain rejected; latest `neutral_breadth_proxy_cap_50` is also rejected.
+- Candidate follow-up state: all completed full-validation candidates remain rejected; latest target-only `neutral_proxy_deep_guard_35` is `UNCHANGED`.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added paper-only daily path attribution diagnostics to explain why `neutral_breadth_proxy_cap_50` worsened March-April 2025 drawdown even though same-month decisions and selected symbols were identical:
+
+- Added `analyze_monthly_path_attribution`.
+- Added `compare_monthly_path_attribution_reports`.
+- Added `save_monthly_path_attribution`.
+- Added `save_monthly_path_attribution_comparison`.
+- Extended `python -m backtester monthly-attribution` with:
+  - `--path-output`
+- Added CLI:
+  - `python -m backtester monthly-compare-paths`
+- The path report reconstructs daily:
+  - equity,
+  - rolling peak,
+  - cash,
+  - position market value,
+  - exposure,
+  - position count,
+  - total position quantity,
+  - held symbols and quantities,
+  - buy/sell/turnover value,
+  - estimated fee/tax trade cost,
+  - drawdown,
+  - daily return.
+- The path comparison report compares baseline vs candidate by `date` and flags diagnostics such as:
+  - `equity_regression`,
+  - `equity_improved`,
+  - `drawdown_regression`,
+  - `drawdown_improved`,
+  - `exposure_increased`,
+  - `exposure_reduced`,
+  - `position_quantity_changed`,
+  - `symbol_rotation`,
+  - `higher_turnover`,
+  - `higher_trade_cost`.
+- This is diagnostic-only and paper-only. It does not change strategy behavior or execution behavior.
+
+Generated or refreshed path attribution reports:
+
+- `data/reports/full_period_baseline_path_attribution.csv`
+- `data/reports/full_period_neutral_breadth_proxy_cap_50_path_attribution.csv`
+- `data/reports/stress_slippage_x3_baseline_path_attribution.csv`
+- `data/reports/stress_slippage_x3_neutral_breadth_proxy_cap_50_path_attribution.csv`
+
+Generated path comparison reports for `2025-02-28` through `2025-04-30`:
+
+- `data/reports/full_period_path_comparison_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/stress_slippage_x3_path_comparison_neutral_breadth_proxy_cap_50.csv`
+
+Path findings:
+
+- `full_period`
+  - Compared days: `43`.
+  - `equity_regression_days=0`.
+  - `drawdown_regression_days=43`.
+  - Minimum candidate equity delta was still positive: `+149,049.6019`.
+  - Maximum candidate equity delta: `+315,022.2237`.
+  - Worst drawdown delta: `-1.1549` percentage points.
+  - Maximum rolling-peak delta: `+387,782.9119`.
+  - `symbol_rotation_days=0`.
+  - `higher_turnover_days=2`.
+  - `higher_trade_cost_days=2`.
+  - On `2025-04-07`, baseline drawdown was `-24.044%` and candidate drawdown was `-25.1331%`, despite candidate equity being higher by `+154,349.6019`.
+- `stress_slippage_x3`
+  - Compared days: `43`.
+  - `equity_regression_days=0`.
+  - `drawdown_regression_days=43`.
+  - Minimum candidate equity delta was still positive: `+133,957.5058`.
+  - Maximum candidate equity delta: `+290,511.4143`.
+  - Worst drawdown delta: `-1.1128` percentage points.
+  - Maximum rolling-peak delta: `+359,575.5263`.
+  - `symbol_rotation_days=0`.
+  - `higher_turnover_days=2`.
+  - `higher_trade_cost_days=2`.
+  - On `2025-04-07`, baseline drawdown was `-24.0105%` and candidate drawdown was `-25.0493%`, despite candidate equity being higher by `+140,457.5058`.
+
+Interpretation:
+
+- The new `full_period` and `stress_slippage_x3` failures from `neutral_breadth_proxy_cap_50` are not caused by lower absolute equity in March-April 2025.
+- They are rolling-peak/drawdown-buffer failures:
+  - the candidate's November-December 2024 neutral-breadth de-risking improved equity and raised the later rolling peak,
+  - the March-April 2025 decision rows and held symbol sets stayed aligned with baseline,
+  - but the candidate carried slightly higher exposure/quantity after the higher-equity path,
+  - so drawdown as a percentage of the higher peak crossed the hard `-25%` gate even while candidate equity remained above baseline.
+- This means a broad additional exposure cap is likely the wrong next move.
+- The next candidate should focus on peak-relative drawdown buffer preservation, for example gating candidate adoption against path-level drawdown-buffer loss or using a narrowly triggered peak/drawdown guard, while preserving the November-December benefit and avoiding same-month decision churn.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `415` tests.
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- RED check: new path diagnostic tests failed because `analyze_monthly_path_attribution`, `compare_monthly_path_attribution_reports`, `save_monthly_path_attribution`, `save_monthly_path_attribution_comparison`, and `monthly-compare-paths` did not exist.
+- Additional RED check: rolling peak tests failed because `rolling_peak` and `rolling_peak_delta` were not yet emitted.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_path_attribution_reconstructs_cash_positions_turnover_and_cost tests.test_monthly_rebalance.MonthlyRebalanceTests.test_compare_monthly_path_attribution_reports_flags_equity_and_holding_path_regression tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_path_attribution_reports_write_csv tests.test_cli.CliTests.test_monthly_compare_paths_cli_writes_daily_path_delta_report`: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `181` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `419` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=306.26` observed).
+
+Next recommended action:
+
+- Do not adopt `neutral_breadth_proxy_cap_50`.
+- Do not treat March-April 2025 as an absolute-equity regression; candidate equity is higher during the inspected path window.
+- Add a candidate acceptance/ranking diagnostic that rejects candidates when they improve equity but reduce hard-gate drawdown buffer below `-25%`.
+- If testing a strategy tweak next, use a narrow peak-relative drawdown-buffer guard rather than broad neutral/strong breadth exposure caps.
+
+Previous loop:
+
+Added a paper-only sweep-plan experiment that combines the previously rejected neutral-breadth proxy cap with an explicit deep drawdown guard:
+
+- Added sweep-plan support for:
+  - `drawdown_guard_deep_trigger_pct`
+  - `drawdown_guard_deep_scale`
+- Added planned experiment:
+  - `neutral_proxy_deep_guard_35`
+  - `--market-beta-proxy-neutral-breadth-max-exposure 0.5`
+  - `--drawdown-guard-deep-trigger-pct -20`
+  - `--drawdown-guard-deep-scale 0.35`
+- This is paper-only planning/validation plumbing.
+- Baseline monthly strategy defaults are unchanged.
+- No live order execution was added.
+- No Toss API calls were added to tests.
+
+Generated or refreshed reports:
+
+- `data/reports/monthly_validation_scenarios_pit_universe.csv`
+- `data/reports/monthly_validation_failures_pit_universe.csv`
+- `data/reports/monthly_validation_remediation.csv`
+- `data/reports/monthly_validation_sweep_plan.csv`
+- `data/reports/monthly_validation_sweep_results_neutral_proxy_deep_guard_35.csv`
+- `data/reports/monthly_universe_price_coverage.csv`
+- `data/reports/monthly_performance_audit.csv`
+- `data/reports/monthly_performance_concentration.csv`
+- `data/reports/monthly_deployment_gate_pit_universe.csv`
+- `data/reports/monthly_validation_failure_patterns.csv`
+- `data/reports/monthly_validation_failure_drilldown.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Candidate target-only result:
+
+- `neutral_proxy_deep_guard_35`: `UNCHANGED`.
+- Target-only failed required scenarios stayed `3 -> 3`.
+- Failed delta: `0`.
+- Minimum excess return: `-5.6018%`.
+- Worst drawdown: `-23.991%`.
+- Interpretation:
+  - Adding a deep drawdown guard to the neutral-breadth proxy cap is not enough on target scenarios.
+  - Do not promote this candidate to paper-operation defaults.
+  - The highest-value next step remains path-level diagnostics around the March-April 2025 drawdown buffer, especially daily equity, holdings/quantity, turnover, and cost differences.
+
+Verification in this loop:
+
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_build_monthly_validation_sweep_plan_creates_weak_window_candidates tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_validation_sweep_results_emits_deep_guard_args`: failed because `neutral_proxy_deep_guard_35` and deep-drawdown sweep argument propagation did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_build_monthly_validation_sweep_plan_creates_weak_window_candidates tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_validation_sweep_results_emits_deep_guard_args`: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `177` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `415` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=306.03` observed).
+
+Commands run in this loop:
+
+```powershell
+python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_build_monthly_validation_sweep_plan_creates_weak_window_candidates tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_validation_sweep_results_emits_deep_guard_args
+python -m backtester monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end 2026-06-18 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-output data/reports/monthly_validation_scenarios_pit_universe.csv --data-quality-output data/reports/monthly_validation_data_quality_pit_universe.csv --coverage-output data/reports/monthly_universe_price_coverage.csv --performance-output data/reports/monthly_performance_audit.csv --concentration-output data/reports/monthly_performance_concentration.csv --failure-output data/reports/monthly_validation_failures_pit_universe.csv --remediation-output data/reports/monthly_validation_remediation.csv --sweep-plan-output data/reports/monthly_validation_sweep_plan.csv --sweep-result-output data/reports/monthly_validation_sweep_results.csv --universe-filter-report data/reports/universe_filter_report_pit_universe.csv --deployment-gate-output data/reports/monthly_deployment_gate_pit_universe.csv
+python -m backtester monthly-failure-patterns --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --output data/reports/monthly_validation_failure_patterns.csv
+python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --patterns data/reports/monthly_validation_failure_patterns.csv --output data/reports/monthly_validation_failure_drilldown.csv
+python -m backtester production-check --allow-blocked-exit-zero
+python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
+python -m backtester monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end 2026-06-18 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-output data/reports/monthly_validation_scenarios_pit_universe.csv --remediation-output data/reports/monthly_validation_remediation.csv --sweep-plan-output data/reports/monthly_validation_sweep_plan.csv --run-sweep-results --sweep-experiment-id neutral_proxy_deep_guard_35 --sweep-result-output data/reports/monthly_validation_sweep_results_neutral_proxy_deep_guard_35.csv --deployment-gate-output data/reports/monthly_deployment_gate_pit_universe.csv
+python -m unittest tests.test_monthly_rebalance tests.test_cli
+python -m compileall -q backtester
+python -m unittest discover -s tests
+python -m compileall -q backtester
+python -m backtester production-check --allow-blocked-exit-zero
+python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
+```
+
+Next recommended action:
+
+- Do not adopt `neutral_proxy_deep_guard_35`.
+- Add path-level daily diagnostics for baseline vs rejected candidates over `2025-02-28..2025-04-30`.
+- Focus on why March 2025 worsened despite identical March decision rows under `neutral_breadth_proxy_cap_50`.
+- Keep candidate work paper-only and continue avoiding Toss API calls in tests.
+
+Previous loop:
 
 Added a paper-only monthly decision attribution comparison report to explain the rejected `neutral_breadth_proxy_cap_50` March-April 2025 drawdown regression:
 

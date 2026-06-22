@@ -53,6 +53,7 @@ from .monthly_rebalance import (
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
+    analyze_monthly_path_attribution,
     analyze_monthly_performance_concentration,
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
@@ -75,6 +76,7 @@ from .monthly_rebalance import (
     build_universe_filter_report,
     compare_monthly_attribution_reports,
     compare_monthly_decision_attribution_reports,
+    compare_monthly_path_attribution_reports,
     compare_monthly_validation_reports,
     compare_monthly_validation_scenario_deltas,
     decide_monthly_allocation,
@@ -108,6 +110,8 @@ from .monthly_rebalance import (
     save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
+    save_monthly_path_attribution,
+    save_monthly_path_attribution_comparison,
     save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
     save_monthly_train_decision_path,
@@ -845,6 +849,7 @@ def main() -> int:
     )
     monthly_attribution_parser.add_argument("--summary-output", default=None)
     monthly_attribution_parser.add_argument("--proxy-output", default=None)
+    monthly_attribution_parser.add_argument("--path-output", default=None)
 
     monthly_validate_parser = subparsers.add_parser(
         "monthly-validate",
@@ -1010,6 +1015,21 @@ def main() -> int:
     monthly_compare_decisions_parser.add_argument(
         "--output",
         default="data/reports/monthly_decision_attribution_comparison.csv",
+    )
+
+    monthly_compare_paths_parser = subparsers.add_parser(
+        "monthly-compare-paths",
+        help="Compare baseline and candidate daily path attribution CSV reports",
+    )
+    monthly_compare_paths_parser.add_argument("--baseline", required=True)
+    monthly_compare_paths_parser.add_argument("--candidate", required=True)
+    monthly_compare_paths_parser.add_argument("--scenario", default="")
+    monthly_compare_paths_parser.add_argument("--candidate-label", default="candidate")
+    monthly_compare_paths_parser.add_argument("--start", default="")
+    monthly_compare_paths_parser.add_argument("--end", default="")
+    monthly_compare_paths_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_path_attribution_comparison.csv",
     )
 
     monthly_candidate_followup_parser = subparsers.add_parser(
@@ -1467,6 +1487,40 @@ def main() -> int:
         print(f"changed_decision_rows  {len(changed_rows)}")
         print(f"exposure_reduced_rows  {len(exposure_reduced_rows)}")
         print(f"symbol_rotation_rows  {len(symbol_rotation_rows)}")
+        return 0
+
+    if args.command == "monthly-compare-paths":
+        baseline_rows = _read_csv_dicts(Path(args.baseline))
+        candidate_rows = _read_csv_dicts(Path(args.candidate))
+        rows = compare_monthly_path_attribution_reports(
+            baseline_rows,
+            candidate_rows,
+            scenario=args.scenario,
+            candidate_label=args.candidate_label,
+            start=args.start,
+            end=args.end,
+        )
+        saved = save_monthly_path_attribution_comparison(rows, args.output)
+        equity_regression_rows = [
+            row for row in rows if "equity_regression" in str(row.get("diagnostic", ""))
+        ]
+        drawdown_regression_rows = [
+            row for row in rows if "drawdown_regression" in str(row.get("diagnostic", ""))
+        ]
+        worst_row = min(
+            rows,
+            key=lambda row: _safe_cli_float(row.get("equity_delta")),
+            default={},
+        )
+        print(f"path_comparison_report  {args.output}")
+        print(f"comparison_rows  {saved}")
+        print(f"equity_regression_days  {len(equity_regression_rows)}")
+        print(f"drawdown_regression_days  {len(drawdown_regression_rows)}")
+        if worst_row:
+            print(
+                "worst_equity_delta_date  "
+                f"{worst_row.get('date', '')} delta={worst_row.get('equity_delta', '')}"
+            )
         return 0
 
     if args.command == "monthly-candidate-followup":
@@ -2651,6 +2705,15 @@ def main() -> int:
         monthly_rows = analyze_monthly_drawdown_attribution(result)
         symbol_rows = analyze_symbol_realized_pnl_attribution(result)
         decision_rows = analyze_monthly_decision_attribution(result)
+        path_rows = (
+            analyze_monthly_path_attribution(
+                result,
+                fee_rate=args.fee_rate,
+                tax_rate=args.tax_rate,
+            )
+            if args.path_output
+            else []
+        )
         recovery_rows = analyze_monthly_recovery_attribution(result, scenario=args.scenario_name)
         proxy_rows = (
             analyze_monthly_proxy_decision_diagnostics(
@@ -2669,6 +2732,8 @@ def main() -> int:
             columns=SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS,
         )
         save_monthly_decision_attribution(decision_rows, args.decision_output)
+        if args.path_output:
+            save_monthly_path_attribution(path_rows, args.path_output)
         if args.summary_output:
             save_monthly_recovery_attribution(recovery_rows, args.summary_output)
         if args.proxy_output:
@@ -2691,6 +2756,9 @@ def main() -> int:
         print(f"monthly_rows  {len(monthly_rows)}")
         print(f"symbol_rows  {len(symbol_rows)}")
         print(f"decision_rows  {len(decision_rows)}")
+        if args.path_output:
+            print(f"path_rows  {len(path_rows)}")
+            print(f"path_attribution_report  {args.path_output}")
         if worst_month:
             print(
                 "worst_month  "
