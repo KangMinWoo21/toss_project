@@ -4338,6 +4338,28 @@ def _monthly_train_stability_window_evidence(
             min_rows=config.min_rows_per_window,
             start_grace_days=config.start_grace_days,
         )
+        counts = {
+            "raw_symbols": raw_symbol_count,
+            "universe_symbols": len(universe_candles),
+            "pit_symbols": len(point_in_time_candles),
+            "liquid_symbols": len(decision_candles),
+            "train_symbols": len(train_candles),
+            "universe_removed": max(0, raw_symbol_count - len(universe_candles)),
+            "pit_filter_removed": max(0, len(universe_candles) - len(point_in_time_candles)),
+            "liquidity_removed": max(0, len(point_in_time_candles) - len(decision_candles)),
+            "train_coverage_removed": max(0, len(decision_candles) - len(train_candles)),
+            "filter_error": "",
+        }
+        if not train_candles:
+            return [
+                _empty_monthly_train_stability_window_row(
+                    as_of_date=as_of_date,
+                    inner_train_start=inner_train_start,
+                    inner_train_end=signal_date,
+                    reason="no_train_symbols",
+                    counts=counts,
+                )
+            ]
         preset_configs = {
             preset: momentum_rotation_config_for_preset(preset)
             for preset in config.presets
@@ -4352,18 +4374,6 @@ def _monthly_train_stability_window_evidence(
             start_grace_days=config.start_grace_days,
             train_stability_years=config.train_stability_years,
         )
-        counts = {
-            "raw_symbols": raw_symbol_count,
-            "universe_symbols": len(universe_candles),
-            "pit_symbols": len(point_in_time_candles),
-            "liquid_symbols": len(decision_candles),
-            "train_symbols": len(train_candles),
-            "universe_removed": max(0, raw_symbol_count - len(universe_candles)),
-            "pit_filter_removed": max(0, len(universe_candles) - len(point_in_time_candles)),
-            "liquidity_removed": max(0, len(point_in_time_candles) - len(decision_candles)),
-            "train_coverage_removed": max(0, len(decision_candles) - len(train_candles)),
-            "filter_error": "",
-        }
         rows: list[dict[str, Any]] = []
         for candidate_rank, candidate in enumerate(candidate_rows, start=1):
             preset = str(candidate.get("preset", ""))
@@ -4634,6 +4644,74 @@ def _stability_selection_path_context(
         "stability_selected_not_traded_symbols": ";".join(selected_not_traded),
         "stability_traded_not_selected_symbols": ";".join(traded_not_selected),
         "stability_underperformance_driver": ";".join(drivers) if drivers else "positive_or_no_issue",
+    }
+
+
+def _empty_monthly_train_stability_window_row(
+    *,
+    as_of_date: str,
+    inner_train_start: str,
+    inner_train_end: str,
+    reason: str,
+    counts: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "inner_train_start": inner_train_start,
+        "inner_train_end": inner_train_end,
+        "stability_window": "",
+        "stability_start": "",
+        "stability_end": "",
+        "preset": "",
+        "subwindow_counted_flag": "false",
+        "subwindow_symbol_count": "",
+        "subwindow_total_return_pct": "",
+        "subwindow_buy_hold_return_pct": "",
+        "subwindow_excess_return_pct": "",
+        "subwindow_max_drawdown_pct": "",
+        "subwindow_trade_count": "",
+        "subwindow_positive_flag": "false",
+        "subwindow_rejection_reasons": reason,
+        "candidate_total_return_pct": "",
+        "candidate_buy_hold_return_pct": "",
+        "candidate_excess_return_pct": "",
+        "candidate_max_drawdown_pct": "",
+        "candidate_trade_count": "",
+        "candidate_train_subwindows": "",
+        "candidate_train_positive_subwindows": "",
+        "candidate_train_positive_ratio": "",
+        "candidate_train_avg_subwindow_excess_pct": "",
+        "candidate_train_worst_subwindow_excess_pct": "",
+        "candidate_rejection_reasons": reason,
+        "train_decision_as_of": as_of_date,
+        "candidate_name": "",
+        "candidate_rank": "",
+        "candidate_positive_ratio": "",
+        "candidate_eligible": "false",
+        "stability_window_index": "",
+        "stability_window_start": "",
+        "stability_window_end": "",
+        "stability_window_days": "",
+        "stability_total_return_pct": "",
+        "stability_buy_hold_return_pct": "",
+        "stability_excess_return_pct": "",
+        "stability_max_drawdown_pct": "",
+        "stability_trade_count": "",
+        "stability_positive": "false",
+        "stability_failed_reason": reason,
+        "stability_selected_symbol_count": 0,
+        "stability_selected_symbols": "",
+        "stability_benchmark_avg_return_pct": "",
+        "stability_benchmark_median_return_pct": "",
+        "stability_selected_avg_return_pct": "",
+        "stability_selected_median_return_pct": "",
+        "stability_selected_vs_benchmark_avg_return_delta_pct": "",
+        "stability_selected_underperformed_benchmark": "",
+        "stability_traded_symbol_count": 0,
+        "stability_traded_symbols": "",
+        "stability_selected_not_traded_symbols": "",
+        "stability_traded_not_selected_symbols": "",
+        "stability_underperformance_driver": reason,
+        **counts,
     }
 
 

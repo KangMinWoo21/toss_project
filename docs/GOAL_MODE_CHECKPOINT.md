@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 22:06 KST
+Last updated: 2026-06-22 22:21 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 431 tests.
+- `python -m unittest discover -s tests`: PASS, 432 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,81 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Improved the paper-only direct-alpha stability-window diagnostics:
+
+- Fixed early train-decision stability rows so empty train windows are labeled as `no_train_symbols` instead of leaking the internal `symbol_candles_cannot_be_empty` ValueError token.
+- Added a regression test for empty train-window stability rows.
+- Regenerated `monthly-train-decision-diagnostics` for `walk_forward_003` and `walk_forward_004`.
+- Existing strategy behavior, train gates, validation gates, execution planning, and Toss/API behavior are unchanged.
+
+Regenerated reports:
+
+- `data/reports/monthly_train_decision_path_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_stability_diagnostics.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Current stability-window findings:
+
+- `monthly_direct_alpha_stability_diagnostics.csv` has `26` rows.
+- Internal error-token leakage is now `0` rows:
+  - no row has `filter_error=symbol_candles_cannot_be_empty`,
+  - no row has `stability_failed_reason=symbol_candles_cannot_be_empty`.
+- Early train-decision rows are now explicit insufficient-history rows:
+  - `walk_forward_003`: `no_train_symbols=7`.
+  - `walk_forward_004`: `no_train_symbols=7`.
+- Later direct-candidate rows still explain the `low_positive_ratio` blocker:
+  - `walk_forward_003`: `nonpositive_excess;insufficient_trades;low_positive_ratio=3`, `nonpositive_excess;low_positive_ratio=3`.
+  - `walk_forward_004`: `nonpositive_excess;insufficient_trades;low_positive_ratio=3`, `nonpositive_excess;low_positive_ratio=3`.
+- Stability-window failure drivers:
+  - `walk_forward_003`: `no_trades;benchmark_positive_selection_nonpositive=3`, `holding_path_differs_from_selection_snapshot=3`.
+  - `walk_forward_004`: `no_trades;benchmark_positive_selection_nonpositive=3`, `holding_path_differs_from_selection_snapshot=3`.
+- The dated low-positive-ratio failures remain:
+  - `walk_forward_003`, `2025-02-03`, `2025-03-04`, `2025-04-01`: negative excess with `0` trades.
+  - `walk_forward_003`, `2025-05-02`, `2025-06-02`, `2025-07-01`: negative excess with `10` trades and holding path drift.
+  - `walk_forward_004`, `2025-05-02`, `2025-06-02`, `2025-07-01`: negative excess with `0` trades.
+  - `walk_forward_004`, `2025-08-01`, `2025-09-01`, `2025-10-01`: negative excess with `10`, `10`, and `18` trades and holding path drift.
+
+Interpretation:
+
+- The early rows are insufficient-history/no-train-symbol evidence, not runtime errors.
+- The actual direct-alpha ineligibility remains evidence-backed:
+  - later rows have `candidate_positive_ratio=0.0`,
+  - all later direct candidates are rejected by `low_positive_ratio` plus either insufficient trades or nonpositive excess,
+  - active traded windows underperform despite selected-vs-benchmark snapshot averages looking strong, pointing back to path drift and benchmark/headwind effects.
+- Keep `min_train_positive_ratio` strict.
+- Do not adopt rejected candidates or loosen train gates from this evidence.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `431` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_labels_empty_train_windows_without_internal_error`: failed because empty train windows emitted `symbol_candles_cannot_be_empty`.
+- Targeted GREEN:
+  - same command: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_breaks_positive_ratio_into_subwindows tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_adds_selection_and_path_context tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_labels_empty_train_windows_without_internal_error tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_windows_writes_csv tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report`: PASS.
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `194` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `432` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=309.51` observed).
+
+Next recommended action:
+
+- Keep direct-alpha train gates strict.
+- Use `monthly_direct_alpha_stability_diagnostics.csv`, `monthly_direct_alpha_rank_drift_diagnostics.csv`, and `monthly_direct_alpha_path_drift_diagnostics.csv` together to build the next paper-only diagnostic:
+  - aggregate path-drift and stability failures by symbol and dated train decision,
+  - identify whether active traded windows lose because selected names are not traded, traded names differ from train-end winners, or the equal-weight benchmark is unusually strong,
+  - do not change strategy defaults until this attribution is validated.
+
+Previous loop:
 
 Added a paper-only direct-alpha rank-drift diagnostic:
 

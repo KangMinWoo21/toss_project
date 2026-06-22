@@ -3441,6 +3441,42 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("stability_traded_not_selected_symbols", row)
         self.assertTrue(row["stability_underperformance_driver"])
 
+    def test_analyze_monthly_train_stability_windows_labels_empty_train_windows_without_internal_error(self):
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2024-04-30",
+            start="2024-05-01",
+            end="2024-05-31",
+        )
+        rows = analyze_monthly_train_stability_windows(
+            {
+                "AAA": _trend_candles_with_volume("2024-01-01", 130, close=100, step=0.7, volume=3_000),
+                "BBB": _trend_candles_with_volume("2024-01-01", 130, close=100, step=0.5, volume=2_000),
+                "CCC": _trend_candles_with_volume("2024-01-01", 130, close=180, step=-0.2, volume=1_000),
+            },
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                train_start="2024-01-01",
+                presets=("balanced",),
+                min_rows_per_window=120,
+                start_grace_days=0,
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_window_days=20,
+                point_in_time_liquidity_top_n=3,
+                train_stability_years=1,
+            ),
+        )
+
+        self.assertTrue(rows)
+        early_rows = [row for row in rows if row["subwindow_counted_flag"] == "false"]
+        self.assertTrue(early_rows)
+        self.assertFalse(any(row["filter_error"] == "symbol_candles_cannot_be_empty" for row in early_rows))
+        self.assertTrue(any(row["stability_failed_reason"] == "no_train_symbols" for row in early_rows))
+        self.assertTrue(any(row["stability_underperformance_driver"] == "no_train_symbols" for row in early_rows))
+
     def test_save_monthly_train_stability_windows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "train_stability.csv"
