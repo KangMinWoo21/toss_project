@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 15:19 KST
+Last updated: 2026-06-22 15:42 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 392 tests.
+- `python -m unittest discover -s tests`: PASS, 394 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,69 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added direct-alpha holding-path diagnostics:
+
+- Extended `python -m backtester monthly-direct-alpha-diagnostics` with `--path-output`.
+- New report: `data/reports/monthly_direct_alpha_path_diagnostics.csv`.
+- Purpose: compare actual in-period direct-alpha holdings by rebalance date against the train-end selected snapshot and the PIT/top-100 benchmark universe.
+- Added CSV fields for:
+  - rebalance date and event type,
+  - held, entered, and exited symbols,
+  - equal holding weights,
+  - train-end selected symbols,
+  - overlap count and overlap symbols,
+  - holdings not in the train-end snapshot,
+  - train-end selections missing from current holdings,
+  - benchmark symbol count/composition,
+  - benchmark average/median return,
+  - candidate total/buy-hold/excess return and turnover counts,
+  - raw/PIT/liquidity/train universe counts and filter removals.
+- Added deterministic tests for:
+  - holding-path analysis comparing rebalance holdings with the train-end snapshot,
+  - no-trade scheduled rebalance snapshots,
+  - holding-path CSV saving,
+  - `monthly-direct-alpha-diagnostics --path-output` CLI generation.
+- Regenerated direct-alpha diagnostics for `walk_forward_003` and `walk_forward_004`.
+- Current holding-path report rows: `6`.
+
+Direct-alpha holding-path findings:
+
+- `walk_forward_003`
+  - Path rows: `3` (`2025-04-08` no-trade rebalance, `2025-06-10` rebalance, `2025-07-22` liquidation).
+  - The `2025-04-08` scheduled rebalance had no holdings and no trades.
+  - Actual in-period holdings: `000880;037270;108490;214450;298380`.
+  - Train-end selected snapshot: `108490;002020;000880;294570;064260`.
+  - Rebalance overlap with train-end snapshot: `2 of 5` (`000880;108490`).
+  - Candidate performance remains `total_return_pct=16.2733`, `buy_hold_return_pct=35.9941`, `excess_return_pct=-19.7208`.
+  - Interpretation: the train-end snapshot looked strong, but actual in-period holdings only partly matched it; the candidate held three names that were not in the final train-end selected set.
+- `walk_forward_004`
+  - Path rows: `3` (`2025-07-11` rebalance, `2025-09-08` rebalance, `2025-10-27` liquidation).
+  - Initial holdings: `003230;064260;064350;124500;214450`.
+  - Second rebalance replaced `003230;124500;214450` with `087010;226950;298380`.
+  - Train-end selected snapshot: `226950;222800;124500;064350;006800`.
+  - Rebalance overlap with train-end snapshot stayed `2 of 5` before liquidation.
+  - Candidate performance remains `total_return_pct=0.4340`, `buy_hold_return_pct=60.5903`, `excess_return_pct=-60.1564`.
+  - Interpretation: the direct-alpha failure is now better explained as path dependence and turnover/selection drift against a very strong top-100 buy-hold benchmark, not simply absence of strong train-end symbols.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `392` tests.
+- RED check: new holding-path tests initially failed because the new functions/CLI option did not exist.
+- RED refinement: no-trade scheduled rebalance snapshots were initially missing from the path report.
+- Test isolation fix: `tests/test_cli.py::test_monthly_backtest_can_exclude_symbols_from_data_quality_file` now runs `monthly-backtest` in a temp cwd so full unittest no longer overwrites workspace `data/reports/monthly_performance_concentration.csv`.
+- Targeted GREEN: `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_direct_alpha_holding_path_compares_rebalance_holdings_to_train_end_snapshot tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_direct_alpha_holding_path_writes_csv tests.test_cli.CliTests.test_monthly_direct_alpha_diagnostics_cli_writes_selection_report`: PASS.
+- Related regression scope: `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `156` tests.
+- Full verification: `python -m unittest discover -s tests`: PASS, `394` tests.
+- Full syntax check: `python -m compileall -q backtester`: PASS.
+- Regenerated baseline monthly validation after detecting `monthly_performance_concentration.csv` had been overwritten by `monthly-backtest`; the first 300s run timed out, then the 600s rerun passed and the report source is back to `monthly-validate:2024-01-01..2026-06-18`.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, status counts `BLOCK=8`, `PASS=31`, `WARN=8`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=303.30` observed).
+
+Next recommended action:
+
+- Add recursive monthly train decision path diagnostics: explain when each train window chooses `market_beta_proxy` or `cash`, what direct-alpha candidates existed at each train decision point, and why `alpha_ratio` remains `0`.
 
 Added direct-alpha symbol-selection diagnostics:
 

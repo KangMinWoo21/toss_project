@@ -407,32 +407,32 @@ class CliTests(unittest.TestCase):
 
     def test_monthly_backtest_can_exclude_symbols_from_data_quality_file(self):
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            (root / "111111.csv").write_text(
+            cwd = Path(temp_dir)
+            data_dir = cwd / "prices"
+            data_dir.mkdir()
+            (data_dir / "111111.csv").write_text(
                 "date,open,high,low,close,volume\n"
                 "2024-01-02,100,101,99,100,1000\n"
                 "2024-02-01,100,101,99,100,1000\n"
                 "2024-03-01,100,101,99,100,1000\n",
                 encoding="utf-8",
             )
-            (root / "222222.csv").write_text(
+            (data_dir / "222222.csv").write_text(
                 "date,open,high,low,close,volume\n"
                 "2024-01-02,100,101,99,100,1000\n"
                 "2024-02-01,100,101,99,100,1000\n"
                 "2024-03-01,100,101,99,100,1000\n",
                 encoding="utf-8",
             )
-            excluded = root / "excluded.csv"
+            excluded = cwd / "excluded.csv"
             excluded.write_text("symbol,status,reason\n222222,BLOCK,bad data\n", encoding="utf-8")
 
-            completed = subprocess.run(
+            completed = self._run_backtester_in_cwd(
+                cwd,
                 [
-                    sys.executable,
-                    "-m",
-                    "backtester",
                     "monthly-backtest",
                     "--data-dir",
-                    str(root),
+                    str(data_dir),
                     "--start",
                     "2024-01-02",
                     "--end",
@@ -444,10 +444,6 @@ class CliTests(unittest.TestCase):
                     "--exclude-symbols",
                     str(excluded),
                 ],
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
             )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -1050,6 +1046,7 @@ class CliTests(unittest.TestCase):
                 encoding="utf-8",
             )
             output = root / "direct_alpha_selection.csv"
+            path_output = root / "direct_alpha_path.csv"
 
             completed = self._run_backtester_in_cwd(
                 root,
@@ -1077,6 +1074,8 @@ class CliTests(unittest.TestCase):
                     "0",
                     "--output",
                     str(output),
+                    "--path-output",
+                    str(path_output),
                 ],
             )
             if output.exists():
@@ -1084,11 +1083,18 @@ class CliTests(unittest.TestCase):
                     rows = list(csv.DictReader(f))
             else:
                 rows = []
+            if path_output.exists():
+                with path_output.open(encoding="utf-8") as f:
+                    path_rows = list(csv.DictReader(f))
+            else:
+                path_rows = []
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("direct_alpha_selection_report", completed.stdout)
+        self.assertIn("direct_alpha_path_report", completed.stdout)
         self.assertTrue(any(row["symbol"] == "AAA" and row["selection_status"] == "selected" for row in rows))
         self.assertTrue(any(row["symbol"] == "FFF" and row["rejection_reason"] == "below_selected_rank" for row in rows))
+        self.assertTrue(any("AAA" in row["held_symbols"].split(";") for row in path_rows))
 
     def test_monthly_compare_validation_cli_writes_comparison(self):
         with TemporaryDirectory() as temp_dir:

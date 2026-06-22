@@ -21,6 +21,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_performance_concentration,
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
+    analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_validation_failures,
     analyze_monthly_validation_failure_drilldown,
@@ -78,6 +79,7 @@ from backtester.monthly_rebalance import (
     save_monthly_validation_scenario_deltas,
     save_monthly_attribution_rows,
     save_monthly_decision_attribution,
+    save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
     save_order_plan,
     save_order_plan_summary,
@@ -2200,6 +2202,77 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(saved, 1)
         self.assertIn("scenario,preset,symbol", text.splitlines()[0])
+        self.assertIn("walk_forward_unit", text)
+
+    def test_analyze_monthly_direct_alpha_holding_path_compares_rebalance_holdings_to_train_end_snapshot(self):
+        symbol_candles = {
+            "AAA": _trend_candles_with_volume("2024-01-01", 260, close=100, step=1.2, volume=10_000),
+            "BBB": _trend_candles_with_volume("2024-01-01", 260, close=100, step=1.0, volume=9_000),
+            "CCC": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.8, volume=8_000),
+            "DDD": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.6, volume=7_000),
+            "EEE": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.4, volume=6_000),
+            "FFF": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.2, volume=5_000),
+        }
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2024-09-16",
+            start="2024-09-17",
+            end="2024-10-31",
+        )
+
+        rows = analyze_monthly_direct_alpha_holding_path(
+            symbol_candles,
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                presets=("balanced",),
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=50,
+                point_in_time_liquidity_top_n=6,
+                point_in_time_liquidity_window_days=20,
+                min_rows_per_window=20,
+                start_grace_days=0,
+                train_stability_years=1,
+            ),
+        )
+
+        buy_rows = [row for row in rows if row["entered_symbols"]]
+        self.assertTrue(buy_rows)
+        first_buy = buy_rows[0]
+        self.assertEqual(first_buy["scenario"], "walk_forward_unit")
+        self.assertEqual(first_buy["preset"], "balanced")
+        self.assertIn("AAA", first_buy["held_symbols"].split(";"))
+        self.assertIn("AAA", first_buy["train_end_selected_symbols"].split(";"))
+        self.assertGreater(first_buy["snapshot_overlap_count"], 0)
+        self.assertIn("held_weights", first_buy)
+        self.assertIn("candidate_excess_return_pct", first_buy)
+        self.assertEqual(first_buy["benchmark_symbol_count"], 6)
+        self.assertTrue(
+            any(row["rebalance_trade_count"] == 0 and row["holding_count"] == 5 for row in rows)
+        )
+        self.assertTrue(any(row["exited_symbols"] for row in rows))
+
+    def test_save_monthly_direct_alpha_holding_path_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "direct_alpha_path.csv"
+            saved = save_monthly_direct_alpha_holding_path(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "preset": "balanced",
+                        "rebalance_date": "2024-07-01",
+                        "entered_symbols": "AAA",
+                        "held_symbols": "AAA",
+                        "snapshot_overlap_count": 1,
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,preset,rebalance_date", text.splitlines()[0])
         self.assertIn("walk_forward_unit", text)
 
     def test_generate_monthly_validation_cases_includes_duration_regime_and_stress(self):

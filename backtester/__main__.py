@@ -51,6 +51,7 @@ from .monthly_rebalance import (
     SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS,
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
+    analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_performance_concentration,
     analyze_monthly_validation_failures,
@@ -97,6 +98,7 @@ from .monthly_rebalance import (
     save_monthly_decision,
     save_monthly_attribution_rows,
     save_monthly_decision_attribution,
+    save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
     save_monthly_performance_audit_rows,
     save_monthly_performance_concentration,
@@ -1098,6 +1100,11 @@ def main() -> int:
         "--output",
         default="data/reports/monthly_direct_alpha_selection_diagnostics.csv",
     )
+    monthly_direct_alpha_parser.add_argument(
+        "--path-output",
+        default="data/reports/monthly_direct_alpha_path_diagnostics.csv",
+        help="Write paper-only direct alpha rebalance holding-path diagnostics.",
+    )
 
     production_check_parser = subparsers.add_parser(
         "production-check",
@@ -1423,12 +1430,31 @@ def main() -> int:
                 point_in_time_universe=point_in_time_universe,
             ),
         )
+        path_rows = analyze_monthly_direct_alpha_holding_path(
+            symbol_candles,
+            cases=cases,
+            config=MonthlyRebalanceConfig(
+                presets=presets,
+                min_rows_per_window=args.min_rows_per_window,
+                start_grace_days=args.start_grace_days,
+                point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
+                point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
+                point_in_time_min_history_days=args.point_in_time_min_history_days,
+                point_in_time_min_reference_price=args.point_in_time_min_reference_price,
+                point_in_time_max_trailing_return_pct=args.point_in_time_max_trailing_return_pct,
+                point_in_time_trailing_return_days=args.point_in_time_trailing_return_days,
+                point_in_time_universe=point_in_time_universe,
+            ),
+        )
         saved = save_monthly_direct_alpha_selection(rows, args.output)
+        path_saved = save_monthly_direct_alpha_holding_path(path_rows, args.path_output)
         print("Monthly direct alpha diagnostics")
         _print_data_quality_exclusions(data_quality_exclusions)
         print(f"walk_forward_cases  {len(cases)}")
         print(f"diagnostic_rows  {saved}")
         print(f"direct_alpha_selection_report  {args.output}")
+        print(f"direct_alpha_path_rows  {path_saved}")
+        print(f"direct_alpha_path_report  {args.path_output}")
         return 0
 
     if args.command == "production-check":

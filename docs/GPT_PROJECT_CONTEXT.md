@@ -1,6 +1,6 @@
 # GPT Project Context: Toss Securities Paper-Operation Trading System
 
-Generated at: 2026-06-22 14:27 KST
+Generated at: 2026-06-22 15:42 KST
 
 This document is a compact project handoff for GPT. It summarizes the current repository state, safety rules, architecture, reports, validation results, and next work. It intentionally excludes secrets, `.env` values, private credentials, and raw downloaded market data.
 
@@ -46,28 +46,33 @@ Why:
 Recent commits:
 
 ```text
+958249b Add direct alpha selection diagnostics
 8cd4dcc Add direct alpha train diagnostics
 bd9b613 Classify direct alpha train failures
 cb6dfb7 Add direct train alpha diagnostics
 8b847c8 Harden validation delta discovery
-9fe405e Add walk-forward fallback diagnostics
 ```
 
 Latest committed checkpoint:
 
-- `8cd4dcc Add direct alpha train diagnostics`
-- Added `train_direct_diagnostics` to monthly validation and failure drilldown rows.
-- Tests now cover direct train diagnostics and drilldown CSV preservation.
-- `python -m unittest discover -s tests`: PASS, 389 tests.
+- `958249b Add direct alpha selection diagnostics`
+- Added `monthly-direct-alpha-diagnostics` CLI.
+- Added `data/reports/monthly_direct_alpha_selection_diagnostics.csv`.
+- Tests cover selected/rejected symbol rows, CSV saving, and CLI report generation.
+- `python -m unittest discover -s tests`: PASS, 392 tests.
 - `python -m compileall -q backtester`: PASS.
 
 Latest uncommitted/next checkpoint work:
 
-- Added `monthly-direct-alpha-diagnostics` CLI.
-- Added `data/reports/monthly_direct_alpha_selection_diagnostics.csv`.
-- This report explains direct alpha train failures by symbol-level selection evidence inside the PIT/top-liquid train universe.
-- It includes selected/rejected symbols, selected weights, momentum score, average trading value, train-period symbol return, benchmark average/median return, candidate total/buy-hold/excess return, turnover counts, and universe filter counts.
-- Current full verification after this work: `python -m unittest discover -s tests` PASS with `392` tests; `python -m compileall -q backtester` PASS.
+- Extended `monthly-direct-alpha-diagnostics` with `--path-output`.
+- Added `data/reports/monthly_direct_alpha_path_diagnostics.csv`.
+- This report reconstructs scheduled direct-alpha rebalance snapshots from paper backtest trades, including no-trade rebalance dates, and compares holdings with the train-end selected snapshot.
+- It includes held/entered/exited symbols, equal holding weights, train-end selected symbols, overlap counts, holdings not in the train-end snapshot, train-end selections missing from current holdings, benchmark composition/counts, candidate total/buy-hold/excess return, and turnover counts.
+- `walk_forward_003`: path rows now include a `2025-04-08` no-trade rebalance with no holdings; later actual holdings overlapped the train-end selected snapshot by `2 of 5`; excess remained `-19.7208`.
+- `walk_forward_004`: actual rebalance holdings overlapped the train-end selected snapshot by `2 of 5` before liquidation; the second rebalance replaced three names; excess remained `-60.1564`.
+- Current full verification after this work: `python -m unittest discover -s tests` PASS with `394` tests; `python -m compileall -q backtester` PASS.
+- Baseline `monthly-validate` was regenerated after `monthly_performance_concentration.csv` was found overwritten by a `monthly-backtest` source; production readiness returned to `BLOCK=8`, `PASS=31`, `WARN=8`.
+- Test isolation was tightened so `test_monthly_backtest_can_exclude_symbols_from_data_quality_file` runs in a temp cwd and no longer overwrites workspace operation reports during full unittest.
 
 ## Current Git Worktree Warning
 
