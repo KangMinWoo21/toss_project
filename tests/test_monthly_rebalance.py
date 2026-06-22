@@ -202,6 +202,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(MonthlyRebalanceConfig().liquidity_risk_min_scale, 0.8)
         self.assertEqual(MonthlyRebalanceConfig().liquidity_risk_min_top_n, 20)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_size, 12)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_max_exposure, 1.0)
         self.assertEqual(RiskLimits().max_total_target_weight, 1.0)
         self.assertEqual(RiskLimits().max_total_buy_value, 10_000_000.0)
         self.assertEqual(RiskLimits().max_order_count, 15)
@@ -835,6 +836,8 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(by_id["weak_defense_cash_05"]["cash_buffer_weight"], "0.05")
         self.assertEqual(by_id["weak_defense_cash_05"]["candidate_pool_size"], "5")
         self.assertIn("regime_sideways", by_id["weak_defense_cash_05"]["target_scenarios"])
+        self.assertIn("market_beta_proxy_cap_75", by_id)
+        self.assertEqual(by_id["market_beta_proxy_cap_75"]["market_beta_proxy_max_exposure"], "0.75")
         self.assertIn("drawdown_guard_stronger", by_id)
         self.assertEqual(by_id["drawdown_guard_stronger"]["max_position_weight"], "0.1")
         self.assertEqual(by_id["drawdown_guard_stronger"]["market_volatility_min_scale"], "0.5")
@@ -2725,6 +2728,63 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(decision.selected_preset, "market_beta_proxy")
         self.assertEqual(decision.reason, "no_train_candidate_strong_breadth_proxy")
         self.assertEqual(decision.target_weights, {"AAA": 0.495, "BBB": 0.495})
+
+    def test_decide_monthly_allocation_caps_proxy_exposure_only(self):
+        decision = decide_monthly_allocation(
+            {
+                "AAA": _daily_candles_with_volume("2024-01-01", 10, close=100, volume=3_000),
+                "BBB": _daily_candles_with_volume("2024-01-01", 10, close=100, volume=2_000),
+                "CCC": _daily_candles_with_volume("2024-01-01", 10, close=100, volume=1_000),
+            },
+            as_of_date="2024-01-10",
+            config=MonthlyRebalanceConfig(
+                train_start="2024-01-01",
+                min_train_trades=999,
+                min_rows_per_window=3,
+                fallback_breadth_days=3,
+                fallback_breadth_threshold=0.4,
+                point_in_time_min_history_days=3,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_window_days=3,
+                point_in_time_liquidity_top_n=3,
+                market_beta_proxy_size=2,
+                market_beta_proxy_max_exposure=0.75,
+                max_position_weight=0.5,
+            ),
+            portfolio_value=1_000_000,
+            reference_prices={"AAA": 109, "BBB": 109, "CCC": 109},
+        )
+
+        self.assertEqual(decision.mode, "market_beta_proxy")
+        self.assertEqual(decision.reason, "no_train_candidate_strong_breadth_proxy_proxy_exposure_capped")
+        self.assertEqual(decision.target_weights, {"AAA": 0.375, "BBB": 0.375})
+
+    def test_decide_monthly_allocation_does_not_cap_direct_market_beta_symbol(self):
+        decision = decide_monthly_allocation(
+            {
+                "069500": _daily_candles_with_volume("2024-01-01", 10, close=100, volume=3_000),
+                "AAA": _daily_candles_with_volume("2024-01-01", 10, close=100, volume=2_000),
+                "BBB": _daily_candles_with_volume("2024-01-01", 10, close=100, volume=1_000),
+            },
+            as_of_date="2024-01-10",
+            config=MonthlyRebalanceConfig(
+                train_start="2024-01-01",
+                min_train_trades=999,
+                min_rows_per_window=3,
+                fallback_breadth_days=3,
+                fallback_breadth_threshold=0.4,
+                point_in_time_min_history_days=3,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_top_n=0,
+                market_beta_proxy_max_exposure=0.50,
+            ),
+            portfolio_value=1_000_000,
+            reference_prices={"069500": 109, "AAA": 109, "BBB": 109},
+        )
+
+        self.assertEqual(decision.mode, "market_beta")
+        self.assertEqual(decision.reason, "no_train_candidate_strong_breadth")
+        self.assertEqual(decision.target_weights, {"069500": 0.99})
 
     def test_decide_monthly_allocation_uses_proxy_for_neutral_breadth_below_alpha_threshold(self):
         decision = decide_monthly_allocation(

@@ -195,6 +195,7 @@ class MonthlyRebalanceConfig:
     point_in_time_universe: dict[str, set[str]] | None = None
     market_beta_symbol: str = "069500"
     market_beta_proxy_size: int = 12
+    market_beta_proxy_max_exposure: float = 1.0
     event_scores: EventScoreStore | None = None
     event_lookback_days: int = 5
     min_entry_event_score: float = -0.2
@@ -302,6 +303,7 @@ VALIDATION_SWEEP_PLAN_COLUMNS = [
     "cash_buffer_weight",
     "min_train_positive_ratio",
     "candidate_pool_size",
+    "market_beta_proxy_max_exposure",
     "max_position_weight",
     "drawdown_guard_scale",
     "market_volatility_min_scale",
@@ -4057,6 +4059,17 @@ def build_monthly_validation_sweep_plan(
                     candidate_pool_size=min(base_config.candidate_pool_size, 3),
                     expected_effect="Test whether fewer candidates reduce churn in weak regimes.",
                 ),
+                _sweep_plan_row(
+                    weak_row,
+                    experiment_id="market_beta_proxy_cap_75",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    market_beta_proxy_max_exposure=0.75,
+                    expected_effect=(
+                        "Cap only fallback market-beta-proxy exposure so already scaled recovery months "
+                        "avoid additional broad cash drag."
+                    ),
+                ),
             ]
         )
 
@@ -5154,6 +5167,7 @@ def _sweep_plan_row(
     cash_buffer_weight: float | None = None,
     min_train_positive_ratio: float | None = None,
     candidate_pool_size: int | None = None,
+    market_beta_proxy_max_exposure: float | None = None,
     max_position_weight: float | None = None,
     drawdown_guard_scale: float | None = None,
     market_volatility_min_scale: float | None = None,
@@ -5169,6 +5183,10 @@ def _sweep_plan_row(
         "cash_buffer_weight": _sweep_value(cash_buffer_weight, base_config.cash_buffer_weight),
         "min_train_positive_ratio": _sweep_value(min_train_positive_ratio, base_config.min_train_positive_ratio),
         "candidate_pool_size": "" if candidate_pool_size is None else str(candidate_pool_size),
+        "market_beta_proxy_max_exposure": _sweep_value(
+            market_beta_proxy_max_exposure,
+            base_config.market_beta_proxy_max_exposure,
+        ),
         "max_position_weight": _sweep_value(max_position_weight, base_config.max_position_weight),
         "drawdown_guard_scale": _sweep_value(drawdown_guard_scale, base_config.drawdown_guard_scale),
         "market_volatility_min_scale": _sweep_value(
@@ -5238,6 +5256,7 @@ def _apply_sweep_plan_config(
         "cash_buffer_weight": float,
         "min_train_positive_ratio": float,
         "candidate_pool_size": int,
+        "market_beta_proxy_max_exposure": float,
         "max_position_weight": float,
         "drawdown_guard_scale": float,
         "market_volatility_min_scale": float,
@@ -5259,6 +5278,7 @@ def _sweep_config_changes(plan_row: dict[str, Any]) -> str:
         "cash_buffer_weight",
         "min_train_positive_ratio",
         "candidate_pool_size",
+        "market_beta_proxy_max_exposure",
         "max_position_weight",
         "drawdown_guard_scale",
         "market_volatility_min_scale",
@@ -5296,6 +5316,7 @@ _SWEEP_CONFIG_CLI_FLAGS = {
     "cash_buffer_weight": "--cash-buffer-weight",
     "min_train_positive_ratio": "--min-train-positive-ratio",
     "candidate_pool_size": "--candidate-pool-size",
+    "market_beta_proxy_max_exposure": "--market-beta-proxy-max-exposure",
     "max_position_weight": "--max-position-weight",
     "drawdown_guard_scale": "--drawdown-guard-scale",
     "market_volatility_min_scale": "--market-volatility-min-scale",
@@ -5760,6 +5781,9 @@ def _market_beta_target_weights(
         return {config.market_beta_symbol: target_budget}
     if config.market_beta_proxy_size <= 0:
         return {}
+    proxy_target_budget = min(target_budget, max(0.0, config.market_beta_proxy_max_exposure))
+    if proxy_target_budget <= 0:
+        return {}
     proxy_symbols = rank_symbols_by_average_trading_value(
         symbol_candles,
         signal_date=signal_date,
@@ -5767,7 +5791,7 @@ def _market_beta_target_weights(
     )[: config.market_beta_proxy_size]
     return target_weights_for_symbols(
         proxy_symbols,
-        target_budget=target_budget,
+        target_budget=proxy_target_budget,
         max_position_weight=config.max_position_weight,
     )
 
@@ -5791,13 +5815,21 @@ def _market_beta_or_cash_decision(
     )
     if beta_weights:
         is_proxy = config.market_beta_symbol not in beta_weights
+        proxy_capped = (
+            is_proxy
+            and max(0.0, config.market_beta_proxy_max_exposure) < target_budget - 1e-12
+        )
         return MonthlyDecision(
             as_of_date=as_of_date,
             signal_date=signal_date,
             mode="market_beta_proxy" if is_proxy else "market_beta",
             selected_preset="market_beta_proxy" if is_proxy else "market_beta",
             target_weights=beta_weights,
-            reason=proxy_reason if is_proxy else direct_reason,
+            reason=(
+                (proxy_reason + "_proxy_exposure_capped")
+                if proxy_capped
+                else (proxy_reason if is_proxy else direct_reason)
+            ),
         )
     return MonthlyDecision(
         as_of_date=as_of_date,

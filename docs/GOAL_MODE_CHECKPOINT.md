@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 16:59 KST
+Last updated: 2026-06-22 17:30 KST
 
 ## Objective
 
@@ -27,15 +27,105 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 402 tests.
+- `python -m unittest discover -s tests`: PASS, 404 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
-- Candidate follow-up state: all 3 full-validation candidates completed, all rejected.
+- Candidate follow-up state: all completed full-validation candidates remain rejected; latest `market_beta_proxy_cap_75` is also rejected.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a narrow fallback proxy exposure-cap experiment and rejected it with full validation evidence:
+
+- Added `market_beta_proxy_max_exposure` to `MonthlyRebalanceConfig`, defaulting to `1.0` so existing behavior is unchanged.
+- Added CLI support for `--market-beta-proxy-max-exposure` in:
+  - `monthly-plan`
+  - `monthly-backtest`
+  - `monthly-attribution`
+  - `monthly-validate`
+  - `monthly-train-decision-diagnostics`
+- The cap applies only when the configured `market_beta_symbol` is unavailable and the system falls back to `market_beta_proxy`.
+- Direct `market_beta` allocation is not capped by this setting.
+- Added the paper-only sweep experiment `market_beta_proxy_cap_75` to the validation sweep plan.
+- Regenerated baseline validation reports; the baseline still has 5 failed required scenarios.
+- Ran full candidate validation for `market_beta_proxy_cap_75` with `--market-beta-proxy-max-exposure 0.75`.
+- Generated current candidate comparison and decision reports:
+  - `data/reports/monthly_validation_candidate_market_beta_proxy_cap_75.csv`
+  - `data/reports/monthly_validation_comparison_market_beta_proxy_cap_75.csv`
+  - `data/reports/monthly_validation_comparison_deltas_market_beta_proxy_cap_75.csv`
+  - `data/reports/monthly_validation_candidate_decision_market_beta_proxy_cap_75.csv`
+  - default comparison files were also updated to this candidate:
+    - `data/reports/monthly_validation_comparison.csv`
+    - `data/reports/monthly_validation_comparison_deltas.csv`
+    - `data/reports/monthly_validation_candidate_decision.csv`
+
+Candidate result:
+
+- Baseline failed required scenarios: `5`.
+- Candidate failed required scenarios: `7`.
+- Candidate decision: `REJECT`.
+- Resolved failures: none.
+- New failures:
+  - `walk_forward_002`
+  - `walk_forward_004`
+- Unchanged failures:
+  - `stress_exclude_500pct_winners`
+  - `regime_sideways`
+  - `walk_forward_001`
+  - `walk_forward_003`
+  - `walk_forward_005`
+- Useful signal:
+  - The cap reduced drawdown in several failures, for example `regime_sideways` max drawdown improved from `-23.9059%` to `-19.3294%`, and `walk_forward_005` max drawdown improved from `-20.5503%` to `-15.4592%`.
+  - It did not clear negative excess return gates.
+  - It reduced train/test excess enough to create new `walk_forward_002` and `walk_forward_004` failures.
+- Interpretation:
+  - A blunt fallback proxy exposure cap is too broad.
+  - It can reduce drawdown, but it creates over-defense/filter drag and train-gate regression.
+  - Do not adopt this candidate.
+
+Added attribution evidence to keep drilldown evidence gaps closed after the new mixed candidate response:
+
+- `data/reports/stress_exclude_500pct_winners_monthly_attribution.csv`
+- `data/reports/stress_exclude_500pct_winners_symbol_attribution.csv`
+- `data/reports/stress_exclude_500pct_winners_decision_attribution.csv`
+- `data/reports/stress_exclude_500pct_winners_recovery_attribution.csv`
+- `data/reports/walk_forward_001_monthly_attribution.csv`
+- `data/reports/walk_forward_001_symbol_attribution.csv`
+- `data/reports/walk_forward_001_decision_attribution.csv`
+- `data/reports/walk_forward_001_recovery_attribution.csv`
+
+Updated failure-pattern and drilldown reports using the existing rejected candidates plus `market_beta_proxy_cap_75`:
+
+- `data/reports/monthly_validation_failure_patterns.csv`
+- `data/reports/monthly_validation_failure_drilldown.csv`
+- `validation_failure_drilldown`: PASS, evidence gaps `0`.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `402` tests.
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- RED check: new proxy-cap tests failed because `market_beta_proxy_max_exposure`, CLI flags, and sweep plan row did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_monthly_config_defaults_to_five_candidate_slots tests.test_monthly_rebalance.MonthlyRebalanceTests.test_build_monthly_validation_sweep_plan_creates_weak_window_candidates tests.test_monthly_rebalance.MonthlyRebalanceTests.test_decide_monthly_allocation_caps_proxy_exposure_only tests.test_monthly_rebalance.MonthlyRebalanceTests.test_decide_monthly_allocation_does_not_cap_direct_market_beta_symbol`: PASS.
+  - `python -m unittest tests.test_cli.CliTests.test_monthly_backtest_help_includes_deep_drawdown_guard_options tests.test_cli.CliTests.test_monthly_attribution_help_includes_stress_and_output_options tests.test_cli.CliTests.test_monthly_validate_help_includes_failure_diagnostics_output tests.test_cli.CliTests.test_monthly_plan_help_includes_human_summary_output`: PASS.
+- Related regression scope: `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `166` tests.
+- Full verification: `python -m unittest discover -s tests`: PASS, `404` tests.
+- Full syntax check: `python -m compileall -q backtester`: PASS.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=304.69` observed).
+
+Next recommended action:
+
+- Do not try a lower blanket proxy cap.
+- Design a narrower paper-only candidate that distinguishes:
+  - high-risk proxy entry months like `2025-03` and `2026-03`,
+  - already de-risked recovery months such as `2026-04`,
+  - walk-forward windows where proxy cap causes train-gate regression.
+- Candidate direction: add diagnostics or an experiment around conditional proxy gating, for example requiring stronger breadth/trend confirmation before full `market_beta_proxy`, while preserving participation after drawdown guards have already lowered exposure.
+
+Previous loop:
 
 Added recovery attribution summaries for `insufficient_recovery` failures:
 

@@ -596,6 +596,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--drawdown-guard-deep-trigger-pct", completed.stdout)
         self.assertIn("--drawdown-guard-deep-scale", completed.stdout)
         self.assertIn("--position-trailing-stop-pct", completed.stdout)
+        self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
 
     def test_monthly_attribution_help_includes_stress_and_output_options(self):
         completed = subprocess.run(
@@ -618,6 +619,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--symbol-output", completed.stdout)
         self.assertIn("--decision-output", completed.stdout)
         self.assertIn("--summary-output", completed.stdout)
+        self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
 
     def test_monthly_attribution_cli_writes_recovery_summary_report(self):
         with TemporaryDirectory() as temp_dir:
@@ -687,6 +689,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--sweep-result-output", completed.stdout)
         self.assertIn("--sweep-experiment-id", completed.stdout)
         self.assertIn("--sweep-limit", completed.stdout)
+        self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
 
     def test_monthly_compare_validation_help_includes_delta_output(self):
         completed = subprocess.run(
@@ -1592,6 +1595,7 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("--summary-output", completed.stdout)
+        self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
 
     def test_plan_pykrx_missing_ohlcv_writes_prioritized_targets(self):
         with TemporaryDirectory() as temp_dir:
