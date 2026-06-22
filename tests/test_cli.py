@@ -742,6 +742,94 @@ class CliTests(unittest.TestCase):
         self.assertIn("walk_002", text)
         self.assertIn("pattern_status", text.splitlines()[0])
 
+    def test_monthly_failure_patterns_explicit_delta_report_does_not_read_default_glob(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reports = root / "data" / "reports"
+            reports.mkdir(parents=True)
+            baseline = root / "baseline.csv"
+            explicit_delta = root / "explicit_delta.csv"
+            diagnostic_delta = reports / "monthly_validation_comparison_deltas_multi_preset.csv"
+            output = root / "patterns.csv"
+            baseline.write_text(
+                "name,required,deployable,reason\n"
+                "walk_001,True,False,negative_excess_return\n",
+                encoding="utf-8",
+            )
+            explicit_delta.write_text(
+                "name,classification,candidate_label,diagnostic\n"
+                "walk_001,UNCHANGED_FAILURE,approved_candidate,same_failure_persists\n",
+                encoding="utf-8",
+            )
+            diagnostic_delta.write_text(
+                "name,classification,candidate_label,diagnostic\n"
+                "walk_001,RESOLVED,multi_preset,diagnostic_only\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-failure-patterns",
+                    "--baseline",
+                    str(baseline),
+                    "--delta-report",
+                    str(explicit_delta),
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("delta_reports  1", completed.stdout)
+        self.assertEqual(rows[0]["candidate_labels_unchanged"], "approved_candidate")
+        self.assertEqual(rows[0]["candidate_labels_resolved"], "")
+
+    def test_monthly_failure_patterns_default_glob_skips_multi_preset_diagnostics(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reports = root / "data" / "reports"
+            reports.mkdir(parents=True)
+            baseline = root / "baseline.csv"
+            candidate_delta = reports / "monthly_validation_comparison_deltas_position_stop_12.csv"
+            diagnostic_delta = reports / "monthly_validation_comparison_deltas_multi_preset.csv"
+            output = root / "patterns.csv"
+            baseline.write_text(
+                "name,required,deployable,reason\n"
+                "walk_001,True,False,negative_excess_return\n",
+                encoding="utf-8",
+            )
+            candidate_delta.write_text(
+                "name,classification,candidate_label,diagnostic\n"
+                "walk_001,UNCHANGED_FAILURE,position_stop_12,same_failure_persists\n",
+                encoding="utf-8",
+            )
+            diagnostic_delta.write_text(
+                "name,classification,candidate_label,diagnostic\n"
+                "walk_001,RESOLVED,multi_preset,diagnostic_only\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-failure-patterns",
+                    "--baseline",
+                    str(baseline),
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("delta_reports  1", completed.stdout)
+        self.assertEqual(rows[0]["candidate_labels_unchanged"], "position_stop_12")
+        self.assertEqual(rows[0]["candidate_labels_resolved"], "")
+
     def test_monthly_failure_drilldown_cli_writes_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -792,6 +880,59 @@ class CliTests(unittest.TestCase):
         self.assertIn("regime_sideways", text)
         self.assertIn("likely_root_cause", text.splitlines()[0])
         self.assertIn("weak_window_return_drag", text)
+
+    def test_monthly_failure_drilldown_explicit_delta_report_does_not_read_default_glob(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reports = root / "data" / "reports"
+            reports.mkdir(parents=True)
+            baseline = root / "baseline.csv"
+            patterns = root / "patterns.csv"
+            explicit_delta = root / "explicit_delta.csv"
+            diagnostic_delta = reports / "monthly_validation_comparison_deltas_multi_preset.csv"
+            output = root / "drilldown.csv"
+            baseline.write_text(
+                "name,category,required,deployable,reason,start,end,excess_return_pct,max_drawdown_pct,trade_count\n"
+                "regime_sideways,regime,True,False,negative_excess_return,2025-01-01,2025-06-30,-7.1,-18.2,42\n",
+                encoding="utf-8",
+            )
+            patterns.write_text(
+                "scenario,pattern_status,dominant_diagnostic,failed_candidate_count,suggested_action\n"
+                "regime_sideways,PERSISTENT_BLOCK,same_failure_persists=1,1,REVIEW_PERSISTENT_FAILURE\n",
+                encoding="utf-8",
+            )
+            explicit_delta.write_text(
+                "name,classification,candidate_label,excess_return_delta,max_drawdown_delta,trade_count_delta,diagnostic\n"
+                "regime_sideways,UNCHANGED_FAILURE,approved_candidate,1,1,-4,same_failure_persists\n",
+                encoding="utf-8",
+            )
+            diagnostic_delta.write_text(
+                "name,classification,candidate_label,excess_return_delta,max_drawdown_delta,trade_count_delta,diagnostic\n"
+                "regime_sideways,RESOLVED,multi_preset,9,1,4,diagnostic_only\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-failure-drilldown",
+                    "--baseline",
+                    str(baseline),
+                    "--patterns",
+                    str(patterns),
+                    "--delta-report",
+                    str(explicit_delta),
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("delta_reports  1", completed.stdout)
+        self.assertIn("approved_candidate", rows[0]["candidate_labels"])
+        self.assertNotIn("multi_preset", rows[0]["candidate_labels"])
 
     def test_monthly_failure_drilldown_cli_uses_attribution_dir(self):
         with TemporaryDirectory() as temp_dir:

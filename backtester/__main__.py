@@ -170,6 +170,11 @@ from .toss import download_daily_candles_csv, fetch_market_calendar, fetch_tick_
 
 
 DEFAULT_DATA_QUALITY_EXCLUSIONS = Path("data/reports/data_quality_excluded_symbols.csv")
+DEFAULT_VALIDATION_DELTA_GLOB = "data/reports/monthly_validation_comparison_deltas_*.csv"
+DEFAULT_EXCLUDED_VALIDATION_DELTA_GLOBS = (
+    "data/reports/monthly_validation_comparison_deltas_multi_*.csv",
+    "data/reports/monthly_validation_comparison_deltas_diagnostic_*.csv",
+)
 
 
 @dataclass(frozen=True)
@@ -994,8 +999,17 @@ def main() -> int:
     )
     monthly_failure_patterns_parser.add_argument(
         "--delta-glob",
-        default="data/reports/monthly_validation_comparison_deltas_*.csv",
-        help="Glob for candidate scenario delta CSVs when --delta-report is omitted or supplemented.",
+        default=None,
+        help=(
+            "Glob for candidate scenario delta CSVs. If omitted, the default glob is used only "
+            "when --delta-report is not supplied."
+        ),
+    )
+    monthly_failure_patterns_parser.add_argument(
+        "--exclude-delta-glob",
+        action="append",
+        default=None,
+        help="Glob of diagnostic delta CSVs to exclude from automatic discovery. Can be repeated.",
     )
     monthly_failure_patterns_parser.add_argument(
         "--output",
@@ -1022,8 +1036,17 @@ def main() -> int:
     )
     monthly_failure_drilldown_parser.add_argument(
         "--delta-glob",
-        default="data/reports/monthly_validation_comparison_deltas_*.csv",
-        help="Glob for candidate scenario delta CSVs when --delta-report is omitted or supplemented.",
+        default=None,
+        help=(
+            "Glob for candidate scenario delta CSVs. If omitted, the default glob is used only "
+            "when --delta-report is not supplied."
+        ),
+    )
+    monthly_failure_drilldown_parser.add_argument(
+        "--exclude-delta-glob",
+        action="append",
+        default=None,
+        help="Glob of diagnostic delta CSVs to exclude from automatic discovery. Can be repeated.",
     )
     monthly_failure_drilldown_parser.add_argument(
         "--attribution-dir",
@@ -1274,22 +1297,11 @@ def main() -> int:
 
     if args.command == "monthly-failure-patterns":
         baseline_rows = _read_csv_dicts(Path(args.baseline))
-        delta_paths: list[Path] = []
-        for raw_path in args.delta_report or []:
-            delta_paths.append(Path(raw_path))
-        if args.delta_glob:
-            glob_path = Path(args.delta_glob)
-            parent = glob_path.parent if str(glob_path.parent) else Path(".")
-            delta_paths.extend(sorted(parent.glob(glob_path.name)))
-        unique_delta_paths: list[Path] = []
-        seen_delta_paths: set[Path] = set()
-        for path in delta_paths:
-            normalized = path.resolve() if path.exists() else path
-            if normalized in seen_delta_paths:
-                continue
-            seen_delta_paths.add(normalized)
-            if path.exists():
-                unique_delta_paths.append(path)
+        unique_delta_paths = _collect_validation_delta_paths(
+            delta_reports=args.delta_report,
+            delta_glob=args.delta_glob,
+            exclude_delta_globs=args.exclude_delta_glob,
+        )
         delta_rows: list[dict[str, str]] = []
         for path in unique_delta_paths:
             delta_rows.extend(_read_csv_dicts(path))
@@ -1306,22 +1318,11 @@ def main() -> int:
     if args.command == "monthly-failure-drilldown":
         baseline_rows = _read_csv_dicts(Path(args.baseline))
         pattern_rows = _read_csv_dicts(Path(args.patterns))
-        delta_paths: list[Path] = []
-        for raw_path in args.delta_report or []:
-            delta_paths.append(Path(raw_path))
-        if args.delta_glob:
-            glob_path = Path(args.delta_glob)
-            parent = glob_path.parent if str(glob_path.parent) else Path(".")
-            delta_paths.extend(sorted(parent.glob(glob_path.name)))
-        unique_delta_paths: list[Path] = []
-        seen_delta_paths: set[Path] = set()
-        for path in delta_paths:
-            normalized = path.resolve() if path.exists() else path
-            if normalized in seen_delta_paths:
-                continue
-            seen_delta_paths.add(normalized)
-            if path.exists():
-                unique_delta_paths.append(path)
+        unique_delta_paths = _collect_validation_delta_paths(
+            delta_reports=args.delta_report,
+            delta_glob=args.delta_glob,
+            exclude_delta_globs=args.exclude_delta_glob,
+        )
         delta_rows: list[dict[str, str]] = []
         for path in unique_delta_paths:
             delta_rows.extend(_read_csv_dicts(path))
@@ -2939,6 +2940,61 @@ def _save_universe_filter_report_if_needed(
 def _load_monthly_symbol_candles(data_dir: str, exclude_symbols_path: Path | str | None) -> dict[str, list]:
     ignore_paths = {Path(exclude_symbols_path)} if exclude_symbols_path else set()
     return load_symbol_candles(data_dir, ignore_paths=ignore_paths)
+
+
+def _collect_validation_delta_paths(
+    *,
+    delta_reports: list[str] | None,
+    delta_glob: str | None,
+    exclude_delta_globs: list[str] | None,
+) -> list[Path]:
+    explicit_paths = [Path(path) for path in delta_reports or []]
+    glob_patterns: list[str] = []
+    if delta_glob:
+        glob_patterns.append(delta_glob)
+    elif not explicit_paths:
+        glob_patterns.append(DEFAULT_VALIDATION_DELTA_GLOB)
+
+    excluded_paths = _collect_validation_delta_exclusions(exclude_delta_globs)
+    delta_paths: list[Path] = list(explicit_paths)
+    for pattern in glob_patterns:
+        for path in _glob_existing_paths(pattern):
+            normalized = _normalized_existing_path(path)
+            if normalized in excluded_paths:
+                continue
+            delta_paths.append(path)
+
+    unique_delta_paths: list[Path] = []
+    seen_delta_paths: set[Path] = set()
+    for path in delta_paths:
+        normalized = _normalized_existing_path(path)
+        if normalized in seen_delta_paths:
+            continue
+        seen_delta_paths.add(normalized)
+        if path.exists():
+            unique_delta_paths.append(path)
+    return unique_delta_paths
+
+
+def _collect_validation_delta_exclusions(exclude_delta_globs: list[str] | None) -> set[Path]:
+    patterns = [*DEFAULT_EXCLUDED_VALIDATION_DELTA_GLOBS, *(exclude_delta_globs or [])]
+    excluded: set[Path] = set()
+    for pattern in patterns:
+        for path in _glob_existing_paths(pattern):
+            excluded.add(_normalized_existing_path(path))
+    return excluded
+
+
+def _glob_existing_paths(pattern: str) -> list[Path]:
+    glob_path = Path(pattern)
+    parent = glob_path.parent if str(glob_path.parent) else Path(".")
+    if not parent.exists():
+        return []
+    return sorted(parent.glob(glob_path.name))
+
+
+def _normalized_existing_path(path: Path) -> Path:
+    return path.resolve() if path.exists() else path
 
 
 def _read_csv_dicts(path: Path) -> list[dict[str, str]]:
