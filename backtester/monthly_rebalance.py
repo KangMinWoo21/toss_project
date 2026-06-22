@@ -431,6 +431,7 @@ VALIDATION_FAILURE_DRILLDOWN_COLUMNS = [
     "train_excess_return_pct",
     "train_candidate_scores",
     "train_candidate_decision_profiles",
+    "train_candidate_direct_scores",
     "start",
     "end",
     "baseline_excess_return_pct",
@@ -530,6 +531,7 @@ MONTHLY_VALIDATION_COLUMNS = [
     "train_excess_return_pct",
     "train_candidate_scores",
     "train_candidate_decision_profiles",
+    "train_candidate_direct_scores",
     "start",
     "end",
     "slippage_multiplier",
@@ -2044,6 +2046,7 @@ def run_monthly_walk_forward_validation(
     runner = backtest_runner or run_monthly_rebalance_backtest
     rows: list[dict[str, Any]] = []
     for case in cases:
+        direct_train_rows = _monthly_walk_forward_direct_train_rows(symbol_candles, case, config)
         train_rows: list[dict[str, Any]] = []
         train_results: dict[str, MonthlyBacktestResult] = {}
         for preset in config.presets:
@@ -2115,6 +2118,7 @@ def run_monthly_walk_forward_validation(
                 "train_excess_return_pct": round(train_result.excess_return_pct, 4),
                 "train_candidate_scores": _format_monthly_validation_train_scores(train_rows),
                 "train_candidate_decision_profiles": _format_monthly_validation_train_decision_profiles(train_rows),
+                "train_candidate_direct_scores": _format_monthly_validation_train_scores(direct_train_rows),
                 "start": case.start,
                 "end": case.end,
                 "slippage_multiplier": case.slippage_multiplier,
@@ -2137,6 +2141,65 @@ def run_monthly_walk_forward_validation(
             }
         )
     return rows
+
+
+def _monthly_walk_forward_direct_train_rows(
+    symbol_candles: dict[str, list[Candle]],
+    case: MonthlyValidationCase,
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    if not case.train_start or not case.train_end:
+        return []
+    try:
+        universe_candles = filter_symbol_candles_by_universe(
+            symbol_candles,
+            config.point_in_time_universe,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+        )
+        point_in_time_candles = select_point_in_time_universe(
+            universe_candles,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+            min_reference_price=config.point_in_time_min_reference_price,
+            max_trailing_return_pct=config.point_in_time_max_trailing_return_pct,
+            trailing_return_days=config.point_in_time_trailing_return_days,
+        )
+        decision_candles = (
+            select_liquid_universe(
+                point_in_time_candles,
+                signal_date=case.train_end,
+                top_n=config.point_in_time_liquidity_top_n,
+                window_days=config.point_in_time_liquidity_window_days,
+            )
+            if config.point_in_time_liquidity_top_n > 0
+            else point_in_time_candles
+        )
+        train_candles = slice_asof_symbol_candles(
+            decision_candles,
+            start=case.train_start,
+            end=case.train_end,
+            min_rows=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+        )
+    except ValueError:
+        return []
+    if not train_candles:
+        return []
+    preset_configs = {
+        preset: momentum_rotation_config_for_preset(preset)
+        for preset in config.presets
+    }
+    return _train_candidate_rows(
+        decision_candles,
+        train_candles=train_candles,
+        train_start=case.train_start,
+        train_end=case.train_end,
+        preset_configs=preset_configs,
+        min_rows_per_window=config.min_rows_per_window,
+        start_grace_days=config.start_grace_days,
+        train_stability_years=config.train_stability_years,
+    )
 
 
 def _monthly_validation_train_row(preset: str, result: MonthlyBacktestResult) -> dict[str, Any]:
@@ -3315,6 +3378,8 @@ def analyze_monthly_validation_failure_drilldown(
                 "selected_preset": baseline.get("selected_preset", ""),
                 "train_excess_return_pct": baseline.get("train_excess_return_pct", ""),
                 "train_candidate_scores": baseline.get("train_candidate_scores", ""),
+                "train_candidate_decision_profiles": baseline.get("train_candidate_decision_profiles", ""),
+                "train_candidate_direct_scores": baseline.get("train_candidate_direct_scores", ""),
                 "start": baseline.get("start", ""),
                 "end": baseline.get("end", ""),
                 "baseline_excess_return_pct": baseline.get("excess_return_pct", ""),

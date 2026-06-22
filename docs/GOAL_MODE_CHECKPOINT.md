@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 12:53 KST
+Last updated: 2026-06-22 13:09 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 383 tests.
+- `python -m unittest discover -s tests`: PASS, 386 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,20 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Clarified walk-forward train alpha weakness:
+
+- Added `train_candidate_direct_scores` to monthly validation and failure drilldown reports.
+- This records direct momentum train candidate scores separately from recursive monthly train backtest scores.
+- `production-check` now reports `direct_alpha_ineligible=5` in `walk_forward_train_candidate_coverage`.
+- Current evidence shows all 5 walk-forward train windows have fallback-only monthly train decisions and direct alpha train candidates with negative excess returns.
+- This changes the interpretation:
+  - The immediate issue is not only that the default monthly config has one preset.
+  - Even direct alpha train candidates are currently ineligible in the walk-forward train windows.
+  - Next experiments should diagnose train-window alpha weakness and data/regime fit before loosening gates.
+- Readiness recommendations now say `Diagnose walk-forward train alpha weakness` when direct alpha candidates are ineligible, instead of only saying to expand candidate count.
+- Regenerated baseline monthly validation, failure patterns, failure drilldown, production readiness, and health reports.
+- Production readiness status counts are now `BLOCK=8`, `PASS=31`, `WARN=8`.
 
 Hardened validation delta discovery:
 
@@ -47,7 +61,7 @@ Hardened validation delta discovery:
 - Added `--exclude-delta-glob` to both commands for extra automatic-discovery exclusions.
 - Regenerated `monthly_validation_failure_patterns.csv` and `monthly_validation_failure_drilldown.csv` using the safer default discovery.
 - Both regenerated reports read `delta_reports=3`, excluding the diagnostic `multi_preset` report.
-- Production readiness status counts remain `BLOCK=8`, `PASS=30`, `WARN=9`; the improvement is report integrity, not strategy performance.
+- That loop preserved strategy performance state; later readiness counts are now `BLOCK=8`, `PASS=31`, `WARN=8`.
 
 Added walk-forward train candidate coverage diagnostics:
 
@@ -160,7 +174,7 @@ Important interpretation update:
 
 Production readiness:
 
-- Status counts: `BLOCK=8`, `PASS=30`, `WARN=9`
+- Status counts: `BLOCK=8`, `PASS=31`, `WARN=8`
 - Main BLOCK: required monthly validation failures remain.
 - `validation_failure_patterns`: BLOCK
   - `CANDIDATE_FIXED=2`
@@ -174,6 +188,7 @@ Production readiness:
   - `min_candidates=1`
   - `min_unique_scores=1`
   - `fallback_only=5`
+  - `direct_alpha_ineligible=5`
 - `validation_scenarios`: BLOCK
   - `stress_exclude_500pct_winners`
   - `regime_sideways`
@@ -251,6 +266,14 @@ python -m unittest tests.test_cli.CliTests.test_monthly_failure_patterns_explici
 python -m unittest tests.test_cli.CliTests.test_monthly_failure_patterns_cli_writes_report tests.test_cli.CliTests.test_monthly_failure_patterns_explicit_delta_report_does_not_read_default_glob tests.test_cli.CliTests.test_monthly_failure_patterns_default_glob_skips_multi_preset_diagnostics tests.test_cli.CliTests.test_monthly_failure_drilldown_cli_writes_report tests.test_cli.CliTests.test_monthly_failure_drilldown_explicit_delta_report_does_not_read_default_glob tests.test_cli.CliTests.test_monthly_failure_drilldown_cli_uses_attribution_dir
 python -m backtester monthly-failure-patterns --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --output data/reports/monthly_validation_failure_patterns.csv
 python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --patterns data/reports/monthly_validation_failure_patterns.csv --output data/reports/monthly_validation_failure_drilldown.csv
+python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_walk_forward_validation_records_direct_train_candidate_scores tests.test_readiness.ProductionReadinessTests.test_walk_forward_fallback_only_with_negative_direct_scores_reports_ineligible_alpha
+python -m unittest tests.test_readiness.ProductionReadinessTests.test_walk_forward_direct_alpha_ineligible_recommends_train_alpha_diagnosis
+python -m unittest tests.test_readiness.ProductionReadinessTests.test_walk_forward_fallback_only_with_negative_direct_scores_reports_ineligible_alpha tests.test_readiness.ProductionReadinessTests.test_walk_forward_direct_alpha_ineligible_recommends_train_alpha_diagnosis tests.test_readiness.ProductionReadinessTests.test_walk_forward_train_candidate_warning_recommends_candidate_expansion
+python -m backtester monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end 2026-06-18 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-output data/reports/monthly_validation_scenarios_pit_universe.csv --deployment-gate-output data/reports/monthly_deployment_gate_pit_universe.csv
+python -m backtester monthly-failure-patterns --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --output data/reports/monthly_validation_failure_patterns.csv
+python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --patterns data/reports/monthly_validation_failure_patterns.csv --output data/reports/monthly_validation_failure_drilldown.csv
+python -m backtester production-check --allow-blocked-exit-zero
+python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
 python -m backtester production-check --allow-blocked-exit-zero
 python -m unittest discover -s tests
 python -m compileall -q backtester

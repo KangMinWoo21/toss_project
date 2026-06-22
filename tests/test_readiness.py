@@ -147,6 +147,44 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("fallback_only=1", coverage_checks[0].detail)
         self.assertEqual(coverage_checks[0].detail.count("walk_forward_001:1/1"), 1)
 
+    def test_walk_forward_fallback_only_with_negative_direct_scores_reports_ineligible_alpha(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,deployable,reason,train_candidate_scores,train_candidate_decision_profiles,train_candidate_direct_scores\n"
+                "walk_forward_001,walk_forward,True,False,train_window_rejected,"
+                "\"balanced:excess=1,drawdown=-5,trades=3,score=-4\","
+                "\"balanced:modes=market_beta_proxy:3,selected=market_beta_proxy:3,alpha_ratio=0\","
+                "\"balanced:excess=-4,drawdown=-8,trades=3,score=-12; aggressive:excess=-2,drawdown=-9,trades=2,score=-11\"\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        coverage_checks = [check for check in checks if check.name == "walk_forward_train_candidate_coverage"]
+        self.assertEqual(coverage_checks[0].status, "WARN")
+        self.assertIn("fallback_only=1", coverage_checks[0].detail)
+        self.assertIn("direct_alpha_ineligible=1", coverage_checks[0].detail)
+
+    def test_walk_forward_direct_alpha_ineligible_recommends_train_alpha_diagnosis(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,deployable,reason,train_candidate_scores,train_candidate_decision_profiles,train_candidate_direct_scores\n"
+                "walk_forward_001,walk_forward,True,False,train_window_rejected,"
+                "\"balanced:excess=1,drawdown=-5,trades=3,score=-4\","
+                "\"balanced:modes=market_beta_proxy:3,selected=market_beta_proxy:3,alpha_ratio=0\","
+                "\"balanced:excess=-4,drawdown=-8,trades=3,score=-12\"\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+            actions = recommend_readiness_actions(checks)
+
+        action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
+        self.assertIn("Diagnose walk-forward train alpha weakness", action_text)
+        self.assertIn("direct_alpha_ineligible=1", action_text)
+
     def test_walk_forward_train_candidate_warning_recommends_candidate_expansion(self):
         with TemporaryDirectory() as temp_dir:
             scenarios = Path(temp_dir) / "scenarios.csv"

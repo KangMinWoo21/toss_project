@@ -2488,6 +2488,7 @@ def main() -> int:
                     "train_excess_return_pct": "",
                     "train_candidate_scores": "",
                     "train_candidate_decision_profiles": "",
+                    "train_candidate_direct_scores": "",
                     "start": args.start,
                     "end": args.end,
                     "slippage_multiplier": 1.0,

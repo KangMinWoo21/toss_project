@@ -1959,6 +1959,57 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("aggressive:modes=market_beta_proxy:1", profile)
         self.assertIn("alpha_ratio=0", profile)
 
+    def test_run_monthly_walk_forward_validation_records_direct_train_candidate_scores(self):
+        def fake_runner(symbol_candles, **kwargs):
+            return _monthly_result(
+                excess_return_pct=-2.0 if kwargs["end"] == "2024-03-31" else 3.0,
+                max_drawdown_pct=-8.0,
+                trade_count=2,
+                decisions=[
+                    MonthlyDecision(
+                        as_of_date="2024-03-01",
+                        signal_date="2024-02-29",
+                        mode="market_beta_proxy",
+                        selected_preset="market_beta_proxy",
+                        target_weights={},
+                        reason="unit",
+                    )
+                ],
+            )
+
+        rows = run_monthly_walk_forward_validation(
+            {
+                "AAA": _trend_candles_with_volume("2024-01-01", 180, close=100, step=1, volume=3_000),
+                "BBB": _trend_candles_with_volume("2024-01-01", 180, close=90, step=0.5, volume=2_000),
+                "CCC": _trend_candles_with_volume("2024-01-01", 180, close=120, step=-0.2, volume=1_000),
+            },
+            cases=[
+                MonthlyValidationCase(
+                    name="wf_001",
+                    category="walk_forward",
+                    train_start="2024-01-01",
+                    train_end="2024-03-31",
+                    start="2024-04-01",
+                    end="2024-06-30",
+                )
+            ],
+            config=MonthlyRebalanceConfig(
+                presets=("balanced", "aggressive"),
+                min_rows_per_window=20,
+                start_grace_days=0,
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_top_n=0,
+                train_stability_years=1,
+            ),
+            backtest_runner=fake_runner,
+        )
+
+        direct_scores = rows[0]["train_candidate_direct_scores"]
+        self.assertIn("balanced:excess=", direct_scores)
+        self.assertIn("aggressive:excess=", direct_scores)
+        self.assertIn("trades=", direct_scores)
+
     def test_generate_monthly_validation_cases_includes_duration_regime_and_stress(self):
         cases = generate_monthly_validation_cases(
             {"111111": _daily_candles("2024-01-01", 320)},

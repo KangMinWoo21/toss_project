@@ -326,13 +326,23 @@ def recommend_readiness_actions(checks: list[ReadinessCheck]) -> list[ReadinessA
         if check.name == "walk_forward_train_candidate_coverage" and check.status in {"BLOCK", "WARN"}
     ]
     if train_candidate_checks:
-        actions.append(
-            ReadinessAction(
-                "P1",
-                "Expand walk-forward train candidates",
-                train_candidate_checks[0].detail,
+        detail = train_candidate_checks[0].detail
+        if "direct_alpha_ineligible=" in detail and not "direct_alpha_ineligible=0" in detail:
+            actions.append(
+                ReadinessAction(
+                    "P1",
+                    "Diagnose walk-forward train alpha weakness",
+                    detail,
+                )
             )
-        )
+        else:
+            actions.append(
+                ReadinessAction(
+                    "P1",
+                    "Expand walk-forward train candidates",
+                    detail,
+                )
+            )
 
     drawdown_attribution_checks = [
         check for check in checks if check.name == "drawdown_attribution" and check.status in {"BLOCK", "WARN"}
@@ -684,19 +694,25 @@ def _walk_forward_train_candidate_coverage_check(path: Path) -> ReadinessCheck:
             _train_candidate_score_count(str(row.get("train_candidate_scores", ""))),
             _train_candidate_unique_score_count(str(row.get("train_candidate_scores", ""))),
             _train_candidate_profiles_are_fallback_only(str(row.get("train_candidate_decision_profiles", ""))),
+            _train_candidate_direct_scores_are_ineligible(str(row.get("train_candidate_direct_scores", ""))),
         )
         for row in walk_rows
     ]
-    under_covered = [(name, count, unique_count) for name, count, unique_count, _ in counts if count < 2]
+    under_covered = [(name, count, unique_count) for name, count, unique_count, _, _ in counts if count < 2]
     low_diversity = [
         (name, count, unique_count)
-        for name, count, unique_count, _ in counts
+        for name, count, unique_count, _, _ in counts
         if count >= 2 and unique_count < 2
     ]
     fallback_only = [
         (name, count, unique_count)
-        for name, count, unique_count, is_fallback_only in counts
+        for name, count, unique_count, is_fallback_only, _ in counts
         if is_fallback_only
+    ]
+    direct_alpha_ineligible = [
+        (name, count, unique_count)
+        for name, count, unique_count, is_fallback_only, is_direct_ineligible in counts
+        if is_fallback_only and is_direct_ineligible
     ]
     if under_covered or low_diversity or fallback_only:
         problem_rows = _dedupe_train_candidate_problem_rows(under_covered + low_diversity + fallback_only)
@@ -707,8 +723,9 @@ def _walk_forward_train_candidate_coverage_check(path: Path) -> ReadinessCheck:
             "WARN",
             f"under_covered={len(under_covered)}; low_diversity={len(low_diversity)}; "
             f"fallback_only={len(fallback_only)}; "
-            f"min_candidates={min(count for _, count, _, _ in counts)}; "
-            f"min_unique_scores={min(unique_count for _, _, unique_count, _ in counts)}; {preview}{suffix}",
+            f"direct_alpha_ineligible={len(direct_alpha_ineligible)}; "
+            f"min_candidates={min(count for _, count, _, _, _ in counts)}; "
+            f"min_unique_scores={min(unique_count for _, _, unique_count, _, _ in counts)}; {preview}{suffix}",
         )
     return ReadinessCheck(
         "walk_forward_train_candidate_coverage",
@@ -758,6 +775,23 @@ def _train_candidate_profiles_are_fallback_only(value: str) -> bool:
         except ValueError:
             return False
     return bool(alpha_ratios) and all(ratio <= 0.0 for ratio in alpha_ratios)
+
+
+def _train_candidate_direct_scores_are_ineligible(value: str) -> bool:
+    scores = [part.strip() for part in value.split(";") if part.strip()]
+    if not scores:
+        return False
+    excess_values: list[float] = []
+    for score in scores:
+        marker = "excess="
+        if marker not in score:
+            return False
+        raw_value = score.split(marker, 1)[-1].split(",", 1)[0].strip()
+        try:
+            excess_values.append(float(raw_value))
+        except ValueError:
+            return False
+    return bool(excess_values) and all(value <= 0.0 for value in excess_values)
 
 
 def _validation_failure_actions_check(path: Path) -> ReadinessCheck:
