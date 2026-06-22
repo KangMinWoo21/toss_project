@@ -683,25 +683,32 @@ def _walk_forward_train_candidate_coverage_check(path: Path) -> ReadinessCheck:
             str(row.get("name", "unknown")).strip() or "unknown",
             _train_candidate_score_count(str(row.get("train_candidate_scores", ""))),
             _train_candidate_unique_score_count(str(row.get("train_candidate_scores", ""))),
+            _train_candidate_profiles_are_fallback_only(str(row.get("train_candidate_decision_profiles", ""))),
         )
         for row in walk_rows
     ]
-    under_covered = [(name, count, unique_count) for name, count, unique_count in counts if count < 2]
+    under_covered = [(name, count, unique_count) for name, count, unique_count, _ in counts if count < 2]
     low_diversity = [
         (name, count, unique_count)
-        for name, count, unique_count in counts
+        for name, count, unique_count, _ in counts
         if count >= 2 and unique_count < 2
     ]
-    if under_covered or low_diversity:
-        problem_rows = under_covered + low_diversity
+    fallback_only = [
+        (name, count, unique_count)
+        for name, count, unique_count, is_fallback_only in counts
+        if is_fallback_only
+    ]
+    if under_covered or low_diversity or fallback_only:
+        problem_rows = _dedupe_train_candidate_problem_rows(under_covered + low_diversity + fallback_only)
         preview = ", ".join(f"{name}:{count}/{unique_count}" for name, count, unique_count in problem_rows[:5])
         suffix = f" (+{len(problem_rows) - 5} more)" if len(problem_rows) > 5 else ""
         return ReadinessCheck(
             "walk_forward_train_candidate_coverage",
             "WARN",
             f"under_covered={len(under_covered)}; low_diversity={len(low_diversity)}; "
-            f"min_candidates={min(count for _, count, _ in counts)}; "
-            f"min_unique_scores={min(unique_count for _, _, unique_count in counts)}; {preview}{suffix}",
+            f"fallback_only={len(fallback_only)}; "
+            f"min_candidates={min(count for _, count, _, _ in counts)}; "
+            f"min_unique_scores={min(unique_count for _, _, unique_count, _ in counts)}; {preview}{suffix}",
         )
     return ReadinessCheck(
         "walk_forward_train_candidate_coverage",
@@ -714,6 +721,17 @@ def _train_candidate_score_count(value: str) -> int:
     return len([part for part in value.split(";") if part.strip()])
 
 
+def _dedupe_train_candidate_problem_rows(rows: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
+    deduped: list[tuple[str, int, int]] = []
+    seen: set[str] = set()
+    for name, count, unique_count in rows:
+        if name in seen:
+            continue
+        seen.add(name)
+        deduped.append((name, count, unique_count))
+    return deduped
+
+
 def _train_candidate_unique_score_count(value: str) -> int:
     signatures: set[str] = set()
     for part in value.split(";"):
@@ -723,6 +741,23 @@ def _train_candidate_unique_score_count(value: str) -> int:
         _, _, score_signature = text.partition(":")
         signatures.add(score_signature.strip() or text)
     return len(signatures)
+
+
+def _train_candidate_profiles_are_fallback_only(value: str) -> bool:
+    profiles = [part.strip() for part in value.split(";") if part.strip()]
+    if not profiles:
+        return False
+    alpha_ratios: list[float] = []
+    for profile in profiles:
+        marker = "alpha_ratio="
+        if marker not in profile:
+            return False
+        raw_ratio = profile.rsplit(marker, 1)[-1].split(",", 1)[0].strip()
+        try:
+            alpha_ratios.append(float(raw_ratio))
+        except ValueError:
+            return False
+    return bool(alpha_ratios) and all(ratio <= 0.0 for ratio in alpha_ratios)
 
 
 def _validation_failure_actions_check(path: Path) -> ReadinessCheck:

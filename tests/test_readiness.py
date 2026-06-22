@@ -110,6 +110,43 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertEqual(coverage_checks[0].status, "WARN")
         self.assertIn("low_diversity=1", coverage_checks[0].detail)
 
+    def test_walk_forward_fallback_only_train_profiles_warn_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,deployable,reason,train_candidate_scores,train_candidate_decision_profiles\n"
+                "walk_forward_001,walk_forward,True,True,passed,"
+                "\"balanced:excess=1,drawdown=-5,trades=3,score=-4; defensive:excess=2,drawdown=-3,trades=4,score=-1\","
+                "\"balanced:modes=market_beta_proxy:3,selected=market_beta_proxy:3,alpha_ratio=0; "
+                "defensive:modes=market_beta_proxy:3,selected=market_beta_proxy:3,alpha_ratio=0\"\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        coverage_checks = [check for check in checks if check.name == "walk_forward_train_candidate_coverage"]
+        self.assertEqual(coverage_checks[0].status, "WARN")
+        self.assertIn("fallback_only=1", coverage_checks[0].detail)
+
+    def test_walk_forward_single_fallback_candidate_counts_as_fallback_only(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,deployable,reason,train_candidate_scores,train_candidate_decision_profiles\n"
+                "walk_forward_001,walk_forward,True,True,passed,"
+                "\"balanced:excess=1,drawdown=-5,trades=3,score=-4\","
+                "\"balanced:modes=market_beta_proxy:3,selected=market_beta_proxy:3,alpha_ratio=0\"\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        coverage_checks = [check for check in checks if check.name == "walk_forward_train_candidate_coverage"]
+        self.assertEqual(coverage_checks[0].status, "WARN")
+        self.assertIn("under_covered=1", coverage_checks[0].detail)
+        self.assertIn("fallback_only=1", coverage_checks[0].detail)
+        self.assertEqual(coverage_checks[0].detail.count("walk_forward_001:1/1"), 1)
+
     def test_walk_forward_train_candidate_warning_recommends_candidate_expansion(self):
         with TemporaryDirectory() as temp_dir:
             scenarios = Path(temp_dir) / "scenarios.csv"

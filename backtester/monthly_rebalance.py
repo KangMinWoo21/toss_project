@@ -430,6 +430,7 @@ VALIDATION_FAILURE_DRILLDOWN_COLUMNS = [
     "selected_preset",
     "train_excess_return_pct",
     "train_candidate_scores",
+    "train_candidate_decision_profiles",
     "start",
     "end",
     "baseline_excess_return_pct",
@@ -528,6 +529,7 @@ MONTHLY_VALIDATION_COLUMNS = [
     "selected_preset",
     "train_excess_return_pct",
     "train_candidate_scores",
+    "train_candidate_decision_profiles",
     "start",
     "end",
     "slippage_multiplier",
@@ -2112,6 +2114,7 @@ def run_monthly_walk_forward_validation(
                 "selected_preset": selected_preset,
                 "train_excess_return_pct": round(train_result.excess_return_pct, 4),
                 "train_candidate_scores": _format_monthly_validation_train_scores(train_rows),
+                "train_candidate_decision_profiles": _format_monthly_validation_train_decision_profiles(train_rows),
                 "start": case.start,
                 "end": case.end,
                 "slippage_multiplier": case.slippage_multiplier,
@@ -2142,6 +2145,7 @@ def _monthly_validation_train_row(preset: str, result: MonthlyBacktestResult) ->
         "excess_return_pct": result.excess_return_pct,
         "max_drawdown_pct": result.max_drawdown_pct,
         "trades": result.trade_count,
+        "decision_profile": _format_monthly_validation_train_decision_profile(result),
     }
 
 
@@ -2161,6 +2165,31 @@ def _format_monthly_validation_train_scores(rows: list[dict[str, Any]]) -> str:
         score = _format_optional_float(_monthly_validation_train_score(row))
         parts.append(f"{preset}:excess={excess},drawdown={drawdown},trades={trades},score={score}")
     return "; ".join(parts)
+
+
+def _format_monthly_validation_train_decision_profiles(rows: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for row in rows:
+        preset = str(row.get("preset", "")).strip()
+        profile = str(row.get("decision_profile", "")).strip()
+        if preset and profile:
+            parts.append(f"{preset}:{profile}")
+    return "; ".join(parts)
+
+
+def _format_monthly_validation_train_decision_profile(result: MonthlyBacktestResult) -> str:
+    decision_count = len(result.decisions)
+    if not decision_count:
+        return "modes=none,selected=none,alpha_ratio=0"
+    mode_counts = Counter(decision.mode for decision in result.decisions)
+    selected_counts = Counter(decision.selected_preset for decision in result.decisions)
+    alpha_ratio = mode_counts.get("alpha", 0) / decision_count
+    modes = "|".join(f"{key}:{mode_counts[key]}" for key in sorted(mode_counts))
+    selected = "|".join(f"{key}:{selected_counts[key]}" for key in sorted(selected_counts))
+    return (
+        f"modes={modes},selected={selected},"
+        f"alpha_ratio={_format_optional_float(alpha_ratio)}"
+    )
 
 
 def generate_monthly_validation_cases(

@@ -98,7 +98,13 @@ def _candle(day: str, open_price: float, close_price: float | None = None) -> Ca
     return Candle(date=day, open=open_price, high=max(open_price, close), low=min(open_price, close), close=close, volume=1_000)
 
 
-def _monthly_result(*, excess_return_pct: float, max_drawdown_pct: float, trade_count: int = 1) -> MonthlyBacktestResult:
+def _monthly_result(
+    *,
+    excess_return_pct: float,
+    max_drawdown_pct: float,
+    trade_count: int = 1,
+    decisions: list[MonthlyDecision] | None = None,
+) -> MonthlyBacktestResult:
     return MonthlyBacktestResult(
         initial_cash=1_000_000,
         final_equity=1_100_000,
@@ -107,7 +113,7 @@ def _monthly_result(*, excess_return_pct: float, max_drawdown_pct: float, trade_
         excess_return_pct=excess_return_pct,
         max_drawdown_pct=max_drawdown_pct,
         trade_count=trade_count,
-        decisions=[],
+        decisions=decisions or [],
         trades=[],
         dates=["2026-06-20"],
         equity_curve=[1_100_000],
@@ -1903,6 +1909,55 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(rows[0]["selected_preset"], "balanced")
         self.assertEqual(rows[0]["train_excess_return_pct"], 12.0)
         self.assertEqual(test_presets, ["balanced"])
+
+    def test_run_monthly_walk_forward_validation_records_train_decision_profiles(self):
+        def train_decision(mode: str, selected_preset: str) -> MonthlyDecision:
+            return MonthlyDecision(
+                as_of_date="2024-03-01",
+                signal_date="2024-02-29",
+                mode=mode,
+                selected_preset=selected_preset,
+                target_weights={},
+                reason="unit",
+            )
+
+        def fake_runner(symbol_candles, **kwargs):
+            preset = kwargs["config"].presets[0]
+            if kwargs["end"] == "2024-03-31":
+                decisions = (
+                    [train_decision("alpha", preset), train_decision("market_beta_proxy", "market_beta_proxy")]
+                    if preset == "balanced"
+                    else [train_decision("market_beta_proxy", "market_beta_proxy")]
+                )
+                return _monthly_result(
+                    excess_return_pct=10.0 if preset == "balanced" else 8.0,
+                    max_drawdown_pct=-5.0,
+                    trade_count=4,
+                    decisions=decisions,
+                )
+            return _monthly_result(excess_return_pct=3.0, max_drawdown_pct=-8.0, trade_count=2)
+
+        rows = run_monthly_walk_forward_validation(
+            {"111111": _daily_candles("2024-01-01", 180)},
+            cases=[
+                MonthlyValidationCase(
+                    name="wf_001",
+                    category="walk_forward",
+                    train_start="2024-01-01",
+                    train_end="2024-03-31",
+                    start="2024-04-01",
+                    end="2024-06-30",
+                )
+            ],
+            config=MonthlyRebalanceConfig(presets=("balanced", "aggressive")),
+            backtest_runner=fake_runner,
+        )
+
+        profile = rows[0]["train_candidate_decision_profiles"]
+        self.assertIn("balanced:modes=alpha:1|market_beta_proxy:1", profile)
+        self.assertIn("alpha_ratio=0.5", profile)
+        self.assertIn("aggressive:modes=market_beta_proxy:1", profile)
+        self.assertIn("alpha_ratio=0", profile)
 
     def test_generate_monthly_validation_cases_includes_duration_regime_and_stress(self):
         cases = generate_monthly_validation_cases(

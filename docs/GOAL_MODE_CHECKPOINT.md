@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 12:19 KST
+Last updated: 2026-06-22 12:42 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 377 tests.
+- `python -m unittest discover -s tests`: PASS, 380 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -42,11 +42,14 @@ Added walk-forward train candidate coverage diagnostics:
 - New production readiness check: `walk_forward_train_candidate_coverage`.
 - The check warns when walk-forward rows have fewer than 2 train candidates.
 - It also warns when multiple named candidates have identical score signatures.
+- It now records train candidate decision profiles and warns when train candidates are fallback-only.
 - Added readiness recommendations: `Expand walk-forward train candidates`.
 - Ran a separate candidate validation with `--presets balanced,aggressive,retail`.
 - Result: failed required scenarios stayed at 5; comparison status `UNCHANGED`.
 - Important finding: all three preset names produced identical train scores in every walk-forward window.
-- Interpretation: simply widening `--presets` does not currently add real model diversity. The next fix should inspect why monthly preset configs are not producing different walk-forward train behavior, or introduce clearly distinct validated preset configs without adding live trading.
+- Stronger finding: all walk-forward train windows have `alpha_ratio=0`; the monthly validation train candidates are proxy/cash fallback-only.
+- Interpretation: simply widening `--presets` does not currently add real model diversity. The next fix should inspect why monthly train windows never reach alpha decisions before changing strategy behavior.
+- Operational note: diagnostic `multi_preset` deltas should not be mixed into the main failure-pattern report. The main `monthly_validation_failure_patterns.csv` and drilldown were regenerated with the three remediation candidate delta reports explicitly.
 
 Closed validation drilldown evidence gaps:
 
@@ -158,6 +161,7 @@ Production readiness:
   - `under_covered=5`
   - `min_candidates=1`
   - `min_unique_scores=1`
+  - `fallback_only=5`
 - `validation_scenarios`: BLOCK
   - `stress_exclude_500pct_winners`
   - `regime_sideways`
@@ -174,7 +178,7 @@ Health:
 
 - Overall: `WARN`
 - Only non-PASS check: `scalper_data`
-- Reason: latest scalper file is stale, age about 299 hours.
+- Reason: latest scalper file is stale, age about 300 hours.
 - Action: inspect or restart cloud scalper collector if tick/paper scalper data is still needed.
 
 ## Latest Code/Report Changes
@@ -229,6 +233,8 @@ python -m backtester monthly-validate --data-dir data/krx_expanded --start 2024-
 python -m unittest tests.test_readiness.ProductionReadinessTests.test_walk_forward_single_train_candidate_warns_readiness tests.test_readiness.ProductionReadinessTests.test_walk_forward_multiple_train_candidates_passes_readiness tests.test_readiness.ProductionReadinessTests.test_walk_forward_duplicate_train_candidate_scores_warn_readiness tests.test_readiness.ProductionReadinessTests.test_walk_forward_train_candidate_warning_recommends_candidate_expansion
 python -m backtester monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end 2026-06-18 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --presets balanced,aggressive,retail --scenario-output data/reports/monthly_validation_candidate_multi_preset.csv --data-quality-output data/reports/monthly_validation_data_quality_candidate_multi_preset.csv --coverage-output data/reports/monthly_universe_price_coverage_candidate_multi_preset.csv --performance-output data/reports/monthly_performance_audit_candidate_multi_preset.csv --concentration-output data/reports/monthly_performance_concentration_candidate_multi_preset.csv --failure-output data/reports/monthly_validation_failures_candidate_multi_preset.csv --remediation-output data/reports/monthly_validation_remediation_candidate_multi_preset.csv --sweep-plan-output data/reports/monthly_validation_sweep_plan_candidate_multi_preset.csv --sweep-result-output data/reports/monthly_validation_sweep_results_candidate_multi_preset.csv --universe-filter-report data/reports/universe_filter_report_candidate_multi_preset.csv --deployment-gate-output data/reports/monthly_deployment_gate_candidate_multi_preset.csv
 python -m backtester monthly-compare-validation --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --candidate data/reports/monthly_validation_candidate_multi_preset.csv --candidate-label multi_preset --output data/reports/monthly_validation_comparison_multi_preset.csv --delta-output data/reports/monthly_validation_comparison_deltas_multi_preset.csv --decision-output data/reports/monthly_validation_candidate_decision_multi_preset.csv
+python -m backtester monthly-failure-patterns --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --delta-glob __no_auto_delta_reports__ --delta-report data/reports/monthly_validation_comparison_deltas_position_stop_12.csv --delta-report data/reports/monthly_validation_comparison_deltas_weak_cash_10_position_stop_12.csv --delta-report data/reports/monthly_validation_comparison_deltas_weak_defense_cash_10.csv --output data/reports/monthly_validation_failure_patterns.csv
+python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --patterns data/reports/monthly_validation_failure_patterns.csv --delta-glob __no_auto_delta_reports__ --delta-report data/reports/monthly_validation_comparison_deltas_position_stop_12.csv --delta-report data/reports/monthly_validation_comparison_deltas_weak_cash_10_position_stop_12.csv --delta-report data/reports/monthly_validation_comparison_deltas_weak_defense_cash_10.csv --output data/reports/monthly_validation_failure_drilldown.csv
 python -m backtester production-check --allow-blocked-exit-zero
 python -m unittest discover -s tests
 python -m compileall -q backtester
@@ -241,10 +247,11 @@ python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
    - `regime_sideways`
    - `walk_forward_003`
    - `walk_forward_005`
-2. Inspect why `balanced`, `aggressive`, and `retail` produce identical monthly walk-forward train scores:
-   - confirm whether preset configs are ignored by monthly candidate selection,
-   - or whether later monthly risk overlays dominate preset differences,
-   - then add deterministic tests before changing behavior.
+2. Inspect why monthly walk-forward train candidates are fallback-only:
+   - all current train decision profiles show `alpha_ratio=0`,
+   - most decisions are `market_beta_proxy`, sometimes `cash`,
+   - confirm whether `select_best_train_candidate` is too strict, train windows are too short, or recursive monthly training prevents alpha selection,
+   - add deterministic tests before changing behavior.
 3. Use the new attribution reports to avoid blind parameter sweeps:
    - `regime_sideways` and `walk_forward_005` failed despite partial recovery and high exposure in weak months.
    - `walk_forward_003` has negative train excess and should stay blocked unless independent validation improves.

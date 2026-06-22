@@ -2486,6 +2486,7 @@ def main() -> int:
                     "selected_preset": "",
                     "train_excess_return_pct": "",
                     "train_candidate_scores": "",
+                    "train_candidate_decision_profiles": "",
                     "start": args.start,
                     "end": args.end,
                     "slippage_multiplier": 1.0,
