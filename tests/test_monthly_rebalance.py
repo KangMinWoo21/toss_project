@@ -23,6 +23,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
+    analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
     analyze_monthly_validation_failures,
     analyze_monthly_train_decision_path,
@@ -84,6 +85,7 @@ from backtester.monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
+    save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
     save_monthly_train_decision_path,
     save_monthly_train_stability_windows,
@@ -1780,6 +1782,131 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("selected_symbols", text.splitlines()[0])
         self.assertIn("005930;000660", text)
+
+    def test_analyze_monthly_proxy_decision_diagnostics_flags_loss_and_recovery_context(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000,
+            final_equity=1_050,
+            total_return_pct=5.0,
+            buy_hold_return_pct=15.0,
+            excess_return_pct=-10.0,
+            max_drawdown_pct=-10.0,
+            trade_count=0,
+            decisions=[
+                MonthlyDecision(
+                    as_of_date="2025-01-31",
+                    signal_date="2025-01-30",
+                    mode="market_beta_proxy",
+                    selected_preset="market_beta_proxy",
+                    target_weights={"AAA": 0.5, "BBB": 0.49},
+                    reason="no_train_candidate_strong_breadth_proxy",
+                ),
+                MonthlyDecision(
+                    as_of_date="2025-02-28",
+                    signal_date="2025-02-27",
+                    mode="market_beta_proxy",
+                    selected_preset="market_beta_proxy",
+                    target_weights={"AAA": 0.375, "BBB": 0.3675},
+                    reason="no_train_candidate_strong_breadth_proxy_drawdown_guard",
+                ),
+                MonthlyDecision(
+                    as_of_date="2025-03-31",
+                    signal_date="2025-03-28",
+                    mode="alpha",
+                    selected_preset="balanced",
+                    target_weights={"CCC": 0.7425},
+                    reason="selected_monthly_alpha_drawdown_guard",
+                ),
+            ],
+            trades=[],
+            dates=["2025-01-31", "2025-02-28", "2025-03-31"],
+            equity_curve=[900, 990, 1_050],
+        )
+        evidence = {
+            "2025-01-31": {
+                "prior_breadth": "0.72",
+                "fallback_breadth_threshold": "0.5",
+                "market_beta_breadth_threshold": "0.25",
+                "trend_scale": "1",
+                "volatility_scale": "1",
+                "liquidity_scale": "1",
+                "exposure_scale": "1",
+                "direct_candidate_count": 1,
+                "eligible_direct_candidate_count": 0,
+                "direct_candidate_rejection_reasons": "low_positive_ratio=1",
+                "best_direct_excess_return_pct": "-3.5",
+                "best_direct_train_positive_ratio": "0.25",
+            },
+            "2025-02-28": {
+                "prior_breadth": "0.68",
+                "fallback_breadth_threshold": "0.5",
+                "market_beta_breadth_threshold": "0.25",
+                "trend_scale": "1",
+                "volatility_scale": "1",
+                "liquidity_scale": "1",
+                "exposure_scale": "1",
+                "direct_candidate_count": 1,
+                "eligible_direct_candidate_count": 0,
+                "direct_candidate_rejection_reasons": "low_positive_ratio=1",
+                "best_direct_excess_return_pct": "-1.0",
+                "best_direct_train_positive_ratio": "0.5",
+            },
+            "2025-03-31": {
+                "prior_breadth": "0.45",
+                "fallback_breadth_threshold": "0.5",
+                "market_beta_breadth_threshold": "0.25",
+                "trend_scale": "1",
+                "volatility_scale": "1",
+                "liquidity_scale": "1",
+                "exposure_scale": "1",
+                "direct_candidate_count": 1,
+                "eligible_direct_candidate_count": 1,
+                "direct_candidate_rejection_reasons": "eligible=1",
+                "best_direct_excess_return_pct": "8.0",
+                "best_direct_train_positive_ratio": "1",
+            },
+        }
+
+        rows = analyze_monthly_proxy_decision_diagnostics(
+            result,
+            symbol_candles={},
+            config=MonthlyRebalanceConfig(),
+            scenario="unit_proxy",
+            evidence_provider=lambda _candles, *, as_of_date, config: evidence[as_of_date],
+        )
+
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["scenario"], "unit_proxy")
+        self.assertEqual(rows[0]["month_return_pct"], "-10")
+        self.assertIn("market_beta_proxy", rows[0]["diagnostic"])
+        self.assertIn("high_exposure_proxy_loss", rows[0]["diagnostic"])
+        self.assertIn("strong_breadth", rows[0]["diagnostic"])
+        self.assertIn("no_eligible_direct_candidate", rows[0]["diagnostic"])
+        self.assertIn("proxy_gain_participation", rows[1]["diagnostic"])
+        self.assertIn("already_scaled_by_drawdown_guard", rows[1]["diagnostic"])
+        self.assertIn("scaled_alpha_recovery", rows[2]["diagnostic"])
+        self.assertEqual(rows[0]["recommended_next_action"], "test_conditional_proxy_entry_guard")
+        self.assertEqual(rows[1]["recommended_next_action"], "preserve_scaled_recovery_participation")
+
+    def test_save_monthly_proxy_decision_diagnostics_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "proxy.csv"
+            saved = save_monthly_proxy_decision_diagnostics(
+                [
+                    {
+                        "scenario": "unit",
+                        "as_of_date": "2025-01-31",
+                        "mode": "market_beta_proxy",
+                        "diagnostic": "high_exposure_proxy_loss",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("recommended_next_action", text.splitlines()[0])
+        self.assertIn("high_exposure_proxy_loss", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

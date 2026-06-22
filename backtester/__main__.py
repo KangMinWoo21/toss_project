@@ -54,6 +54,7 @@ from .monthly_rebalance import (
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_performance_concentration,
+    analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
     analyze_monthly_train_decision_path,
     analyze_monthly_train_stability_windows,
@@ -103,6 +104,7 @@ from .monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
+    save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
     save_monthly_train_decision_path,
     save_monthly_train_stability_windows,
@@ -835,6 +837,7 @@ def main() -> int:
         default="data/reports/monthly_decision_attribution.csv",
     )
     monthly_attribution_parser.add_argument("--summary-output", default=None)
+    monthly_attribution_parser.add_argument("--proxy-output", default=None)
 
     monthly_validate_parser = subparsers.add_parser(
         "monthly-validate",
@@ -2529,6 +2532,18 @@ def main() -> int:
                 max_period_return_pct=args.stress_exclude_return_above,
             )
         presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
+        attribution_config = MonthlyRebalanceConfig(
+            presets=presets,
+            cash_buffer_weight=args.cash_buffer_weight,
+            max_position_weight=args.max_position_weight,
+            candidate_pool_size=args.candidate_pool_size,
+            drawdown_guard_trigger_pct=args.drawdown_guard_trigger_pct,
+            drawdown_guard_scale=args.drawdown_guard_scale,
+            position_trailing_stop_pct=args.position_trailing_stop_pct,
+            point_in_time_min_history_days=args.point_in_time_min_history_days,
+            point_in_time_universe=point_in_time_universe,
+            market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
+        )
         result = run_monthly_rebalance_backtest(
             symbol_candles,
             start=args.start,
@@ -2538,23 +2553,22 @@ def main() -> int:
             tax_rate=args.tax_rate,
             slippage_rate=args.slippage_rate,
             min_trade_value=args.min_trade_value,
-            config=MonthlyRebalanceConfig(
-                presets=presets,
-                cash_buffer_weight=args.cash_buffer_weight,
-                max_position_weight=args.max_position_weight,
-                candidate_pool_size=args.candidate_pool_size,
-                drawdown_guard_trigger_pct=args.drawdown_guard_trigger_pct,
-                drawdown_guard_scale=args.drawdown_guard_scale,
-                position_trailing_stop_pct=args.position_trailing_stop_pct,
-                point_in_time_min_history_days=args.point_in_time_min_history_days,
-                point_in_time_universe=point_in_time_universe,
-                market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
-            ),
+            config=attribution_config,
         )
         monthly_rows = analyze_monthly_drawdown_attribution(result)
         symbol_rows = analyze_symbol_realized_pnl_attribution(result)
         decision_rows = analyze_monthly_decision_attribution(result)
         recovery_rows = analyze_monthly_recovery_attribution(result, scenario=args.scenario_name)
+        proxy_rows = (
+            analyze_monthly_proxy_decision_diagnostics(
+                result,
+                symbol_candles=symbol_candles,
+                config=attribution_config,
+                scenario=args.scenario_name,
+            )
+            if args.proxy_output
+            else []
+        )
         save_monthly_attribution_rows(monthly_rows, args.monthly_output)
         save_monthly_attribution_rows(
             symbol_rows,
@@ -2564,6 +2578,8 @@ def main() -> int:
         save_monthly_decision_attribution(decision_rows, args.decision_output)
         if args.summary_output:
             save_monthly_recovery_attribution(recovery_rows, args.summary_output)
+        if args.proxy_output:
+            save_monthly_proxy_decision_diagnostics(proxy_rows, args.proxy_output)
 
         def row_float(row: dict[str, str], key: str) -> float:
             try:
@@ -2599,6 +2615,9 @@ def main() -> int:
         if args.summary_output:
             print(f"recovery_rows  {len(recovery_rows)}")
             print(f"recovery_attribution_report  {args.summary_output}")
+        if args.proxy_output:
+            print(f"proxy_rows  {len(proxy_rows)}")
+            print(f"proxy_decision_diagnostics_report  {args.proxy_output}")
         return 0
 
     if args.command == "monthly-validate":

@@ -692,6 +692,36 @@ MONTHLY_DECISION_ATTRIBUTION_COLUMNS = [
     "reason",
 ]
 
+MONTHLY_PROXY_DECISION_DIAGNOSTIC_COLUMNS = [
+    "scenario",
+    "as_of_date",
+    "signal_date",
+    "month",
+    "month_return_pct",
+    "month_status",
+    "month_equity_change",
+    "mode",
+    "reason",
+    "target_exposure",
+    "cash_weight",
+    "position_count",
+    "selected_symbols",
+    "prior_breadth",
+    "fallback_breadth_threshold",
+    "market_beta_breadth_threshold",
+    "trend_scale",
+    "volatility_scale",
+    "liquidity_scale",
+    "exposure_scale",
+    "direct_candidate_count",
+    "eligible_direct_candidate_count",
+    "best_direct_excess_return_pct",
+    "best_direct_train_positive_ratio",
+    "direct_candidate_rejection_reasons",
+    "diagnostic",
+    "recommended_next_action",
+]
+
 MONTHLY_RECOVERY_ATTRIBUTION_COLUMNS = [
     "scenario",
     "start",
@@ -1873,6 +1903,126 @@ def analyze_monthly_decision_attribution(result: MonthlyBacktestResult) -> list[
     return rows
 
 
+def analyze_monthly_proxy_decision_diagnostics(
+    result: MonthlyBacktestResult,
+    *,
+    symbol_candles: dict[str, list[Candle]],
+    config: MonthlyRebalanceConfig,
+    scenario: str = "",
+    evidence_provider: Callable[..., dict[str, Any]] | None = None,
+) -> list[dict[str, str]]:
+    monthly_rows = analyze_monthly_drawdown_attribution(result)
+    decision_rows = analyze_monthly_decision_attribution(result)
+    provider = evidence_provider or _monthly_train_decision_evidence
+    rows: list[dict[str, str]] = []
+    for decision, decision_row in zip(result.decisions, decision_rows):
+        monthly_row = _monthly_attribution_for_decision(monthly_rows, decision.as_of_date)
+        evidence = provider(symbol_candles, as_of_date=decision.as_of_date, config=config)
+        diagnostics = _monthly_proxy_decision_diagnostic_tokens(decision, decision_row, monthly_row, evidence)
+        rows.append(
+            {
+                "scenario": scenario,
+                "as_of_date": decision.as_of_date,
+                "signal_date": decision.signal_date,
+                "month": str(monthly_row.get("month", "")),
+                "month_return_pct": str(monthly_row.get("return_pct", "")),
+                "month_status": str(monthly_row.get("status", "")),
+                "month_equity_change": str(monthly_row.get("equity_change", "")),
+                "mode": decision.mode,
+                "reason": decision.reason,
+                "target_exposure": str(decision_row.get("target_exposure", "")),
+                "cash_weight": str(decision_row.get("cash_weight", "")),
+                "position_count": str(decision_row.get("position_count", "")),
+                "selected_symbols": str(decision_row.get("selected_symbols", "")),
+                "prior_breadth": str(evidence.get("prior_breadth", "")),
+                "fallback_breadth_threshold": str(evidence.get("fallback_breadth_threshold", "")),
+                "market_beta_breadth_threshold": str(evidence.get("market_beta_breadth_threshold", "")),
+                "trend_scale": str(evidence.get("trend_scale", "")),
+                "volatility_scale": str(evidence.get("volatility_scale", "")),
+                "liquidity_scale": str(evidence.get("liquidity_scale", "")),
+                "exposure_scale": str(evidence.get("exposure_scale", "")),
+                "direct_candidate_count": str(evidence.get("direct_candidate_count", "")),
+                "eligible_direct_candidate_count": str(evidence.get("eligible_direct_candidate_count", "")),
+                "best_direct_excess_return_pct": str(evidence.get("best_direct_excess_return_pct", "")),
+                "best_direct_train_positive_ratio": str(evidence.get("best_direct_train_positive_ratio", "")),
+                "direct_candidate_rejection_reasons": str(evidence.get("direct_candidate_rejection_reasons", "")),
+                "diagnostic": ";".join(diagnostics) if diagnostics else "no_proxy_issue_detected",
+                "recommended_next_action": _monthly_proxy_decision_recommended_action(diagnostics),
+            }
+        )
+    return rows
+
+
+def _monthly_attribution_for_decision(
+    monthly_rows: list[dict[str, str]],
+    as_of_date: str,
+) -> dict[str, str]:
+    month = str(as_of_date)[:7]
+    same_month = [row for row in monthly_rows if str(row.get("month", "")) == month]
+    if same_month:
+        return same_month[-1]
+    prior = [row for row in monthly_rows if str(row.get("end_date", "")) <= str(as_of_date)]
+    return prior[-1] if prior else {}
+
+
+def _monthly_proxy_decision_diagnostic_tokens(
+    decision: MonthlyDecision,
+    decision_row: dict[str, str],
+    monthly_row: dict[str, str],
+    evidence: dict[str, Any],
+) -> list[str]:
+    diagnostics: list[str] = []
+    target_exposure = _float_or_none(decision_row.get("target_exposure")) or 0.0
+    month_return = _float_or_none(monthly_row.get("return_pct"))
+    prior_breadth = _float_or_none(evidence.get("prior_breadth"))
+    fallback_threshold = _float_or_none(evidence.get("fallback_breadth_threshold"))
+    beta_threshold = _float_or_none(evidence.get("market_beta_breadth_threshold"))
+    eligible_count = _safe_int(evidence.get("eligible_direct_candidate_count"), default=0)
+
+    if decision.mode == "market_beta_proxy":
+        diagnostics.append("market_beta_proxy")
+        if target_exposure >= 0.75:
+            diagnostics.append("high_exposure_proxy")
+        if target_exposure >= 0.75 and month_return is not None and month_return < 0:
+            diagnostics.append("high_exposure_proxy_loss")
+        if month_return is not None and month_return > 0:
+            diagnostics.append("proxy_gain_participation")
+    if "drawdown_guard" in decision.reason:
+        diagnostics.append("already_scaled_by_drawdown_guard")
+        if month_return is not None and month_return > 0 and target_exposure < 0.8:
+            if decision.mode == "alpha":
+                diagnostics.append("scaled_alpha_recovery")
+            elif decision.mode == "market_beta_proxy":
+                diagnostics.append("scaled_proxy_recovery")
+    if prior_breadth is not None and fallback_threshold is not None and prior_breadth >= fallback_threshold:
+        diagnostics.append("strong_breadth")
+    elif prior_breadth is not None and beta_threshold is not None and prior_breadth >= beta_threshold:
+        diagnostics.append("neutral_breadth")
+    elif prior_breadth is not None:
+        diagnostics.append("weak_breadth")
+    if eligible_count <= 0:
+        diagnostics.append("no_eligible_direct_candidate")
+    return diagnostics
+
+
+def _monthly_proxy_decision_recommended_action(diagnostics: list[str]) -> str:
+    diagnostic_set = set(diagnostics)
+    if "high_exposure_proxy_loss" in diagnostic_set:
+        return "test_conditional_proxy_entry_guard"
+    if (
+        "scaled_alpha_recovery" in diagnostic_set
+        or "scaled_proxy_recovery" in diagnostic_set
+        or (
+            "proxy_gain_participation" in diagnostic_set
+            and "already_scaled_by_drawdown_guard" in diagnostic_set
+        )
+    ):
+        return "preserve_scaled_recovery_participation"
+    if "no_eligible_direct_candidate" in diagnostic_set:
+        return "preserve_train_gate_and_improve_alpha_candidates"
+    return "review_proxy_context"
+
+
 def analyze_monthly_recovery_attribution(
     result: MonthlyBacktestResult,
     *,
@@ -2004,6 +2154,10 @@ def _decision_attribution_for_month(
 
 def save_monthly_decision_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_DECISION_ATTRIBUTION_COLUMNS)
+
+
+def save_monthly_proxy_decision_diagnostics(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PROXY_DECISION_DIAGNOSTIC_COLUMNS)
 
 
 def save_monthly_recovery_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:

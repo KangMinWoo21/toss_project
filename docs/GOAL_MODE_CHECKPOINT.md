@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 17:30 KST
+Last updated: 2026-06-22 17:43 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 404 tests.
+- `python -m unittest discover -s tests`: PASS, 406 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,78 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added paper-only proxy decision diagnostics to explain why fallback `market_beta_proxy` months help in some windows and hurt in others:
+
+- Added `analyze_monthly_proxy_decision_diagnostics` and `save_monthly_proxy_decision_diagnostics`.
+- Extended `python -m backtester monthly-attribution` with `--proxy-output`.
+- The new report joins monthly return attribution, decision attribution, and train-decision evidence into one row per monthly decision.
+- New report fields include:
+  - train breadth and thresholds,
+  - trend, volatility, liquidity, and exposure scales,
+  - direct candidate counts and best direct candidate quality,
+  - direct rejection reasons,
+  - proxy/recovery diagnostics,
+  - `recommended_next_action`.
+- This is diagnostic-only and paper-only. It does not add live order execution.
+
+Generated or refreshed proxy diagnostics:
+
+- `data/reports/regime_sideways_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_005_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_002_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_004_proxy_decision_diagnostics.csv`
+
+Proxy diagnostic findings:
+
+- `regime_sideways`
+  - Proxy decision rows: `7`.
+  - Diagnostics include `market_beta_proxy=7`, `high_exposure_proxy=5`, `high_exposure_proxy_loss=4`, `no_eligible_direct_candidate=6`, `proxy_gain_participation=3`, and `already_scaled_by_drawdown_guard=1`.
+  - Loss rows include 2024-10, 2024-11, 2024-12, and 2025-03 high-exposure proxy months.
+  - 2025-04 was already scaled by the drawdown guard and still participated in recovery, so broad de-risking would be harmful there.
+- `walk_forward_005`
+  - Proxy decision rows: `4`.
+  - Diagnostics include `market_beta_proxy=3`, `high_exposure_proxy=3`, `high_exposure_proxy_loss=2`, `proxy_gain_participation=1`, and `scaled_alpha_recovery=1`.
+  - 2026-03 is the key high-exposure proxy loss month.
+  - 2026-04 is a drawdown-guard-scaled alpha recovery month and should not be weakened by a broad cap.
+- `walk_forward_002`
+  - Proxy decision rows: `4`.
+  - Diagnostics include `high_exposure_proxy_loss=2` and `proxy_gain_participation=2`.
+  - This baseline window passes, but the rejected blanket cap weakens it enough to create a new failure.
+- `walk_forward_004`
+  - Proxy decision rows: `4`.
+  - Every proxy row is `proxy_gain_participation`.
+  - This explains why `market_beta_proxy_cap_75` created a train-gate/new-failure regression here.
+
+Interpretation:
+
+- The rejected `market_beta_proxy_cap_75` candidate failed because fallback proxy months are not uniformly bad.
+- A blanket proxy cap reduces some drawdowns but also removes necessary beta participation in passing or recovering windows.
+- The next candidate should be conditional, not broad:
+  - target high-exposure proxy loss contexts,
+  - preserve drawdown-guard-scaled recovery months,
+  - avoid weakening `walk_forward_002` and `walk_forward_004`.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `404` tests.
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- RED check: new proxy decision diagnostics tests failed because the analyzer, CSV saver, and `--proxy-output` CLI option did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_decision_diagnostics_flags_loss_and_recovery_context tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_proxy_decision_diagnostics_writes_csv tests.test_cli.CliTests.test_monthly_attribution_help_includes_stress_and_output_options tests.test_cli.CliTests.test_monthly_attribution_cli_writes_recovery_summary_report`: PASS.
+- Related regression scope: `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `168` tests.
+- Full verification: `python -m unittest discover -s tests`: PASS, `406` tests.
+- Full syntax check: `python -m compileall -q backtester`: PASS.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=304.93` observed).
+
+Next recommended action:
+
+- Build a paper-only conditional proxy-entry experiment using the new diagnostics.
+- Do not lower fallback proxy exposure globally.
+- First candidate direction: reduce or block full-exposure fallback proxy only in high-exposure loss-prone contexts, while explicitly preserving rows tagged `proxy_gain_participation`, `scaled_proxy_recovery`, or `scaled_alpha_recovery`.
+
+Previous loop:
 
 Added a narrow fallback proxy exposure-cap experiment and rejected it with full validation evidence:
 
@@ -125,7 +197,7 @@ Next recommended action:
   - walk-forward windows where proxy cap causes train-gate regression.
 - Candidate direction: add diagnostics or an experiment around conditional proxy gating, for example requiring stronger breadth/trend confirmation before full `market_beta_proxy`, while preserving participation after drawdown guards have already lowered exposure.
 
-Previous loop:
+Earlier loop:
 
 Added recovery attribution summaries for `insufficient_recovery` failures:
 

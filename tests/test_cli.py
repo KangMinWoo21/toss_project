@@ -620,6 +620,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--decision-output", completed.stdout)
         self.assertIn("--summary-output", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
+        self.assertIn("--proxy-output", completed.stdout)
 
     def test_monthly_attribution_cli_writes_recovery_summary_report(self):
         with TemporaryDirectory() as temp_dir:
@@ -635,6 +636,7 @@ class CliTests(unittest.TestCase):
             ]:
                 self._write_trend_price_file(data_dir, symbol, close=100, step=step, volume=volume)
             summary_output = root / "recovery_summary.csv"
+            proxy_output = root / "proxy_diagnostics.csv"
 
             completed = self._run_backtester_in_cwd(
                 root,
@@ -652,6 +654,8 @@ class CliTests(unittest.TestCase):
                     "walk_forward_unit",
                     "--summary-output",
                     str(summary_output),
+                    "--proxy-output",
+                    str(proxy_output),
                 ],
             )
             if summary_output.exists():
@@ -659,11 +663,20 @@ class CliTests(unittest.TestCase):
                     rows = list(csv.DictReader(f))
             else:
                 rows = []
+            if proxy_output.exists():
+                with proxy_output.open(encoding="utf-8") as f:
+                    proxy_rows = list(csv.DictReader(f))
+            else:
+                proxy_rows = []
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("recovery_attribution_report", completed.stdout)
+        self.assertIn("proxy_decision_diagnostics_report", completed.stdout)
         self.assertTrue(rows)
+        self.assertTrue(proxy_rows)
         self.assertEqual(rows[0]["scenario"], "walk_forward_unit")
+        self.assertEqual(proxy_rows[0]["scenario"], "walk_forward_unit")
+        self.assertIn("recommended_next_action", proxy_rows[0])
         self.assertIn("diagnostic", rows[0])
 
     def test_monthly_validate_help_includes_failure_diagnostics_output(self):
