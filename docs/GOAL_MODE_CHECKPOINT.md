@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 02:22 KST
+Last updated: 2026-06-22 12:19 KST
 
 ## Objective
 
@@ -27,14 +27,54 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 368 tests.
+- `python -m unittest discover -s tests`: PASS, 377 tests.
 - `python -m compileall -q backtester`: PASS.
-- `production-check`: BLOCK by design, because validation still fails required scenarios.
+- `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
 - Candidate follow-up state: all 3 full-validation candidates completed, all rejected.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
+- `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added walk-forward train candidate coverage diagnostics:
+
+- New production readiness check: `walk_forward_train_candidate_coverage`.
+- The check warns when walk-forward rows have fewer than 2 train candidates.
+- It also warns when multiple named candidates have identical score signatures.
+- Added readiness recommendations: `Expand walk-forward train candidates`.
+- Ran a separate candidate validation with `--presets balanced,aggressive,retail`.
+- Result: failed required scenarios stayed at 5; comparison status `UNCHANGED`.
+- Important finding: all three preset names produced identical train scores in every walk-forward window.
+- Interpretation: simply widening `--presets` does not currently add real model diversity. The next fix should inspect why monthly preset configs are not producing different walk-forward train behavior, or introduce clearly distinct validated preset configs without adding live trading.
+
+Closed validation drilldown evidence gaps:
+
+- Added decision-level attribution support for monthly validation drilldown.
+- Added `monthly-failure-drilldown --attribution-dir`.
+- The command reads `<scenario>_decision_attribution.csv` and `<scenario>_symbol_attribution.csv`.
+- Added `train_candidate_scores` to monthly walk-forward validation rows.
+- Drilldown now treats scenario attribution and train candidate scores as evidence.
+- Regenerated attribution reports for:
+  - `regime_sideways`
+  - `walk_forward_003`
+  - `walk_forward_005`
+  - `regime_bear`
+  - `walk_forward_002`
+  - `walk_forward_004`
+- Regenerated baseline monthly validation, failure patterns, failure drilldown, production readiness, and health reports.
+- `validation_failure_drilldown` now reports `evidence_gaps=0` and PASS in production readiness.
+
+Latest validation state:
+
+- Required failures remain: 5 of 18.
+- Failed required scenarios:
+  - `stress_exclude_500pct_winners`
+  - `regime_sideways`
+  - `walk_forward_001`
+  - `walk_forward_003`
+  - `walk_forward_005`
+- Remaining production BLOCK is now clearer: actual scenario failures and performance/risk gates, not missing diagnostic evidence.
 
 Added validation failure-pattern diagnostics:
 
@@ -99,26 +139,25 @@ Important interpretation update:
 
 - `regime_sideways` and `walk_forward_005` did improve under candidates, but not enough to pass.
 - They are now classified as `insufficient_recovery`, not just weak-window drag.
-- Evidence gaps remain for six scenarios:
-  - selected symbols
-  - exposure
-  - cash weight
-  - symbol PnL attribution
-  - train-window candidate scores where applicable
+- Evidence gaps are now closed.
 
 ## Current BLOCK/WARN Summary
 
 Production readiness:
 
-- Status counts: `BLOCK=8`, `PASS=29`, `WARN=9`
+- Status counts: `BLOCK=8`, `PASS=30`, `WARN=9`
 - Main BLOCK: required monthly validation failures remain.
 - `validation_failure_patterns`: BLOCK
   - `CANDIDATE_FIXED=2`
   - `PERSISTENT_BLOCK=3`
   - `REGRESSION_RISK=3`
-- `validation_failure_drilldown`: WARN
+- `validation_failure_drilldown`: PASS
   - root causes: `insufficient_recovery=2`, `train_window_selection=2`, `selection_or_exposure_regression=1`, `over_defense_or_filter_drag=1`, `drawdown_pressure=1`, `candidate_fixed_failure=1`
-  - evidence gaps: 6 scenarios
+  - evidence gaps: 0 scenarios
+- `walk_forward_train_candidate_coverage`: WARN
+  - `under_covered=5`
+  - `min_candidates=1`
+  - `min_unique_scores=1`
 - `validation_scenarios`: BLOCK
   - `stress_exclude_500pct_winners`
   - `regime_sideways`
@@ -135,7 +174,7 @@ Health:
 
 - Overall: `WARN`
 - Only non-PASS check: `scalper_data`
-- Reason: latest scalper file is stale, age about 289 hours.
+- Reason: latest scalper file is stale, age about 299 hours.
 - Action: inspect or restart cloud scalper collector if tick/paper scalper data is still needed.
 
 ## Latest Code/Report Changes
@@ -148,8 +187,25 @@ Touched in latest loop:
 - `tests/test_monthly_rebalance.py`
 - `tests/test_readiness.py`
 - `tests/test_cli.py`
+- `data/reports/monthly_validation_scenarios_pit_universe.csv`
 - `data/reports/monthly_validation_failure_drilldown.csv`
 - `data/reports/monthly_validation_failure_patterns.csv`
+- `data/reports/regime_sideways_decision_attribution.csv`
+- `data/reports/regime_sideways_symbol_attribution.csv`
+- `data/reports/walk_forward_003_decision_attribution.csv`
+- `data/reports/walk_forward_003_symbol_attribution.csv`
+- `data/reports/walk_forward_005_decision_attribution.csv`
+- `data/reports/walk_forward_005_symbol_attribution.csv`
+- `data/reports/regime_bear_decision_attribution.csv`
+- `data/reports/regime_bear_symbol_attribution.csv`
+- `data/reports/walk_forward_002_decision_attribution.csv`
+- `data/reports/walk_forward_002_symbol_attribution.csv`
+- `data/reports/walk_forward_004_decision_attribution.csv`
+- `data/reports/walk_forward_004_symbol_attribution.csv`
+- `data/reports/monthly_validation_candidate_multi_preset.csv`
+- `data/reports/monthly_validation_comparison_multi_preset.csv`
+- `data/reports/monthly_validation_comparison_deltas_multi_preset.csv`
+- `data/reports/monthly_validation_candidate_decision_multi_preset.csv`
 - `data/reports/production_readiness.csv`
 - `data/reports/production_readiness_report.md`
 - `data/reports/health_status.json`
@@ -163,6 +219,16 @@ python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analy
 python -m backtester monthly-failure-patterns --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --output data/reports/monthly_validation_failure_patterns.csv
 python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_validation_failure_drilldown_summarizes_root_cause_and_gaps tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_validation_failure_drilldown_writes_csv tests.test_cli.CliTests.test_monthly_failure_drilldown_cli_writes_report tests.test_readiness.ProductionReadinessTests.test_validation_failure_drilldown_warns_on_missing_attribution_evidence
 python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --patterns data/reports/monthly_validation_failure_patterns.csv --output data/reports/monthly_validation_failure_drilldown.csv
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2024-10-14 --end 2025-04-17 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --monthly-output data/reports/regime_sideways_monthly_attribution.csv --symbol-output data/reports/regime_sideways_symbol_attribution.csv --decision-output data/reports/regime_sideways_decision_attribution.csv
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2025-07-23 --end 2025-10-27 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --monthly-output data/reports/walk_forward_003_monthly_attribution.csv --symbol-output data/reports/walk_forward_003_symbol_attribution.csv --decision-output data/reports/walk_forward_003_decision_attribution.csv
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2026-01-28 --end 2026-04-30 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --monthly-output data/reports/walk_forward_005_monthly_attribution.csv --symbol-output data/reports/walk_forward_005_symbol_attribution.csv --decision-output data/reports/walk_forward_005_decision_attribution.csv
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2024-07-08 --end 2025-01-13 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --monthly-output data/reports/regime_bear_monthly_attribution.csv --symbol-output data/reports/regime_bear_symbol_attribution.csv --decision-output data/reports/regime_bear_decision_attribution.csv
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2025-04-18 --end 2025-07-22 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --monthly-output data/reports/walk_forward_002_monthly_attribution.csv --symbol-output data/reports/walk_forward_002_symbol_attribution.csv --decision-output data/reports/walk_forward_002_decision_attribution.csv
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2025-10-28 --end 2026-01-27 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --monthly-output data/reports/walk_forward_004_monthly_attribution.csv --symbol-output data/reports/walk_forward_004_symbol_attribution.csv --decision-output data/reports/walk_forward_004_decision_attribution.csv
+python -m backtester monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end 2026-06-18 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-output data/reports/monthly_validation_scenarios_pit_universe.csv --deployment-gate-output data/reports/monthly_deployment_gate_pit_universe.csv
+python -m unittest tests.test_readiness.ProductionReadinessTests.test_walk_forward_single_train_candidate_warns_readiness tests.test_readiness.ProductionReadinessTests.test_walk_forward_multiple_train_candidates_passes_readiness tests.test_readiness.ProductionReadinessTests.test_walk_forward_duplicate_train_candidate_scores_warn_readiness tests.test_readiness.ProductionReadinessTests.test_walk_forward_train_candidate_warning_recommends_candidate_expansion
+python -m backtester monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end 2026-06-18 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --presets balanced,aggressive,retail --scenario-output data/reports/monthly_validation_candidate_multi_preset.csv --data-quality-output data/reports/monthly_validation_data_quality_candidate_multi_preset.csv --coverage-output data/reports/monthly_universe_price_coverage_candidate_multi_preset.csv --performance-output data/reports/monthly_performance_audit_candidate_multi_preset.csv --concentration-output data/reports/monthly_performance_concentration_candidate_multi_preset.csv --failure-output data/reports/monthly_validation_failures_candidate_multi_preset.csv --remediation-output data/reports/monthly_validation_remediation_candidate_multi_preset.csv --sweep-plan-output data/reports/monthly_validation_sweep_plan_candidate_multi_preset.csv --sweep-result-output data/reports/monthly_validation_sweep_results_candidate_multi_preset.csv --universe-filter-report data/reports/universe_filter_report_candidate_multi_preset.csv --deployment-gate-output data/reports/monthly_deployment_gate_candidate_multi_preset.csv
+python -m backtester monthly-compare-validation --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --candidate data/reports/monthly_validation_candidate_multi_preset.csv --candidate-label multi_preset --output data/reports/monthly_validation_comparison_multi_preset.csv --delta-output data/reports/monthly_validation_comparison_deltas_multi_preset.csv --decision-output data/reports/monthly_validation_candidate_decision_multi_preset.csv
 python -m backtester production-check --allow-blocked-exit-zero
 python -m unittest discover -s tests
 python -m compileall -q backtester
@@ -171,23 +237,25 @@ python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
 
 ## Next Highest-Value Work
 
-1. Fill the drilldown evidence gaps before another parameter sweep:
-   - selected symbols per failed scenario
-   - realized symbol PnL attribution per failed scenario
-   - average exposure/cash weight per failed scenario
-   - train-window candidate scores for train-window failures
-2. Build a narrower diagnostic experiment around `PERSISTENT_BLOCK` scenarios only:
+1. Build a narrower diagnostic experiment around `PERSISTENT_BLOCK` scenarios only:
    - `regime_sideways`
    - `walk_forward_003`
    - `walk_forward_005`
-3. Separately preserve the behavior that fixed:
+2. Inspect why `balanced`, `aggressive`, and `retail` produce identical monthly walk-forward train scores:
+   - confirm whether preset configs are ignored by monthly candidate selection,
+   - or whether later monthly risk overlays dominate preset differences,
+   - then add deterministic tests before changing behavior.
+3. Use the new attribution reports to avoid blind parameter sweeps:
+   - `regime_sideways` and `walk_forward_005` failed despite partial recovery and high exposure in weak months.
+   - `walk_forward_003` has negative train excess and should stay blocked unless independent validation improves.
+4. Separately preserve the behavior that fixed:
    - `stress_exclude_500pct_winners`
    - `walk_forward_001`
-4. Avoid candidate settings that introduce:
+5. Avoid candidate settings that introduce:
    - `walk_forward_002`
    - `regime_bear`
    - `walk_forward_004`
-5. Keep all changes paper-only.
+6. Keep all changes paper-only.
 
 ## Resume Procedure
 

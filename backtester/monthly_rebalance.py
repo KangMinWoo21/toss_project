@@ -429,6 +429,7 @@ VALIDATION_FAILURE_DRILLDOWN_COLUMNS = [
     "train_end",
     "selected_preset",
     "train_excess_return_pct",
+    "train_candidate_scores",
     "start",
     "end",
     "baseline_excess_return_pct",
@@ -491,6 +492,21 @@ SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "status",
 ]
 
+MONTHLY_DECISION_ATTRIBUTION_COLUMNS = [
+    "as_of_date",
+    "signal_date",
+    "mode",
+    "selected_preset",
+    "position_count",
+    "selected_symbols",
+    "target_exposure",
+    "cash_weight",
+    "max_position_weight",
+    "min_position_weight",
+    "target_weights",
+    "reason",
+]
+
 DEPLOYMENT_GATE_COLUMNS = [
     "deployable",
     "reason",
@@ -511,6 +527,7 @@ MONTHLY_VALIDATION_COLUMNS = [
     "train_end",
     "selected_preset",
     "train_excess_return_pct",
+    "train_candidate_scores",
     "start",
     "end",
     "slippage_multiplier",
@@ -1599,6 +1616,43 @@ def analyze_symbol_realized_pnl_attribution(result: MonthlyBacktestResult) -> li
     return sorted(output, key=lambda item: (float(item["realized_pnl"] or 0.0), item["symbol"]))
 
 
+def analyze_monthly_decision_attribution(result: MonthlyBacktestResult) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for decision in result.decisions:
+        weights = {
+            str(symbol): float(weight)
+            for symbol, weight in decision.target_weights.items()
+            if float(weight) > 0
+        }
+        selected_symbols = list(weights.keys())
+        target_exposure = sum(weights.values())
+        cash_weight = max(0.0, 1.0 - target_exposure)
+        weight_values = list(weights.values())
+        rows.append(
+            {
+                "as_of_date": decision.as_of_date,
+                "signal_date": decision.signal_date,
+                "mode": decision.mode,
+                "selected_preset": decision.selected_preset,
+                "position_count": str(len(selected_symbols)),
+                "selected_symbols": ";".join(selected_symbols),
+                "target_exposure": _format_optional_float(target_exposure),
+                "cash_weight": _format_optional_float(cash_weight),
+                "max_position_weight": _format_optional_float(max(weight_values) if weight_values else 0.0),
+                "min_position_weight": _format_optional_float(min(weight_values) if weight_values else 0.0),
+                "target_weights": ";".join(
+                    f"{symbol}:{_format_optional_float(weight)}" for symbol, weight in weights.items()
+                ),
+                "reason": decision.reason,
+            }
+        )
+    return rows
+
+
+def save_monthly_decision_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_DECISION_ATTRIBUTION_COLUMNS)
+
+
 def save_monthly_attribution_rows(
     rows: list[dict[str, Any]],
     output_path: Path | str,
@@ -2057,6 +2111,7 @@ def run_monthly_walk_forward_validation(
                 "train_end": case.train_end,
                 "selected_preset": selected_preset,
                 "train_excess_return_pct": round(train_result.excess_return_pct, 4),
+                "train_candidate_scores": _format_monthly_validation_train_scores(train_rows),
                 "start": case.start,
                 "end": case.end,
                 "slippage_multiplier": case.slippage_multiplier,
@@ -2092,6 +2147,20 @@ def _monthly_validation_train_row(preset: str, result: MonthlyBacktestResult) ->
 
 def _monthly_validation_train_score(row: dict[str, Any]) -> float:
     return float(row["excess_return_pct"]) + float(row["max_drawdown_pct"])
+
+
+def _format_monthly_validation_train_scores(rows: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for row in rows:
+        preset = str(row.get("preset", "")).strip()
+        if not preset:
+            continue
+        excess = _format_optional_float(_float_or_none(row.get("excess_return_pct")))
+        drawdown = _format_optional_float(_float_or_none(row.get("max_drawdown_pct")))
+        trades = str(row.get("trades", "")).strip()
+        score = _format_optional_float(_monthly_validation_train_score(row))
+        parts.append(f"{preset}:excess={excess},drawdown={drawdown},trades={trades},score={score}")
+    return "; ".join(parts)
 
 
 def generate_monthly_validation_cases(
@@ -3154,6 +3223,9 @@ def analyze_monthly_validation_failure_drilldown(
     baseline_rows: list[dict[str, Any]],
     pattern_rows: list[dict[str, Any]],
     delta_rows: list[dict[str, Any]],
+    *,
+    decision_attribution_rows: list[dict[str, Any]] | None = None,
+    symbol_attribution_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     baseline_by_name = {
         str(row.get("name", "")).strip(): row
@@ -3165,6 +3237,10 @@ def analyze_monthly_validation_failure_drilldown(
         name = str(row.get("name", "")).strip()
         if name:
             delta_by_name.setdefault(name, []).append(row)
+    attribution_evidence = _validation_attribution_evidence(
+        decision_attribution_rows=decision_attribution_rows or [],
+        symbol_attribution_rows=symbol_attribution_rows or [],
+    )
 
     rows: list[dict[str, Any]] = []
     for pattern in pattern_rows:
@@ -3192,6 +3268,10 @@ def analyze_monthly_validation_failure_drilldown(
         evidence_gaps = _validation_failure_evidence_gaps(
             pattern_status=str(pattern.get("pattern_status", "")),
             likely_root_cause=likely_root_cause,
+            available_evidence=_validation_failure_available_evidence(
+                baseline,
+                attribution_evidence.get(scenario, set()),
+            ),
         )
         rows.append(
             {
@@ -3205,6 +3285,7 @@ def analyze_monthly_validation_failure_drilldown(
                 "train_end": baseline.get("train_end", ""),
                 "selected_preset": baseline.get("selected_preset", ""),
                 "train_excess_return_pct": baseline.get("train_excess_return_pct", ""),
+                "train_candidate_scores": baseline.get("train_candidate_scores", ""),
                 "start": baseline.get("start", ""),
                 "end": baseline.get("end", ""),
                 "baseline_excess_return_pct": baseline.get("excess_return_pct", ""),
@@ -3331,8 +3412,50 @@ def _validation_failure_likely_root_cause(
     return "scenario_review"
 
 
-def _validation_failure_evidence_gaps(*, pattern_status: str, likely_root_cause: str) -> str:
+def _validation_attribution_evidence(
+    *,
+    decision_attribution_rows: list[dict[str, Any]],
+    symbol_attribution_rows: list[dict[str, Any]],
+) -> dict[str, set[str]]:
+    evidence: dict[str, set[str]] = {}
+    for row in decision_attribution_rows:
+        scenario = str(row.get("scenario", "")).strip()
+        if not scenario:
+            continue
+        scenario_evidence = evidence.setdefault(scenario, set())
+        if str(row.get("selected_symbols", "")).strip():
+            scenario_evidence.add("selected_symbols")
+        if _float_or_none(row.get("target_exposure")) is not None:
+            scenario_evidence.add("exposure")
+        if _float_or_none(row.get("cash_weight")) is not None:
+            scenario_evidence.add("cash_weight")
+    for row in symbol_attribution_rows:
+        scenario = str(row.get("scenario", "")).strip()
+        if not scenario:
+            continue
+        if str(row.get("symbol", "")).strip() and str(row.get("realized_pnl", "")).strip():
+            evidence.setdefault(scenario, set()).add("symbol_pnl_attribution")
+    return evidence
+
+
+def _validation_failure_available_evidence(
+    baseline: dict[str, Any],
+    attribution_evidence: set[str],
+) -> set[str]:
+    available = set(attribution_evidence)
+    if str(baseline.get("train_candidate_scores", "")).strip():
+        available.add("train_window_candidate_scores")
+    return available
+
+
+def _validation_failure_evidence_gaps(
+    *,
+    pattern_status: str,
+    likely_root_cause: str,
+    available_evidence: set[str] | None = None,
+) -> str:
     status = pattern_status.strip().upper()
+    available = available_evidence or set()
     gaps: list[str] = []
     if status in {"PERSISTENT_BLOCK", "REGRESSION_RISK", "MIXED_RESPONSE"}:
         gaps.extend(["selected_symbols", "exposure", "cash_weight"])
@@ -3340,6 +3463,7 @@ def _validation_failure_evidence_gaps(*, pattern_status: str, likely_root_cause:
         gaps.append("train_window_candidate_scores")
     if likely_root_cause in {"weak_window_return_drag", "selection_or_exposure_regression", "insufficient_recovery"}:
         gaps.append("symbol_pnl_attribution")
+    gaps = [gap for gap in gaps if gap not in available]
     return "; ".join(dict.fromkeys(gaps))
 
 
@@ -3351,6 +3475,8 @@ def _validation_failure_next_action(likely_root_cause: str, evidence_gaps: str) 
     if likely_root_cause in {"selection_or_exposure_regression", "over_defense_or_filter_drag"}:
         return "Avoid regression configs; compare selected symbols, exposure, and cash weight against baseline."
     if likely_root_cause == "insufficient_recovery":
+        if not evidence_gaps:
+            return "Use attribution evidence to isolate the partial fix before changing risk parameters."
         return "Isolate the partial fix, then run scenario attribution before increasing risk or adding filters."
     if likely_root_cause == "candidate_fixed_failure":
         return "Retest the fixing behavior in isolation and verify it does not introduce new failures."

@@ -20,6 +20,7 @@ from backtester.monthly_rebalance import (
     audit_point_in_time_price_coverage,
     analyze_monthly_performance_concentration,
     analyze_monthly_drawdown_attribution,
+    analyze_monthly_decision_attribution,
     analyze_monthly_validation_failures,
     analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
@@ -75,6 +76,7 @@ from backtester.monthly_rebalance import (
     save_monthly_validation_failure_patterns,
     save_monthly_validation_scenario_deltas,
     save_monthly_attribution_rows,
+    save_monthly_decision_attribution,
     save_order_plan,
     save_order_plan_summary,
     save_universe_filter_report,
@@ -622,6 +624,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
                         "required": True,
                         "deployable": True,
                         "reason": "passed",
+                        "train_candidate_scores": "balanced:excess=10,drawdown=-5,trades=3,score=5",
                         "source": "monthly-validate;data_quality_exclusions=auto:data/reports/data_quality_excluded_symbols.csv",
                     }
                 ],
@@ -630,6 +633,8 @@ class MonthlyRebalanceTests(unittest.TestCase):
             text = output.read_text(encoding="utf-8")
 
         self.assertIn("source", text.splitlines()[0])
+        self.assertIn("train_candidate_scores", text.splitlines()[0])
+        self.assertIn("balanced:excess=10", text)
         self.assertIn("data_quality_exclusions=auto:", text)
 
     def test_analyze_monthly_validation_failures_adds_actions_and_parameter_hints(self):
@@ -1267,6 +1272,115 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(improved["candidate_excess_delta_median"], "2")
         self.assertEqual(improved["likely_root_cause"], "insufficient_recovery")
 
+    def test_analyze_monthly_validation_failure_drilldown_uses_attribution_evidence(self):
+        baseline_rows = [
+            {
+                "name": "regime_sideways",
+                "category": "regime",
+                "required": True,
+                "deployable": False,
+                "reason": "negative_excess_return",
+                "start": "2025-01-01",
+                "end": "2025-06-30",
+                "excess_return_pct": "-7.1",
+                "max_drawdown_pct": "-18.2",
+                "trade_count": "42",
+            },
+        ]
+        pattern_rows = [
+            {
+                "scenario": "regime_sideways",
+                "pattern_status": "PERSISTENT_BLOCK",
+                "dominant_diagnostic": "same_failure_persists=3",
+                "failed_candidate_count": "3",
+                "suggested_action": "REVIEW_PERSISTENT_FAILURE",
+            },
+        ]
+        delta_rows = [
+            {
+                "name": "regime_sideways",
+                "classification": "UNCHANGED_FAILURE",
+                "candidate_label": "cash_10",
+                "excess_return_delta": "1.0",
+                "max_drawdown_delta": "1.0",
+                "trade_count_delta": "-4",
+                "diagnostic": "same_failure_persists",
+            },
+        ]
+        decision_rows = [
+            {
+                "scenario": "regime_sideways",
+                "selected_symbols": "005490;051910",
+                "target_exposure": "0.99",
+                "cash_weight": "0.01",
+            },
+        ]
+        symbol_rows = [
+            {
+                "scenario": "regime_sideways",
+                "symbol": "005490",
+                "realized_pnl": "-218620",
+            },
+        ]
+
+        rows = analyze_monthly_validation_failure_drilldown(
+            baseline_rows,
+            pattern_rows,
+            delta_rows,
+            decision_attribution_rows=decision_rows,
+            symbol_attribution_rows=symbol_rows,
+        )
+
+        self.assertEqual(rows[0]["scenario"], "regime_sideways")
+        self.assertEqual(rows[0]["likely_root_cause"], "insufficient_recovery")
+        self.assertEqual(rows[0]["evidence_gaps"], "")
+        self.assertIn("attribution evidence", rows[0]["next_action"])
+
+    def test_analyze_monthly_validation_failure_drilldown_uses_train_candidate_scores(self):
+        baseline_rows = [
+            {
+                "name": "walk_forward_003",
+                "category": "walk_forward",
+                "required": True,
+                "deployable": False,
+                "reason": "train_window_rejected",
+                "train_start": "2024-01-01",
+                "train_end": "2024-06-30",
+                "selected_preset": "balanced",
+                "train_excess_return_pct": "-1.3",
+                "train_candidate_scores": "balanced:excess=-1.3,drawdown=-5,trades=4,score=-6.3",
+                "start": "2024-07-01",
+                "end": "2024-12-31",
+            },
+        ]
+        pattern_rows = [
+            {
+                "scenario": "walk_forward_003",
+                "pattern_status": "PERSISTENT_BLOCK",
+                "dominant_diagnostic": "same_failure_persists=3",
+                "suggested_action": "REVIEW_PERSISTENT_FAILURE",
+            },
+        ]
+
+        decision_rows = [
+            {
+                "scenario": "walk_forward_003",
+                "selected_symbols": "005930;000660",
+                "target_exposure": "0.99",
+                "cash_weight": "0.01",
+            }
+        ]
+
+        rows = analyze_monthly_validation_failure_drilldown(
+            baseline_rows,
+            pattern_rows,
+            [],
+            decision_attribution_rows=decision_rows,
+        )
+
+        self.assertEqual(rows[0]["likely_root_cause"], "train_window_selection")
+        self.assertEqual(rows[0]["evidence_gaps"], "")
+
     def test_save_monthly_validation_failure_drilldown_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "drilldown.csv"
@@ -1525,6 +1639,72 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(by_symbol["AAA"]["status"], "LOSS")
         self.assertEqual(by_symbol["BBB"]["unmatched_sell_quantity"], "2")
 
+    def test_analyze_monthly_decision_attribution_summarizes_selected_symbols_and_exposure(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000_000,
+            final_equity=1_050_000,
+            total_return_pct=5.0,
+            buy_hold_return_pct=2.0,
+            excess_return_pct=3.0,
+            max_drawdown_pct=-4.0,
+            trade_count=2,
+            decisions=[
+                MonthlyDecision(
+                    as_of_date="2026-01-31",
+                    signal_date="2026-02-02",
+                    mode="risk_on",
+                    selected_preset="balanced",
+                    target_weights={"005930": 0.4, "000660": 0.35},
+                    reason="unit",
+                ),
+                MonthlyDecision(
+                    as_of_date="2026-02-28",
+                    signal_date="2026-03-02",
+                    mode="cash",
+                    selected_preset="balanced",
+                    target_weights={},
+                    reason="risk_off",
+                ),
+            ],
+            trades=[],
+            dates=["2026-01-31", "2026-02-28"],
+            equity_curve=[1_000_000, 1_050_000],
+        )
+
+        rows = analyze_monthly_decision_attribution(result)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["selected_symbols"], "005930;000660")
+        self.assertEqual(rows[0]["position_count"], "2")
+        self.assertEqual(rows[0]["target_exposure"], "0.75")
+        self.assertEqual(rows[0]["cash_weight"], "0.25")
+        self.assertEqual(rows[0]["max_position_weight"], "0.4")
+        self.assertEqual(rows[1]["selected_symbols"], "")
+        self.assertEqual(rows[1]["target_exposure"], "0")
+        self.assertEqual(rows[1]["cash_weight"], "1")
+
+    def test_save_monthly_decision_attribution_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "decision_attribution.csv"
+            saved = save_monthly_decision_attribution(
+                [
+                    {
+                        "as_of_date": "2026-01-31",
+                        "signal_date": "2026-02-02",
+                        "mode": "risk_on",
+                        "selected_symbols": "005930;000660",
+                        "target_exposure": "0.75",
+                        "cash_weight": "0.25",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("selected_symbols", text.splitlines()[0])
+        self.assertIn("005930;000660", text)
+
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "monthly.csv"
@@ -1686,6 +1866,9 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(rows[0]["selected_preset"], "balanced")
         self.assertEqual(rows[0]["train_excess_return_pct"], 10.0)
+        self.assertIn("balanced:excess=10", rows[0]["train_candidate_scores"])
+        self.assertIn("aggressive:excess=-5", rows[0]["train_candidate_scores"])
+        self.assertIn("score=0", rows[0]["train_candidate_scores"])
         self.assertEqual(rows[0]["deployable"], True)
         self.assertEqual(test_presets, ["balanced"])
 

@@ -2,6 +2,7 @@ import subprocess
 import sys
 import unittest
 import os
+import csv
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -608,6 +609,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--stress-exclude-return-above", completed.stdout)
         self.assertIn("--monthly-output", completed.stdout)
         self.assertIn("--symbol-output", completed.stdout)
+        self.assertIn("--decision-output", completed.stdout)
 
     def test_monthly_validate_help_includes_failure_diagnostics_output(self):
         completed = subprocess.run(
@@ -790,6 +792,71 @@ class CliTests(unittest.TestCase):
         self.assertIn("regime_sideways", text)
         self.assertIn("likely_root_cause", text.splitlines()[0])
         self.assertIn("weak_window_return_drag", text)
+
+    def test_monthly_failure_drilldown_cli_uses_attribution_dir(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            baseline = root / "baseline.csv"
+            patterns = root / "patterns.csv"
+            delta = root / "delta.csv"
+            output = root / "drilldown.csv"
+            baseline.write_text(
+                "name,category,required,deployable,reason,start,end,excess_return_pct,max_drawdown_pct,trade_count\n"
+                "regime_sideways,regime,True,False,negative_excess_return,2025-01-01,2025-06-30,-7.1,-18.2,42\n",
+                encoding="utf-8",
+            )
+            patterns.write_text(
+                "scenario,pattern_status,dominant_diagnostic,failed_candidate_count,suggested_action\n"
+                "regime_sideways,PERSISTENT_BLOCK,same_failure_persists=3,3,REVIEW_PERSISTENT_FAILURE\n",
+                encoding="utf-8",
+            )
+            delta.write_text(
+                "name,classification,candidate_label,excess_return_delta,max_drawdown_delta,trade_count_delta,diagnostic\n"
+                "regime_sideways,UNCHANGED_FAILURE,cash_10,1,1,-4,same_failure_persists\n",
+                encoding="utf-8",
+            )
+            (root / "regime_sideways_decision_attribution.csv").write_text(
+                "as_of_date,selected_symbols,target_exposure,cash_weight\n"
+                "2025-01-01,005490;051910,0.99,0.01\n",
+                encoding="utf-8",
+            )
+            (root / "regime_sideways_symbol_attribution.csv").write_text(
+                "symbol,realized_pnl\n"
+                "005490,-218620\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "backtester",
+                    "monthly-failure-drilldown",
+                    "--baseline",
+                    str(baseline),
+                    "--patterns",
+                    str(patterns),
+                    "--delta-report",
+                    str(delta),
+                    "--attribution-dir",
+                    str(root),
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(rows[0]["evidence_gaps"], "")
+        self.assertIn("attribution_reports  2", completed.stdout)
 
     def test_monthly_compare_validation_cli_writes_comparison(self):
         with TemporaryDirectory() as temp_dir:

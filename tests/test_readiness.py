@@ -60,6 +60,72 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("max_drawdown_breach=1", checks[0].detail)
         self.assertIn("extreme_return_share=1", checks[0].detail)
 
+    def test_walk_forward_single_train_candidate_warns_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,deployable,reason,train_candidate_scores\n"
+                "walk_forward_001,walk_forward,True,True,passed,\"balanced:excess=1,drawdown=-5,trades=3,score=-4\"\n"
+                "full_period,duration,True,True,passed,\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        coverage_checks = [check for check in checks if check.name == "walk_forward_train_candidate_coverage"]
+        self.assertEqual(coverage_checks[0].status, "WARN")
+        self.assertIn("under_covered=1", coverage_checks[0].detail)
+        self.assertEqual(readiness_status(checks), "WARN")
+
+    def test_walk_forward_multiple_train_candidates_passes_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,deployable,reason,train_candidate_scores\n"
+                "walk_forward_001,walk_forward,True,True,passed,"
+                "\"balanced:excess=1,drawdown=-5,trades=3,score=-4; "
+                "defensive:excess=2,drawdown=-3,trades=4,score=-1\"\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        coverage_checks = [check for check in checks if check.name == "walk_forward_train_candidate_coverage"]
+        self.assertEqual(coverage_checks[0].status, "PASS")
+
+    def test_walk_forward_duplicate_train_candidate_scores_warn_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,deployable,reason,train_candidate_scores\n"
+                "walk_forward_001,walk_forward,True,True,passed,"
+                "\"balanced:excess=1,drawdown=-5,trades=3,score=-4; "
+                "aggressive:excess=1,drawdown=-5,trades=3,score=-4\"\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        coverage_checks = [check for check in checks if check.name == "walk_forward_train_candidate_coverage"]
+        self.assertEqual(coverage_checks[0].status, "WARN")
+        self.assertIn("low_diversity=1", coverage_checks[0].detail)
+
+    def test_walk_forward_train_candidate_warning_recommends_candidate_expansion(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,deployable,reason,train_candidate_scores\n"
+                "walk_forward_001,walk_forward,True,True,passed,\"balanced:excess=1,drawdown=-5,trades=3,score=-4\"\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+            actions = recommend_readiness_actions(checks)
+
+        action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
+        self.assertIn("Expand walk-forward train candidates", action_text)
+        self.assertIn("under_covered=1", action_text)
+
     def test_risk_report_block_blocks_readiness(self):
         with TemporaryDirectory() as temp_dir:
             risk = Path(temp_dir) / "risk.csv"

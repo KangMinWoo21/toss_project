@@ -49,6 +49,7 @@ from .monthly_rebalance import (
     RiskLimits,
     SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS,
     analyze_monthly_drawdown_attribution,
+    analyze_monthly_decision_attribution,
     analyze_monthly_performance_concentration,
     analyze_monthly_validation_failures,
     analyze_monthly_validation_failure_drilldown,
@@ -93,6 +94,7 @@ from .monthly_rebalance import (
     save_deployment_gate,
     save_monthly_decision,
     save_monthly_attribution_rows,
+    save_monthly_decision_attribution,
     save_monthly_performance_audit_rows,
     save_monthly_performance_concentration,
     save_monthly_validation_failures,
@@ -808,6 +810,10 @@ def main() -> int:
         "--symbol-output",
         default="data/reports/monthly_symbol_attribution.csv",
     )
+    monthly_attribution_parser.add_argument(
+        "--decision-output",
+        default="data/reports/monthly_decision_attribution.csv",
+    )
 
     monthly_validate_parser = subparsers.add_parser(
         "monthly-validate",
@@ -1018,6 +1024,14 @@ def main() -> int:
         "--delta-glob",
         default="data/reports/monthly_validation_comparison_deltas_*.csv",
         help="Glob for candidate scenario delta CSVs when --delta-report is omitted or supplemented.",
+    )
+    monthly_failure_drilldown_parser.add_argument(
+        "--attribution-dir",
+        default="data/reports",
+        help=(
+            "Directory containing <scenario>_decision_attribution.csv and "
+            "<scenario>_symbol_attribution.csv reports."
+        ),
     )
     monthly_failure_drilldown_parser.add_argument(
         "--output",
@@ -1311,10 +1325,20 @@ def main() -> int:
         delta_rows: list[dict[str, str]] = []
         for path in unique_delta_paths:
             delta_rows.extend(_read_csv_dicts(path))
-        rows = analyze_monthly_validation_failure_drilldown(baseline_rows, pattern_rows, delta_rows)
+        decision_attribution_rows, symbol_attribution_rows, attribution_report_count = (
+            _read_validation_attribution_reports(Path(args.attribution_dir), pattern_rows)
+        )
+        rows = analyze_monthly_validation_failure_drilldown(
+            baseline_rows,
+            pattern_rows,
+            delta_rows,
+            decision_attribution_rows=decision_attribution_rows,
+            symbol_attribution_rows=symbol_attribution_rows,
+        )
         saved = save_monthly_validation_failure_drilldown(rows, args.output)
         print(f"failure_drilldown_report  {args.output} rows={saved}")
         print(f"delta_reports  {len(unique_delta_paths)}")
+        print(f"attribution_reports  {attribution_report_count}")
         if rows:
             print(f"top_drilldown  {rows[0]['scenario']} {rows[0]['likely_root_cause']}")
         else:
@@ -2291,12 +2315,14 @@ def main() -> int:
         )
         monthly_rows = analyze_monthly_drawdown_attribution(result)
         symbol_rows = analyze_symbol_realized_pnl_attribution(result)
+        decision_rows = analyze_monthly_decision_attribution(result)
         save_monthly_attribution_rows(monthly_rows, args.monthly_output)
         save_monthly_attribution_rows(
             symbol_rows,
             args.symbol_output,
             columns=SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS,
         )
+        save_monthly_decision_attribution(decision_rows, args.decision_output)
 
         def row_float(row: dict[str, str], key: str) -> float:
             try:
@@ -2314,6 +2340,7 @@ def main() -> int:
         print(f"max_drawdown_%  {result.max_drawdown_pct:.2f}")
         print(f"monthly_rows  {len(monthly_rows)}")
         print(f"symbol_rows  {len(symbol_rows)}")
+        print(f"decision_rows  {len(decision_rows)}")
         if worst_month:
             print(
                 "worst_month  "
@@ -2327,6 +2354,7 @@ def main() -> int:
             )
         print(f"monthly_attribution_report  {args.monthly_output}")
         print(f"symbol_attribution_report  {args.symbol_output}")
+        print(f"decision_attribution_report  {args.decision_output}")
         return 0
 
     if args.command == "monthly-validate":
@@ -2457,6 +2485,7 @@ def main() -> int:
                     "train_end": "",
                     "selected_preset": "",
                     "train_excess_return_pct": "",
+                    "train_candidate_scores": "",
                     "start": args.start,
                     "end": args.end,
                     "slippage_multiplier": 1.0,
@@ -2914,6 +2943,38 @@ def _load_monthly_symbol_candles(data_dir: str, exclude_symbols_path: Path | str
 def _read_csv_dicts(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
+
+
+def _read_validation_attribution_reports(
+    attribution_dir: Path,
+    pattern_rows: list[dict[str, str]],
+) -> tuple[list[dict[str, str]], list[dict[str, str]], int]:
+    decision_rows: list[dict[str, str]] = []
+    symbol_rows: list[dict[str, str]] = []
+    report_count = 0
+    scenarios = sorted(
+        {
+            str(row.get("scenario", "")).strip()
+            for row in pattern_rows
+            if str(row.get("scenario", "")).strip()
+        }
+    )
+    if not attribution_dir.exists():
+        return decision_rows, symbol_rows, report_count
+    for scenario in scenarios:
+        decision_path = attribution_dir / f"{scenario}_decision_attribution.csv"
+        if decision_path.exists():
+            report_count += 1
+            for row in _read_csv_dicts(decision_path):
+                row.setdefault("scenario", scenario)
+                decision_rows.append(row)
+        symbol_path = attribution_dir / f"{scenario}_symbol_attribution.csv"
+        if symbol_path.exists():
+            report_count += 1
+            for row in _read_csv_dicts(symbol_path):
+                row.setdefault("scenario", scenario)
+                symbol_rows.append(row)
+    return decision_rows, symbol_rows, report_count
 
 
 def _load_excluded_symbols(path: str | None) -> set[str]:

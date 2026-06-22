@@ -62,7 +62,9 @@ def evaluate_readiness(
     if deployment_gate_path is not None:
         checks.append(_deployment_gate_check(Path(deployment_gate_path)))
     if validation_scenarios_path is not None:
-        checks.append(_validation_scenario_check(Path(validation_scenarios_path)))
+        validation_path = Path(validation_scenarios_path)
+        checks.append(_validation_scenario_check(validation_path))
+        checks.append(_walk_forward_train_candidate_coverage_check(validation_path))
     if validation_failures_path is not None:
         checks.append(_validation_failure_actions_check(Path(validation_failures_path)))
     if validation_remediation_path is not None:
@@ -315,6 +317,20 @@ def recommend_readiness_actions(checks: list[ReadinessCheck]) -> list[ReadinessA
                 "P1",
                 "Reduce performance concentration risk",
                 "Review whether returns depend on one month or a few symbols before increasing live size.",
+            )
+        )
+
+    train_candidate_checks = [
+        check
+        for check in checks
+        if check.name == "walk_forward_train_candidate_coverage" and check.status in {"BLOCK", "WARN"}
+    ]
+    if train_candidate_checks:
+        actions.append(
+            ReadinessAction(
+                "P1",
+                "Expand walk-forward train candidates",
+                train_candidate_checks[0].detail,
             )
         )
 
@@ -648,6 +664,65 @@ def _validation_scenario_check(path: Path) -> ReadinessCheck:
             f"{len(failed)} failed: {preview}{suffix}; reasons: {reason_summary}{bias_summary}",
         )
     return ReadinessCheck("validation_scenarios", "PASS", f"{len(rows)} scenarios passed")
+
+
+def _walk_forward_train_candidate_coverage_check(path: Path) -> ReadinessCheck:
+    if not path.exists():
+        return ReadinessCheck("walk_forward_train_candidate_coverage", "WARN", f"missing: {path}")
+    rows = _read_csv_rows(path)
+    walk_rows = [
+        row
+        for row in rows
+        if str(row.get("category", "")).strip() == "walk_forward"
+        or str(row.get("name", "")).strip().startswith("walk_forward")
+    ]
+    if not walk_rows:
+        return ReadinessCheck("walk_forward_train_candidate_coverage", "PASS", "no walk-forward scenarios")
+    counts = [
+        (
+            str(row.get("name", "unknown")).strip() or "unknown",
+            _train_candidate_score_count(str(row.get("train_candidate_scores", ""))),
+            _train_candidate_unique_score_count(str(row.get("train_candidate_scores", ""))),
+        )
+        for row in walk_rows
+    ]
+    under_covered = [(name, count, unique_count) for name, count, unique_count in counts if count < 2]
+    low_diversity = [
+        (name, count, unique_count)
+        for name, count, unique_count in counts
+        if count >= 2 and unique_count < 2
+    ]
+    if under_covered or low_diversity:
+        problem_rows = under_covered + low_diversity
+        preview = ", ".join(f"{name}:{count}/{unique_count}" for name, count, unique_count in problem_rows[:5])
+        suffix = f" (+{len(problem_rows) - 5} more)" if len(problem_rows) > 5 else ""
+        return ReadinessCheck(
+            "walk_forward_train_candidate_coverage",
+            "WARN",
+            f"under_covered={len(under_covered)}; low_diversity={len(low_diversity)}; "
+            f"min_candidates={min(count for _, count, _ in counts)}; "
+            f"min_unique_scores={min(unique_count for _, _, unique_count in counts)}; {preview}{suffix}",
+        )
+    return ReadinessCheck(
+        "walk_forward_train_candidate_coverage",
+        "PASS",
+        f"{len(walk_rows)} walk-forward scenarios have at least 2 train candidates",
+    )
+
+
+def _train_candidate_score_count(value: str) -> int:
+    return len([part for part in value.split(";") if part.strip()])
+
+
+def _train_candidate_unique_score_count(value: str) -> int:
+    signatures: set[str] = set()
+    for part in value.split(";"):
+        text = part.strip()
+        if not text:
+            continue
+        _, _, score_signature = text.partition(":")
+        signatures.add(score_signature.strip() or text)
+    return len(signatures)
 
 
 def _validation_failure_actions_check(path: Path) -> ReadinessCheck:
