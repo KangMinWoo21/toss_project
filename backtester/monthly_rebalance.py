@@ -432,6 +432,7 @@ VALIDATION_FAILURE_DRILLDOWN_COLUMNS = [
     "train_candidate_scores",
     "train_candidate_decision_profiles",
     "train_candidate_direct_scores",
+    "train_direct_diagnostics",
     "start",
     "end",
     "baseline_excess_return_pct",
@@ -532,6 +533,7 @@ MONTHLY_VALIDATION_COLUMNS = [
     "train_candidate_scores",
     "train_candidate_decision_profiles",
     "train_candidate_direct_scores",
+    "train_direct_diagnostics",
     "start",
     "end",
     "slippage_multiplier",
@@ -2047,6 +2049,12 @@ def run_monthly_walk_forward_validation(
     rows: list[dict[str, Any]] = []
     for case in cases:
         direct_train_rows = _monthly_walk_forward_direct_train_rows(symbol_candles, case, config)
+        direct_train_diagnostics = _monthly_walk_forward_direct_train_diagnostics(
+            symbol_candles,
+            case,
+            config,
+            direct_train_rows=direct_train_rows,
+        )
         train_rows: list[dict[str, Any]] = []
         train_results: dict[str, MonthlyBacktestResult] = {}
         for preset in config.presets:
@@ -2119,6 +2127,7 @@ def run_monthly_walk_forward_validation(
                 "train_candidate_scores": _format_monthly_validation_train_scores(train_rows),
                 "train_candidate_decision_profiles": _format_monthly_validation_train_decision_profiles(train_rows),
                 "train_candidate_direct_scores": _format_monthly_validation_train_scores(direct_train_rows),
+                "train_direct_diagnostics": direct_train_diagnostics,
                 "start": case.start,
                 "end": case.end,
                 "slippage_multiplier": case.slippage_multiplier,
@@ -2200,6 +2209,126 @@ def _monthly_walk_forward_direct_train_rows(
         start_grace_days=config.start_grace_days,
         train_stability_years=config.train_stability_years,
     )
+
+
+def _monthly_walk_forward_direct_train_diagnostics(
+    symbol_candles: dict[str, list[Candle]],
+    case: MonthlyValidationCase,
+    config: MonthlyRebalanceConfig,
+    *,
+    direct_train_rows: list[dict[str, Any]],
+) -> str:
+    if not case.train_start or not case.train_end:
+        return ""
+    period_days = _inclusive_date_days(case.train_start, case.train_end)
+    raw_symbol_count = len(symbol_candles)
+    try:
+        universe_candles = filter_symbol_candles_by_universe(
+            symbol_candles,
+            config.point_in_time_universe,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+        )
+        point_in_time_candles = select_point_in_time_universe(
+            universe_candles,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+            min_reference_price=config.point_in_time_min_reference_price,
+            max_trailing_return_pct=config.point_in_time_max_trailing_return_pct,
+            trailing_return_days=config.point_in_time_trailing_return_days,
+        )
+        decision_candles = (
+            select_liquid_universe(
+                point_in_time_candles,
+                signal_date=case.train_end,
+                top_n=config.point_in_time_liquidity_top_n,
+                window_days=config.point_in_time_liquidity_window_days,
+            )
+            if config.point_in_time_liquidity_top_n > 0
+            else point_in_time_candles
+        )
+        train_candles = slice_asof_symbol_candles(
+            decision_candles,
+            start=case.train_start,
+            end=case.train_end,
+            min_rows=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+        )
+    except ValueError as exc:
+        return "; ".join(
+            [
+                f"period_days={period_days}",
+                f"raw_symbols={raw_symbol_count}",
+                f"filter_error={_diagnostic_token(str(exc))}",
+            ]
+        )
+
+    universe_count = len(universe_candles)
+    pit_count = len(point_in_time_candles)
+    liquid_count = len(decision_candles)
+    train_count = len(train_candles)
+    returns = [value for _, value in _period_symbol_returns(train_candles, start=case.train_start, end=case.train_end)]
+    average_return = mean(returns) if returns else None
+    median_return = median(returns) if returns else None
+    direct_excess_values = [
+        value
+        for value in (_float_or_none(row.get("excess_return_pct")) for row in direct_train_rows)
+        if value is not None
+    ]
+    best_direct_excess = max(direct_excess_values) if direct_excess_values else None
+    best_direct_row = max(direct_train_rows, key=_direct_train_row_excess_sort_value, default={})
+    all_direct_nonpositive = bool(direct_excess_values) and all(value <= 0.0 for value in direct_excess_values)
+
+    parts = [
+        f"period_days={period_days}",
+        f"raw_symbols={raw_symbol_count}",
+        f"universe_symbols={universe_count}",
+        f"pit_symbols={pit_count}",
+        f"liquid_symbols={liquid_count}",
+        f"train_symbols={train_count}",
+        f"liquidity_top_n={config.point_in_time_liquidity_top_n}",
+        f"liquidity_window_days={config.point_in_time_liquidity_window_days}",
+        f"universe_removed={max(0, raw_symbol_count - universe_count)}",
+        f"pit_filter_removed={max(0, universe_count - pit_count)}",
+        f"liquidity_removed={max(0, pit_count - liquid_count)}",
+        f"train_coverage_removed={max(0, liquid_count - train_count)}",
+        f"train_avg_symbol_return_pct={_format_optional_float(average_return)}",
+        f"train_median_symbol_return_pct={_format_optional_float(median_return)}",
+        f"market_regime={_classify_train_market_regime(average_return, median_return)}",
+        f"direct_candidate_count={len(direct_train_rows)}",
+        f"best_direct_total_return_pct={_format_optional_float(_float_or_none(best_direct_row.get('total_return_pct')))}",
+        f"best_direct_buy_hold_return_pct={_format_optional_float(_float_or_none(best_direct_row.get('buy_hold_return_pct')))}",
+        f"best_direct_excess_pct={_format_optional_float(best_direct_excess)}",
+        f"all_direct_excess_nonpositive={str(all_direct_nonpositive).lower()}",
+    ]
+    return "; ".join(parts)
+
+
+def _inclusive_date_days(start: str, end: str) -> int:
+    try:
+        return (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
+    except ValueError:
+        return 0
+
+
+def _classify_train_market_regime(average_return: float | None, median_return: float | None) -> str:
+    if average_return is None or median_return is None:
+        return "unknown"
+    if median_return <= -5.0 or average_return <= -10.0:
+        return "weak"
+    if median_return < 5.0:
+        return "sideways"
+    return "risk_on"
+
+
+def _direct_train_row_excess_sort_value(row: dict[str, Any]) -> float:
+    value = _float_or_none(row.get("excess_return_pct"))
+    return value if value is not None else float("-inf")
+
+
+def _diagnostic_token(value: str) -> str:
+    token = "_".join(part for part in value.lower().replace(":", " ").replace(";", " ").split() if part)
+    return token or "unknown"
 
 
 def _monthly_validation_train_row(preset: str, result: MonthlyBacktestResult) -> dict[str, Any]:
@@ -3380,6 +3509,7 @@ def analyze_monthly_validation_failure_drilldown(
                 "train_candidate_scores": baseline.get("train_candidate_scores", ""),
                 "train_candidate_decision_profiles": baseline.get("train_candidate_decision_profiles", ""),
                 "train_candidate_direct_scores": baseline.get("train_candidate_direct_scores", ""),
+                "train_direct_diagnostics": baseline.get("train_direct_diagnostics", ""),
                 "start": baseline.get("start", ""),
                 "end": baseline.get("end", ""),
                 "baseline_excess_return_pct": baseline.get("excess_return_pct", ""),

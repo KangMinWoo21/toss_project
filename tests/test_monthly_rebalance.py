@@ -1404,6 +1404,10 @@ class MonthlyRebalanceTests(unittest.TestCase):
                     "balanced:excess=-4,drawdown=-8,trades=3,score=-12; "
                     "aggressive:excess=-2,drawdown=-9,trades=2,score=-11"
                 ),
+                "train_direct_diagnostics": (
+                    "period_days=182; market_regime=weak; universe_symbols=125; "
+                    "liquid_symbols=80; pit_filter_removed=30"
+                ),
                 "start": "2024-07-01",
                 "end": "2024-12-31",
             },
@@ -1434,6 +1438,8 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(rows[0]["likely_root_cause"], "direct_alpha_ineligible")
         self.assertEqual(rows[0]["evidence_gaps"], "")
+        self.assertIn("market_regime=weak", rows[0]["train_direct_diagnostics"])
+        self.assertIn("pit_filter_removed=30", rows[0]["train_direct_diagnostics"])
         self.assertIn("direct alpha train candidates", rows[0]["next_action"])
 
     def test_save_monthly_validation_failure_drilldown_writes_csv(self):
@@ -1445,6 +1451,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
                         "scenario": "regime_sideways",
                         "pattern_status": "PERSISTENT_BLOCK",
                         "likely_root_cause": "weak_window_return_drag",
+                        "train_direct_diagnostics": "market_regime=weak",
                         "evidence_gaps": "selected_symbols; exposure",
                     }
                 ],
@@ -1454,6 +1461,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(saved, 1)
         self.assertIn("likely_root_cause", text.splitlines()[0])
+        self.assertIn("train_direct_diagnostics", text.splitlines()[0])
         self.assertIn("regime_sideways", text)
         self.assertIn("weak_window_return_drag", text)
 
@@ -2058,6 +2066,61 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("balanced:excess=", direct_scores)
         self.assertIn("aggressive:excess=", direct_scores)
         self.assertIn("trades=", direct_scores)
+
+    def test_run_monthly_walk_forward_validation_records_direct_train_diagnostics(self):
+        def fake_runner(symbol_candles, **kwargs):
+            return _monthly_result(
+                excess_return_pct=-2.0 if kwargs["end"] == "2024-03-31" else 3.0,
+                max_drawdown_pct=-8.0,
+                trade_count=2,
+            )
+
+        rows = run_monthly_walk_forward_validation(
+            {
+                "AAA": _trend_candles_with_volume("2024-01-01", 120, close=100, step=-0.2, volume=4_000),
+                "BBB": _trend_candles_with_volume("2024-01-01", 120, close=90, step=0.1, volume=2_000),
+                "CCC": _trend_candles_with_volume("2024-01-01", 120, close=10, step=0.01, volume=3_000),
+                "DDD": _trend_candles_with_volume("2024-01-01", 120, close=80, step=0.1, volume=5_000),
+            },
+            cases=[
+                MonthlyValidationCase(
+                    name="wf_001",
+                    category="walk_forward",
+                    train_start="2024-01-01",
+                    train_end="2024-03-31",
+                    start="2024-04-01",
+                    end="2024-06-30",
+                )
+            ],
+            config=MonthlyRebalanceConfig(
+                presets=("balanced",),
+                min_rows_per_window=20,
+                start_grace_days=0,
+                point_in_time_universe={"2024-03-31": {"AAA", "BBB", "CCC"}},
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=50,
+                point_in_time_liquidity_top_n=1,
+                point_in_time_liquidity_window_days=20,
+                train_stability_years=1,
+            ),
+            backtest_runner=fake_runner,
+        )
+
+        diagnostics = rows[0]["train_direct_diagnostics"]
+        self.assertIn("period_days=91", diagnostics)
+        self.assertIn("raw_symbols=4", diagnostics)
+        self.assertIn("universe_symbols=3", diagnostics)
+        self.assertIn("pit_symbols=2", diagnostics)
+        self.assertIn("liquid_symbols=1", diagnostics)
+        self.assertIn("train_symbols=1", diagnostics)
+        self.assertIn("liquidity_top_n=1", diagnostics)
+        self.assertIn("universe_removed=1", diagnostics)
+        self.assertIn("pit_filter_removed=1", diagnostics)
+        self.assertIn("liquidity_removed=1", diagnostics)
+        self.assertIn("market_regime=weak", diagnostics)
+        self.assertIn("direct_candidate_count=", diagnostics)
+        self.assertIn("best_direct_total_return_pct=", diagnostics)
+        self.assertIn("best_direct_buy_hold_return_pct=", diagnostics)
 
     def test_generate_monthly_validation_cases_includes_duration_regime_and_stress(self):
         cases = generate_monthly_validation_cases(
