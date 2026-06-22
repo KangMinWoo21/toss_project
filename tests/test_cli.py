@@ -1459,8 +1459,9 @@ class CliTests(unittest.TestCase):
                 encoding="utf-8",
             )
             path.write_text(
-                "candidate_label,scenario,date,equity_delta,rolling_peak_delta,drawdown_delta_pct,diagnostic\n"
-                "neutral_breadth_proxy_cap_50,full_period,2025-04-07,154349.6019,387782.9119,-1.1549,"
+                "candidate_label,scenario,date,equity_delta,candidate_drawdown_pct,rolling_peak_delta,"
+                "drawdown_delta_pct,diagnostic\n"
+                "neutral_breadth_proxy_cap_50,full_period,2025-04-07,154349.6019,-25.1331,387782.9119,-1.1549,"
                 "equity_improved;drawdown_regression;higher_turnover\n",
                 encoding="utf-8",
             )
@@ -1495,6 +1496,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["drawdown_buffer_regression_count"], "2")
         self.assertEqual(rows[0]["path_equity_improved_days"], "1")
         self.assertEqual(rows[0]["path_higher_turnover_days"], "1")
+        self.assertEqual(rows[0]["path_acceptance_decision"], "REJECT")
+        self.assertEqual(rows[0]["path_equity_improved_drawdown_breach_days"], "1")
+        self.assertIn("higher_rolling_peak_drawdown_buffer_loss", rows[0]["path_rejection_reasons"])
 
     def test_production_check_includes_validation_candidate_decision_report(self):
         with TemporaryDirectory() as temp_dir:

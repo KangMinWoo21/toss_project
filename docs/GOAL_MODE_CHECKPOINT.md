@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 20:58 KST
+Last updated: 2026-06-22 21:04 KST
 
 ## Objective
 
@@ -36,6 +36,73 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a path-aware candidate acceptance rule to the validation candidate summary report:
+
+- Extended `build_monthly_validation_candidate_summary` with report-only path acceptance columns.
+- Extended `python -m backtester monthly-candidate-summary` with:
+  - `--drawdown-threshold-pct` (default `-25`).
+- New summary fields include:
+  - `path_drawdown_threshold_pct`,
+  - `path_acceptance_decision`,
+  - `path_rejection_reasons`,
+  - `path_candidate_drawdown_breach_days`,
+  - `path_equity_improved_drawdown_breach_days`,
+  - `path_peak_buffer_loss_days`.
+- The rule rejects a candidate path when:
+  - `equity_delta > 0`,
+  - `candidate_drawdown_pct <= -25`,
+  - `rolling_peak_delta > 0`,
+  - and `drawdown_delta_pct < 0`.
+- This is diagnostic-only and paper-only. It does not change strategy behavior, deployment gates, execution planning, or any Toss/API behavior.
+
+Regenerated report:
+
+- `data/reports/monthly_validation_candidate_summary.csv`
+
+Current path-aware summary for `neutral_breadth_proxy_cap_50`:
+
+- `decision=REJECT`.
+- `path_acceptance_decision=REJECT`.
+- `path_rejection_reasons=higher_rolling_peak_drawdown_buffer_loss`.
+- `path_candidate_drawdown_breach_days=2`.
+- `path_equity_improved_drawdown_breach_days=2`.
+- `path_peak_buffer_loss_days=2`.
+- `path_drawdown_threshold_pct=-25`.
+- `evaluation_score=-500`.
+- Summary now includes:
+  - `path_acceptance=REJECT`.
+
+Interpretation:
+
+- The rejected candidate now has an explicit path-level acceptance failure, not just a broad candidate decision failure.
+- This confirms the prior diagnosis: the candidate improves absolute path equity but loses hard-gate drawdown buffer because the rolling peak is higher.
+- Keep `neutral_breadth_proxy_cap_50` rejected.
+- Do not broaden exposure caps from this evidence.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `424` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_build_monthly_validation_candidate_summary_combines_delta_and_path_evidence tests.test_cli.CliTests.test_monthly_candidate_summary_cli_combines_deltas_and_path_comparison`: failed because `path_acceptance_decision` did not exist.
+- Targeted GREEN:
+  - same command: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `186` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `424` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=308.24` observed).
+
+Next recommended action:
+
+- Continue direct-alpha stability diagnostics for `walk_forward_003`/`walk_forward_004`.
+- Specifically, decompose direct candidate positive-ratio failures by subwindow so `low_positive_ratio` is attributable to dated market periods before loosening train gates.
+
+Previous loop:
 
 Added a paper-only validation candidate summary/ranking report that combines candidate decision, scenario delta, and path-comparison evidence:
 

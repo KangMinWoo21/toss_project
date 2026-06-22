@@ -1758,6 +1758,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
                     "scenario": "full_period",
                     "date": "2025-04-07",
                     "equity_delta": "154349.6019",
+                    "candidate_drawdown_pct": "-25.1331",
                     "rolling_peak_delta": "387782.9119",
                     "drawdown_delta_pct": "-1.1549",
                     "diagnostic": "equity_improved;drawdown_regression;higher_turnover",
@@ -1767,6 +1768,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
                     "scenario": "stress_slippage_x3",
                     "date": "2025-04-07",
                     "equity_delta": "140457.5058",
+                    "candidate_drawdown_pct": "-25.0493",
                     "rolling_peak_delta": "359575.5263",
                     "drawdown_delta_pct": "-1.1128",
                     "diagnostic": "equity_improved;drawdown_regression",
@@ -1790,9 +1792,15 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(row["path_min_equity_delta"], "140457.5058")
         self.assertEqual(row["path_worst_drawdown_delta_pct"], "-1.1549")
         self.assertEqual(row["path_max_rolling_peak_delta"], "387782.9119")
+        self.assertEqual(row["path_acceptance_decision"], "REJECT")
+        self.assertEqual(row["path_candidate_drawdown_breach_days"], "2")
+        self.assertEqual(row["path_equity_improved_drawdown_breach_days"], "2")
+        self.assertEqual(row["path_peak_buffer_loss_days"], "2")
+        self.assertIn("higher_rolling_peak_drawdown_buffer_loss", row["path_rejection_reasons"])
         self.assertIn("resolved=1", row["summary"])
         self.assertIn("new_failures=2", row["summary"])
         self.assertIn("drawdown_buffer_regressions=2", row["summary"])
+        self.assertIn("path_acceptance=REJECT", row["summary"])
 
     def test_save_monthly_validation_candidate_summary_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

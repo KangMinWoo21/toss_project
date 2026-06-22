@@ -1012,6 +1012,7 @@ def main() -> int:
         default=[],
         help="Optional path comparison CSV. Can be repeated.",
     )
+    monthly_candidate_summary_parser.add_argument("--drawdown-threshold-pct", type=float, default=-25.0)
     monthly_candidate_summary_parser.add_argument(
         "--output",
         default="data/reports/monthly_validation_candidate_summary.csv",
@@ -1473,6 +1474,7 @@ def main() -> int:
             decision_rows,
             delta_rows,
             path_comparison_rows=path_rows,
+            drawdown_threshold_pct=args.drawdown_threshold_pct,
         )
         saved = save_monthly_validation_candidate_summary(rows, args.output)
         top_row = rows[0] if rows else {}

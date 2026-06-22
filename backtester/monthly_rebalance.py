@@ -428,6 +428,12 @@ VALIDATION_CANDIDATE_SUMMARY_COLUMNS = [
     "path_min_equity_delta",
     "path_worst_drawdown_delta_pct",
     "path_max_rolling_peak_delta",
+    "path_drawdown_threshold_pct",
+    "path_acceptance_decision",
+    "path_rejection_reasons",
+    "path_candidate_drawdown_breach_days",
+    "path_equity_improved_drawdown_breach_days",
+    "path_peak_buffer_loss_days",
     "evaluation_score",
     "resolved_failure_names",
     "new_failure_names",
@@ -5522,6 +5528,8 @@ def build_monthly_validation_candidate_summary(
     decision_rows: list[dict[str, Any]],
     delta_rows: list[dict[str, Any]],
     path_comparison_rows: list[dict[str, Any]] | None = None,
+    *,
+    drawdown_threshold_pct: float = -25.0,
 ) -> list[dict[str, Any]]:
     path_rows = path_comparison_rows or []
     labels = _candidate_summary_labels(decision_rows, delta_rows, path_rows)
@@ -5574,6 +5582,39 @@ def build_monthly_validation_candidate_summary(
         path_min_equity_delta = _min_numeric(row.get("equity_delta") for row in candidate_paths)
         path_worst_drawdown_delta = _min_numeric(row.get("drawdown_delta_pct") for row in candidate_paths)
         path_max_rolling_peak_delta = _max_numeric(row.get("rolling_peak_delta") for row in candidate_paths)
+        path_candidate_drawdown_breach_days = 0
+        path_equity_improved_drawdown_breach_days = 0
+        path_peak_buffer_loss_days = 0
+        for row in candidate_paths:
+            candidate_drawdown = _float_or_none(row.get("candidate_drawdown_pct"))
+            equity_delta = _float_or_none(row.get("equity_delta"))
+            rolling_peak_delta = _float_or_none(row.get("rolling_peak_delta"))
+            drawdown_delta = _float_or_none(row.get("drawdown_delta_pct"))
+            if candidate_drawdown is not None and candidate_drawdown <= drawdown_threshold_pct:
+                path_candidate_drawdown_breach_days += 1
+                if equity_delta is not None and equity_delta > 0:
+                    path_equity_improved_drawdown_breach_days += 1
+                    if (
+                        rolling_peak_delta is not None
+                        and rolling_peak_delta > 0
+                        and drawdown_delta is not None
+                        and drawdown_delta < 0
+                    ):
+                        path_peak_buffer_loss_days += 1
+        path_rejection_reasons: list[str] = []
+        if path_peak_buffer_loss_days:
+            path_acceptance_decision = "REJECT"
+            path_rejection_reasons.append("higher_rolling_peak_drawdown_buffer_loss")
+        elif path_equity_improved_drawdown_breach_days:
+            path_acceptance_decision = "REJECT"
+            path_rejection_reasons.append("equity_improved_candidate_crossed_drawdown_threshold")
+        elif path_candidate_drawdown_breach_days:
+            path_acceptance_decision = "REVIEW"
+            path_rejection_reasons.append("candidate_crossed_drawdown_threshold")
+        elif candidate_paths:
+            path_acceptance_decision = "PASS"
+        else:
+            path_acceptance_decision = "NO_PATH_DATA"
         evaluation_score = (
             resolved_count * 100
             - new_failure_count * 200
@@ -5582,6 +5623,7 @@ def build_monthly_validation_candidate_summary(
             - path_drawdown_regression_days
             - path_symbol_rotation_days * 5
             - path_higher_turnover_days
+            - path_peak_buffer_loss_days * 5
         )
         rows.append(
             {
@@ -5610,6 +5652,12 @@ def build_monthly_validation_candidate_summary(
                 "path_min_equity_delta": _format_optional_float(path_min_equity_delta),
                 "path_worst_drawdown_delta_pct": _format_optional_float(path_worst_drawdown_delta),
                 "path_max_rolling_peak_delta": _format_optional_float(path_max_rolling_peak_delta),
+                "path_drawdown_threshold_pct": _format_optional_float(drawdown_threshold_pct),
+                "path_acceptance_decision": path_acceptance_decision,
+                "path_rejection_reasons": "; ".join(path_rejection_reasons),
+                "path_candidate_drawdown_breach_days": str(path_candidate_drawdown_breach_days),
+                "path_equity_improved_drawdown_breach_days": str(path_equity_improved_drawdown_breach_days),
+                "path_peak_buffer_loss_days": str(path_peak_buffer_loss_days),
                 "evaluation_score": str(evaluation_score),
                 "resolved_failure_names": str(
                     decision.get("resolved_failure_names", "")
@@ -5626,6 +5674,7 @@ def build_monthly_validation_candidate_summary(
                 "summary": (
                     f"resolved={resolved_count}; new_failures={new_failure_count}; "
                     f"drawdown_buffer_regressions={drawdown_buffer_count}; "
+                    f"path_acceptance={path_acceptance_decision}; "
                     f"path_equity_regression_days={path_equity_regression_days}; "
                     f"path_drawdown_regression_days={path_drawdown_regression_days}; "
                     f"path_higher_turnover_days={path_higher_turnover_days}"
