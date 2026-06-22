@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 18:20 KST
+Last updated: 2026-06-22 18:35 KST
 
 ## Objective
 
@@ -36,6 +36,35 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Created and refreshed GPT handoff documentation for the current working tree:
+
+- Updated `docs/GPT_PROJECT_CONTEXT.md`.
+  - Compact GPT-ready handoff with safety rules, current verification status, failed required scenarios, readiness/health summaries, latest candidate decision, current git state, repository map, core commands, and next recommended task.
+- Created `docs/GPT_PROJECT_SNAPSHOT_FULL.md`.
+  - Source-inclusive GPT snapshot for handoff use.
+  - Includes non-secret source/docs/test/script/sample files and current report summaries.
+  - Intentionally excludes real `.env` values, `.git`, caches, ZIP archives, raw downloaded market data, and large/generated CSV datasets.
+- This loop is documentation-only.
+  - No trading behavior changed.
+  - No real order execution was added.
+  - No Toss API calls were added to tests.
+  - No `.env` secret values were printed or included.
+
+Verification in this loop:
+
+- `python -m unittest discover -s tests`: PASS, `411` tests.
+- `python -m compileall -q backtester`: PASS.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=305.64` observed).
+
+Next recommended action:
+
+- Use `docs/GPT_PROJECT_CONTEXT.md` for compact GPT context and `docs/GPT_PROJECT_SNAPSHOT_FULL.md` when a source-inclusive snapshot is needed.
+- Continue strategy diagnostics without adopting `neutral_breadth_proxy_cap_50`.
+- Compare baseline vs candidate decision/exposure/symbol differences around the March-April 2025 drawdown regression before testing any narrower paper-only guard.
+
+Previous loop:
 
 Added a paper-only monthly attribution comparison report to explain the rejected `neutral_breadth_proxy_cap_50` drawdown regressions:
 
