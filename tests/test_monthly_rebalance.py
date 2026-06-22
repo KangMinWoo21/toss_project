@@ -22,6 +22,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
+    analyze_monthly_direct_alpha_path_drift,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_path_attribution,
     analyze_monthly_proxy_decision_diagnostics,
@@ -92,6 +93,7 @@ from backtester.monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
+    save_monthly_direct_alpha_path_drift,
     save_monthly_direct_alpha_selection,
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
@@ -2990,6 +2992,81 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(saved, 1)
         self.assertIn("scenario,preset,rebalance_date", text.splitlines()[0])
+        self.assertIn("walk_forward_unit", text)
+
+    def test_analyze_monthly_direct_alpha_path_drift_decomposes_symbol_contributions(self):
+        symbol_candles = {
+            "AAA": _trend_candles_with_volume("2024-01-01", 260, close=100, step=1.2, volume=10_000),
+            "BBB": _trend_candles_with_volume("2024-01-01", 260, close=100, step=1.0, volume=9_000),
+            "CCC": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.8, volume=8_000),
+            "DDD": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.6, volume=7_000),
+            "EEE": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.4, volume=6_000),
+            "FFF": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.2, volume=5_000),
+        }
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2024-09-16",
+            start="2024-09-17",
+            end="2024-10-31",
+        )
+
+        rows = analyze_monthly_direct_alpha_path_drift(
+            symbol_candles,
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                presets=("balanced",),
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=50,
+                point_in_time_liquidity_top_n=6,
+                point_in_time_liquidity_window_days=20,
+                min_rows_per_window=20,
+                start_grace_days=0,
+                train_stability_years=1,
+            ),
+        )
+
+        self.assertTrue(rows)
+        active_dates = {row["rebalance_date"] for row in rows}
+        self.assertTrue(active_dates)
+        first = rows[0]
+        self.assertEqual(first["scenario"], "walk_forward_unit")
+        self.assertEqual(first["preset"], "balanced")
+        self.assertIn("symbol", first)
+        self.assertIn(first["path_role"], {"held_and_snapshot", "held_not_snapshot", "snapshot_missing_from_holdings", "benchmark_only"})
+        self.assertIn("actual_weight", first)
+        self.assertIn("benchmark_weight", first)
+        self.assertIn("symbol_train_return_pct", first)
+        self.assertIn("actual_contribution_pct", first)
+        self.assertIn("benchmark_contribution_pct", first)
+        self.assertIn("contribution_delta_pct", first)
+        self.assertIn("first_trade_delay_days", first)
+        self.assertIn("days_since_previous_active_rebalance", first)
+        self.assertTrue(any(float(row["benchmark_weight"]) > 0 for row in rows))
+        self.assertTrue(any(row["path_gap_reason"] for row in rows))
+
+    def test_save_monthly_direct_alpha_path_drift_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "direct_alpha_path_drift.csv"
+            saved = save_monthly_direct_alpha_path_drift(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "preset": "balanced",
+                        "rebalance_date": "2024-07-01",
+                        "symbol": "AAA",
+                        "path_role": "held_and_snapshot",
+                        "contribution_delta_pct": "1.23",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,preset,rebalance_date", text.splitlines()[0])
+        self.assertIn("contribution_delta_pct", text.splitlines()[0])
         self.assertIn("walk_forward_unit", text)
 
     def test_analyze_monthly_train_decision_path_explains_fallback_choices(self):

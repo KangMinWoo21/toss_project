@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 21:33 KST
+Last updated: 2026-06-22 21:42 KST
 
 ## Objective
 
@@ -36,6 +36,119 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only direct-alpha path-drift contribution drilldown:
+
+- Added `analyze_monthly_direct_alpha_path_drift`.
+- Added `save_monthly_direct_alpha_path_drift`.
+- Extended `python -m backtester monthly-direct-alpha-diagnostics` with:
+  - `--path-drift-output`
+  - default: `data/reports/monthly_direct_alpha_path_drift_diagnostics.csv`
+- The new report expands each active direct-alpha rebalance row into per-symbol rows and records:
+  - selected snapshot membership,
+  - actual holding membership,
+  - benchmark membership and weight,
+  - symbol train return,
+  - actual contribution,
+  - selected-snapshot contribution,
+  - benchmark contribution,
+  - actual-vs-benchmark contribution delta,
+  - actual-vs-selected-snapshot contribution delta,
+  - first-trade delay,
+  - days since previous active rebalance.
+- This is diagnostic-only and paper-only.
+- Existing strategy behavior, train gates, validation gates, execution planning, and Toss/API behavior are unchanged.
+
+Regenerated reports:
+
+- `data/reports/monthly_direct_alpha_selection_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_path_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_path_drift_diagnostics.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Current path-drift findings:
+
+- `monthly_direct_alpha_path_drift_diagnostics.csv` has `300` rows.
+- Active rebalance rows:
+  - `walk_forward_003`: `2025-06-10`.
+  - `walk_forward_004`: `2025-07-11`, `2025-09-08`.
+- Role counts per active row:
+  - `held_and_snapshot`: `2`.
+  - `held_not_snapshot`: `3`.
+  - `snapshot_missing_from_holdings`: `3`.
+  - `benchmark_only`: `92`.
+- Contribution summary:
+  - `walk_forward_003`, `2025-06-10`:
+    - `held_and_snapshot` contribution delta sum: `+91.1467`.
+    - `held_not_snapshot` contribution delta sum: `+124.4003`.
+    - `snapshot_missing_from_holdings` contribution delta sum: `-5.7004`.
+    - `benchmark_only` contribution delta sum: `-36.5720`.
+    - actual-vs-selected-snapshot loss from missed snapshot names: `-114.0077`.
+  - `walk_forward_004`, `2025-07-11`:
+    - `held_and_snapshot`: `+93.9541`.
+    - `held_not_snapshot`: `+86.9691`.
+    - `snapshot_missing_from_holdings`: `-6.9540`.
+    - `benchmark_only`: `-71.0230`.
+    - actual-vs-selected-snapshot loss from missed snapshot names: `-139.0812`.
+  - `walk_forward_004`, `2025-09-08`:
+    - `held_and_snapshot`: `+105.8957`.
+    - `held_not_snapshot`: `+108.5836`.
+    - `snapshot_missing_from_holdings`: `-6.3255`.
+    - `benchmark_only`: `-69.8853`.
+    - actual-vs-selected-snapshot loss from missed snapshot names: `-126.5111`.
+- Largest missed snapshot names by actual-vs-snapshot contribution loss include:
+  - `226950`: `-56.1069` on `walk_forward_004` `2025-07-11`.
+  - `002020`: `-48.5358` on `walk_forward_003` `2025-06-10`.
+  - `222800`: `-44.9944` on `walk_forward_004` `2025-07-11` and `2025-09-08`.
+  - `124500`: `-43.5368` on `walk_forward_004` `2025-09-08`.
+  - `006800`: `-37.9799` on `walk_forward_004` `2025-07-11` and `2025-09-08`.
+
+Interpretation:
+
+- The new drilldown confirms a concrete path-drift mechanism:
+  - active rows hold only `2/5` of the train-end selected snapshot,
+  - `3/5` selected snapshot symbols are missed,
+  - missed selected names have large positive train-period returns,
+  - benchmark-only high-return names still create a strong equal-weight benchmark headwind.
+- This supports the existing decision to keep the train gate strict.
+- Do not loosen `min_train_positive_ratio`.
+- Do not adopt the rejected direct-alpha candidates.
+- Next work should inspect why the rebalance path misses high-return train-end selected names:
+  - rebalance cadence,
+  - first-trade delay,
+  - lookback timing,
+  - scheduled rebalance date alignment,
+  - and whether any fix would survive full validation without creating regime/walk-forward regressions.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `425` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_direct_alpha_path_drift_decomposes_symbol_contributions tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_direct_alpha_path_drift_writes_csv tests.test_cli.CliTests.test_monthly_direct_alpha_diagnostics_cli_writes_selection_report`: failed because `analyze_monthly_direct_alpha_path_drift`, `save_monthly_direct_alpha_path_drift`, and `--path-drift-output` did not exist.
+- Targeted GREEN:
+  - same command: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `189` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `427` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=308.88` observed).
+
+Next recommended action:
+
+- Add a narrow paper-only cadence/timing diagnostic for the direct-alpha path:
+  - compare train-end selected symbols against the symbols available on each scheduled rebalance date,
+  - explain why missed snapshot names were not held,
+  - estimate whether an earlier/later rebalance cadence would have reduced path drift,
+  - do not change strategy defaults until the diagnostic identifies a specific robust mechanism.
+
+Previous loop:
 
 Extended the direct candidate stability-window diagnostics with selection/path context:
 

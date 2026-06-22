@@ -573,6 +573,51 @@ DIRECT_ALPHA_HOLDING_PATH_COLUMNS = [
     "train_coverage_removed",
 ]
 
+DIRECT_ALPHA_PATH_DRIFT_COLUMNS = [
+    "scenario",
+    "preset",
+    "rebalance_date",
+    "category",
+    "train_start",
+    "train_end",
+    "event_type",
+    "active_rebalance_index",
+    "previous_active_rebalance_date",
+    "days_since_previous_active_rebalance",
+    "first_trade_date",
+    "first_trade_delay_days",
+    "holding_count",
+    "held_symbols",
+    "train_end_selected_symbols",
+    "snapshot_overlap_count",
+    "symbol",
+    "path_role",
+    "path_gap_reason",
+    "in_actual_holdings",
+    "in_train_end_selected_snapshot",
+    "actual_weight",
+    "snapshot_weight",
+    "benchmark_weight",
+    "symbol_train_return_pct",
+    "actual_contribution_pct",
+    "snapshot_contribution_pct",
+    "benchmark_contribution_pct",
+    "contribution_delta_pct",
+    "actual_vs_snapshot_contribution_delta_pct",
+    "candidate_excess_return_pct",
+    "benchmark_avg_return_pct",
+    "benchmark_median_return_pct",
+    "raw_symbols",
+    "universe_symbols",
+    "pit_symbols",
+    "liquid_symbols",
+    "train_symbols",
+    "universe_removed",
+    "pit_filter_removed",
+    "liquidity_removed",
+    "train_coverage_removed",
+]
+
 MONTHLY_TRAIN_DECISION_PATH_COLUMNS = [
     "scenario",
     "walk_forward_preset",
@@ -3856,6 +3901,31 @@ def save_monthly_direct_alpha_holding_path(rows: list[dict[str, Any]], output_pa
     return len(rows)
 
 
+def analyze_monthly_direct_alpha_path_drift(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    cases: list[MonthlyValidationCase],
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        if not case.train_start or not case.train_end:
+            continue
+        rows.extend(_monthly_direct_alpha_path_drift_for_case(symbol_candles, case=case, config=config))
+    return rows
+
+
+def save_monthly_direct_alpha_path_drift(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=DIRECT_ALPHA_PATH_DRIFT_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in DIRECT_ALPHA_PATH_DRIFT_COLUMNS})
+    return len(rows)
+
+
 def analyze_monthly_train_decision_path(
     symbol_candles: dict[str, list[Candle]],
     *,
@@ -4877,6 +4947,207 @@ def _monthly_direct_alpha_holding_path_for_case(
             }
             rows.append(row)
     return rows
+
+
+def _monthly_direct_alpha_path_drift_for_case(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    case: MonthlyValidationCase,
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    try:
+        universe_candles = filter_symbol_candles_by_universe(
+            symbol_candles,
+            config.point_in_time_universe,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+        )
+        point_in_time_candles = select_point_in_time_universe(
+            universe_candles,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+            min_reference_price=config.point_in_time_min_reference_price,
+            max_trailing_return_pct=config.point_in_time_max_trailing_return_pct,
+            trailing_return_days=config.point_in_time_trailing_return_days,
+        )
+        decision_candles = (
+            select_liquid_universe(
+                point_in_time_candles,
+                signal_date=case.train_end,
+                top_n=config.point_in_time_liquidity_top_n,
+                window_days=config.point_in_time_liquidity_window_days,
+            )
+            if config.point_in_time_liquidity_top_n > 0
+            else point_in_time_candles
+        )
+        train_candles = slice_asof_symbol_candles(
+            decision_candles,
+            start=case.train_start,
+            end=case.train_end,
+            min_rows=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+        )
+    except ValueError:
+        return []
+    if not train_candles:
+        return []
+
+    counts = {
+        "raw_symbols": len(symbol_candles),
+        "universe_symbols": len(universe_candles),
+        "pit_symbols": len(point_in_time_candles),
+        "liquid_symbols": len(decision_candles),
+        "train_symbols": len(train_candles),
+        "universe_removed": max(0, len(symbol_candles) - len(universe_candles)),
+        "pit_filter_removed": max(0, len(universe_candles) - len(point_in_time_candles)),
+        "liquidity_removed": max(0, len(point_in_time_candles) - len(decision_candles)),
+        "train_coverage_removed": max(0, len(decision_candles) - len(train_candles)),
+    }
+    benchmark_symbols = sorted(train_candles)
+    benchmark_weight = 1 / len(benchmark_symbols) if benchmark_symbols else 0.0
+    symbol_returns = dict(_period_symbol_returns(train_candles, start=case.train_start, end=case.train_end))
+    return_values = list(symbol_returns.values())
+    benchmark_avg = mean(return_values) if return_values else None
+    benchmark_median = median(return_values) if return_values else None
+
+    rows: list[dict[str, Any]] = []
+    for preset in config.presets:
+        preset_config = momentum_rotation_config_for_preset(preset)
+        candidate_result = run_momentum_rotation_backtest(train_candles, preset_config)
+        train_end_selected = rank_momentum_targets(train_candles, signal_date=case.train_end, config=preset_config)
+        train_end_selected_set = set(train_end_selected)
+        snapshot_weight = 1 / len(train_end_selected) if train_end_selected else 0.0
+        holdings: set[str] = set()
+        trades_by_date: dict[str, list[Any]] = {}
+        first_trade_date = ""
+        for trade in candidate_result.trades:
+            trades_by_date.setdefault(trade.date, []).append(trade)
+            if trade.action == "BUY" and not first_trade_date:
+                first_trade_date = trade.date
+        first_trade_delay_days = (
+            _date_span_days(case.train_start, first_trade_date) - 1
+            if first_trade_date
+            else ""
+        )
+        scheduled_rebalance_dates = set(_direct_alpha_scheduled_rebalance_dates(train_candles, preset_config))
+        snapshot_dates = sorted(scheduled_rebalance_dates | set(trades_by_date))
+        previous_active_rebalance_date = ""
+        active_rebalance_index = 0
+
+        for rebalance_date in snapshot_dates:
+            day_trades = trades_by_date.get(rebalance_date, [])
+            entered: list[str] = []
+            for trade in day_trades:
+                if trade.action == "SELL":
+                    holdings.discard(trade.symbol)
+                elif trade.action == "BUY":
+                    holdings.add(trade.symbol)
+                    entered.append(trade.symbol)
+            held_symbols = sorted(holdings)
+            if not held_symbols:
+                continue
+            event_type = "rebalance" if day_trades else "rebalance_no_trade"
+            active_rebalance_index += 1
+            days_since_previous = (
+                _date_span_days(previous_active_rebalance_date, rebalance_date) - 1
+                if previous_active_rebalance_date
+                else ""
+            )
+            held_set = set(held_symbols)
+            actual_weight = 1 / len(held_symbols) if held_symbols else 0.0
+            overlap = sorted(held_set & train_end_selected_set)
+            row_base = {
+                "scenario": case.name,
+                "preset": preset,
+                "rebalance_date": rebalance_date,
+                "category": case.category,
+                "train_start": case.train_start,
+                "train_end": case.train_end,
+                "event_type": event_type,
+                "active_rebalance_index": active_rebalance_index,
+                "previous_active_rebalance_date": previous_active_rebalance_date,
+                "days_since_previous_active_rebalance": days_since_previous,
+                "first_trade_date": first_trade_date,
+                "first_trade_delay_days": first_trade_delay_days,
+                "holding_count": len(held_symbols),
+                "held_symbols": ";".join(held_symbols),
+                "train_end_selected_symbols": ";".join(train_end_selected),
+                "snapshot_overlap_count": len(overlap),
+                "candidate_excess_return_pct": _format_optional_float(candidate_result.excess_return_pct),
+                "benchmark_avg_return_pct": _format_optional_float(benchmark_avg),
+                "benchmark_median_return_pct": _format_optional_float(benchmark_median),
+                **counts,
+            }
+            for symbol in benchmark_symbols:
+                in_actual = symbol in held_set
+                in_snapshot = symbol in train_end_selected_set
+                symbol_return = symbol_returns.get(symbol)
+                actual_symbol_weight = actual_weight if in_actual else 0.0
+                snapshot_symbol_weight = snapshot_weight if in_snapshot else 0.0
+                actual_contribution = (
+                    actual_symbol_weight * symbol_return
+                    if symbol_return is not None
+                    else None
+                )
+                snapshot_contribution = (
+                    snapshot_symbol_weight * symbol_return
+                    if symbol_return is not None
+                    else None
+                )
+                benchmark_contribution = (
+                    benchmark_weight * symbol_return
+                    if symbol_return is not None
+                    else None
+                )
+                contribution_delta = (
+                    actual_contribution - benchmark_contribution
+                    if actual_contribution is not None and benchmark_contribution is not None
+                    else None
+                )
+                actual_vs_snapshot_delta = (
+                    actual_contribution - snapshot_contribution
+                    if actual_contribution is not None and snapshot_contribution is not None
+                    else None
+                )
+                role, gap_reason = _direct_alpha_path_drift_role(
+                    in_actual_holdings=in_actual,
+                    in_train_end_selected_snapshot=in_snapshot,
+                )
+                rows.append(
+                    {
+                        **row_base,
+                        "symbol": symbol,
+                        "path_role": role,
+                        "path_gap_reason": gap_reason,
+                        "in_actual_holdings": "true" if in_actual else "false",
+                        "in_train_end_selected_snapshot": "true" if in_snapshot else "false",
+                        "actual_weight": _format_optional_float(actual_symbol_weight),
+                        "snapshot_weight": _format_optional_float(snapshot_symbol_weight),
+                        "benchmark_weight": _format_optional_float(benchmark_weight),
+                        "symbol_train_return_pct": _format_optional_float(symbol_return),
+                        "actual_contribution_pct": _format_optional_float(actual_contribution),
+                        "snapshot_contribution_pct": _format_optional_float(snapshot_contribution),
+                        "benchmark_contribution_pct": _format_optional_float(benchmark_contribution),
+                        "contribution_delta_pct": _format_optional_float(contribution_delta),
+                        "actual_vs_snapshot_contribution_delta_pct": _format_optional_float(actual_vs_snapshot_delta),
+                    }
+                )
+            previous_active_rebalance_date = rebalance_date
+    return rows
+
+
+def _direct_alpha_path_drift_role(
+    *,
+    in_actual_holdings: bool,
+    in_train_end_selected_snapshot: bool,
+) -> tuple[str, str]:
+    if in_actual_holdings and in_train_end_selected_snapshot:
+        return "held_and_snapshot", "aligned"
+    if in_actual_holdings:
+        return "held_not_snapshot", "traded_outside_train_end_snapshot"
+    if in_train_end_selected_snapshot:
+        return "snapshot_missing_from_holdings", "selected_snapshot_missed"
+    return "benchmark_only", "benchmark_symbol_not_held"
 
 
 def _direct_alpha_scheduled_rebalance_dates(

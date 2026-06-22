@@ -52,6 +52,7 @@ from .monthly_rebalance import (
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
+    analyze_monthly_direct_alpha_path_drift,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_path_attribution,
     analyze_monthly_performance_concentration,
@@ -110,6 +111,7 @@ from .monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
+    save_monthly_direct_alpha_path_drift,
     save_monthly_direct_alpha_selection,
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
@@ -1203,6 +1205,11 @@ def main() -> int:
         default="data/reports/monthly_direct_alpha_path_diagnostics.csv",
         help="Write paper-only direct alpha rebalance holding-path diagnostics.",
     )
+    monthly_direct_alpha_parser.add_argument(
+        "--path-drift-output",
+        default="data/reports/monthly_direct_alpha_path_drift_diagnostics.csv",
+        help="Write paper-only per-symbol direct alpha path-drift contribution diagnostics.",
+    )
 
     monthly_train_decision_parser = subparsers.add_parser(
         "monthly-train-decision-diagnostics",
@@ -1703,8 +1710,25 @@ def main() -> int:
                 point_in_time_universe=point_in_time_universe,
             ),
         )
+        path_drift_rows = analyze_monthly_direct_alpha_path_drift(
+            symbol_candles,
+            cases=cases,
+            config=MonthlyRebalanceConfig(
+                presets=presets,
+                min_rows_per_window=args.min_rows_per_window,
+                start_grace_days=args.start_grace_days,
+                point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
+                point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
+                point_in_time_min_history_days=args.point_in_time_min_history_days,
+                point_in_time_min_reference_price=args.point_in_time_min_reference_price,
+                point_in_time_max_trailing_return_pct=args.point_in_time_max_trailing_return_pct,
+                point_in_time_trailing_return_days=args.point_in_time_trailing_return_days,
+                point_in_time_universe=point_in_time_universe,
+            ),
+        )
         saved = save_monthly_direct_alpha_selection(rows, args.output)
         path_saved = save_monthly_direct_alpha_holding_path(path_rows, args.path_output)
+        path_drift_saved = save_monthly_direct_alpha_path_drift(path_drift_rows, args.path_drift_output)
         print("Monthly direct alpha diagnostics")
         _print_data_quality_exclusions(data_quality_exclusions)
         print(f"walk_forward_cases  {len(cases)}")
@@ -1712,6 +1736,8 @@ def main() -> int:
         print(f"direct_alpha_selection_report  {args.output}")
         print(f"direct_alpha_path_rows  {path_saved}")
         print(f"direct_alpha_path_report  {args.path_output}")
+        print(f"direct_alpha_path_drift_rows  {path_drift_saved}")
+        print(f"direct_alpha_path_drift_report  {args.path_drift_output}")
         return 0
 
     if args.command == "monthly-train-decision-diagnostics":
