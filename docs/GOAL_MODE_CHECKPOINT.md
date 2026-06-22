@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 21:42 KST
+Last updated: 2026-06-22 21:52 KST
 
 ## Objective
 
@@ -36,6 +36,108 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only direct-alpha cadence/timing diagnostic:
+
+- Added `analyze_monthly_direct_alpha_timing`.
+- Added `save_monthly_direct_alpha_timing`.
+- Extended `python -m backtester monthly-direct-alpha-diagnostics` with:
+  - `--timing-output`
+  - default: `data/reports/monthly_direct_alpha_timing_diagnostics.csv`
+- The report summarizes each scheduled direct-alpha rebalance date with:
+  - prior signal date,
+  - train-end selected snapshot,
+  - scheduled target symbols for that rebalance signal,
+  - actual held symbols after same-day trades,
+  - snapshot-vs-target overlap,
+  - snapshot-vs-actual overlap,
+  - missed snapshot names,
+  - missed snapshot reason counts,
+  - previous/current/next scheduled target overlap counts,
+  - best timing offset estimate.
+- This is diagnostic-only and paper-only.
+- Existing strategy behavior, train gates, validation gates, execution planning, and Toss/API behavior are unchanged.
+
+Regenerated reports:
+
+- `data/reports/monthly_direct_alpha_selection_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_path_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_path_drift_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_timing_diagnostics.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Current timing findings:
+
+- `monthly_direct_alpha_timing_diagnostics.csv` has `4` rows.
+- `walk_forward_003`, `2025-04-08`:
+  - `scheduled_target_count=0`, `actual_held_count=0`.
+  - `snapshot_target_overlap_count=0`.
+  - `next_target_overlap_count=2`.
+  - `best_timing_offset=next`.
+  - `timing_diagnostic=no_scheduled_targets`.
+  - `missed_snapshot_reason=not_selected_on_rebalance_signal=5`.
+- `walk_forward_003`, `2025-06-10`:
+  - `scheduled_target_count=5`, `actual_held_count=5`.
+  - `snapshot_target_overlap_count=2`, `snapshot_actual_overlap_count=2`.
+  - Missed train-end snapshot names: `002020;064260;294570`.
+  - Scheduled targets outside train-end snapshot: `037270;214450;298380`.
+  - `best_timing_offset=current`, `best_timing_overlap_count=2`.
+  - `timing_diagnostic=current_timing_targets_differ_from_train_end_snapshot`.
+  - `missed_snapshot_reason=not_selected_on_rebalance_signal=3`.
+- `walk_forward_004`, `2025-07-11`:
+  - `snapshot_target_overlap_count=2`, `snapshot_actual_overlap_count=2`.
+  - Missed train-end snapshot names: `006800;222800;226950`.
+  - Scheduled targets outside train-end snapshot: `003230;064260;214450`.
+  - `best_timing_offset=current`, `best_timing_overlap_count=2`.
+  - `missed_snapshot_reason=not_selected_on_rebalance_signal=3`.
+- `walk_forward_004`, `2025-09-08`:
+  - `snapshot_target_overlap_count=2`, `snapshot_actual_overlap_count=2`.
+  - Missed train-end snapshot names: `006800;124500;222800`.
+  - Scheduled targets outside train-end snapshot: `064260;087010;298380`.
+  - `best_timing_offset=current`, `best_timing_overlap_count=2`.
+  - `missed_snapshot_reason=not_selected_on_rebalance_signal=3`.
+
+Interpretation:
+
+- The path drift is not primarily caused by unavailable symbols or failed fills.
+- The missed train-end snapshot names were generally not selected by the rebalance-date signal.
+- A simple previous/next scheduled-date comparison does not show a robust cadence fix:
+  - only the no-target `2025-04-08` row would have improved by waiting for the next scheduled rebalance,
+  - active rows remain at `2/5` snapshot overlap under previous/current/next timing checks.
+- This supports the current gate:
+  - do not loosen `min_train_positive_ratio`,
+  - do not adopt rejected direct-alpha candidates,
+  - do not change cadence defaults from this evidence alone.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `427` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_direct_alpha_timing_explains_snapshot_misses_by_rebalance_date tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_direct_alpha_timing_writes_csv tests.test_cli.CliTests.test_monthly_direct_alpha_diagnostics_cli_writes_selection_report`: failed because `analyze_monthly_direct_alpha_timing`, `save_monthly_direct_alpha_timing`, and `--timing-output` did not exist.
+- Targeted GREEN:
+  - same command: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `191` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `429` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=309.04` observed).
+
+Next recommended action:
+
+- Keep direct-alpha train gates strict.
+- Move from timing diagnosis to a narrow paper-only candidate explanation:
+  - compare direct-alpha rebalance-date signal targets with train-end selected targets by momentum score and trend filter pass/fail,
+  - identify whether missed snapshot names lost rank because of lookback-window decay, trend filter failure, or breadth profile changes,
+  - do not change strategy defaults until that evidence is available and validated.
+
+Previous loop:
 
 Added a paper-only direct-alpha path-drift contribution drilldown:
 

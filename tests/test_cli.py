@@ -1251,6 +1251,7 @@ class CliTests(unittest.TestCase):
             output = root / "direct_alpha_selection.csv"
             path_output = root / "direct_alpha_path.csv"
             path_drift_output = root / "direct_alpha_path_drift.csv"
+            timing_output = root / "direct_alpha_timing.csv"
 
             completed = self._run_backtester_in_cwd(
                 root,
@@ -1282,6 +1283,8 @@ class CliTests(unittest.TestCase):
                     str(path_output),
                     "--path-drift-output",
                     str(path_drift_output),
+                    "--timing-output",
+                    str(timing_output),
                 ],
             )
             if output.exists():
@@ -1299,15 +1302,22 @@ class CliTests(unittest.TestCase):
                     path_drift_rows = list(csv.DictReader(f))
             else:
                 path_drift_rows = []
+            if timing_output.exists():
+                with timing_output.open(encoding="utf-8") as f:
+                    timing_rows = list(csv.DictReader(f))
+            else:
+                timing_rows = []
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("direct_alpha_selection_report", completed.stdout)
         self.assertIn("direct_alpha_path_report", completed.stdout)
         self.assertIn("direct_alpha_path_drift_report", completed.stdout)
+        self.assertIn("direct_alpha_timing_report", completed.stdout)
         self.assertTrue(any(row["symbol"] == "AAA" and row["selection_status"] == "selected" for row in rows))
         self.assertTrue(any(row["symbol"] == "FFF" and row["rejection_reason"] == "below_selected_rank" for row in rows))
         self.assertTrue(any("AAA" in row["held_symbols"].split(";") for row in path_rows))
         self.assertTrue(any(row["symbol"] == "AAA" and "contribution_delta_pct" in row for row in path_drift_rows))
+        self.assertTrue(any("timing_diagnostic" in row for row in timing_rows))
 
     def test_monthly_train_decision_diagnostics_cli_writes_path_report(self):
         with TemporaryDirectory() as temp_dir:

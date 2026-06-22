@@ -24,6 +24,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_path_drift,
     analyze_monthly_direct_alpha_selection,
+    analyze_monthly_direct_alpha_timing,
     analyze_monthly_path_attribution,
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
@@ -95,6 +96,7 @@ from backtester.monthly_rebalance import (
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_path_drift,
     save_monthly_direct_alpha_selection,
+    save_monthly_direct_alpha_timing,
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
     save_monthly_proxy_decision_diagnostics,
@@ -3067,6 +3069,79 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("scenario,preset,rebalance_date", text.splitlines()[0])
         self.assertIn("contribution_delta_pct", text.splitlines()[0])
+        self.assertIn("walk_forward_unit", text)
+
+    def test_analyze_monthly_direct_alpha_timing_explains_snapshot_misses_by_rebalance_date(self):
+        symbol_candles = {
+            "AAA": _trend_candles_with_volume("2024-01-01", 260, close=100, step=1.2, volume=10_000),
+            "BBB": _trend_candles_with_volume("2024-01-01", 260, close=100, step=1.0, volume=9_000),
+            "CCC": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.8, volume=8_000),
+            "DDD": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.6, volume=7_000),
+            "EEE": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.4, volume=6_000),
+            "FFF": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.2, volume=5_000),
+        }
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2024-09-16",
+            start="2024-09-17",
+            end="2024-10-31",
+        )
+
+        rows = analyze_monthly_direct_alpha_timing(
+            symbol_candles,
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                presets=("balanced",),
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=50,
+                point_in_time_liquidity_top_n=6,
+                point_in_time_liquidity_window_days=20,
+                min_rows_per_window=20,
+                start_grace_days=0,
+                train_stability_years=1,
+            ),
+        )
+
+        self.assertTrue(rows)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "walk_forward_unit")
+        self.assertEqual(row["preset"], "balanced")
+        self.assertIn("scheduled_rebalance_date", row)
+        self.assertIn("signal_date", row)
+        self.assertIn("train_end_selected_symbols", row)
+        self.assertIn("scheduled_target_symbols", row)
+        self.assertIn("snapshot_target_overlap_count", row)
+        self.assertIn("snapshot_missing_from_scheduled_targets", row)
+        self.assertIn("missed_snapshot_reason", row)
+        self.assertIn("previous_target_overlap_count", row)
+        self.assertIn("next_target_overlap_count", row)
+        self.assertIn(row["best_timing_offset"], {"previous", "current", "next"})
+        self.assertIn("timing_diagnostic", row)
+        self.assertIn("first_trade_delay_days", row)
+        self.assertIn("scheduled_rebalance_index", row)
+
+    def test_save_monthly_direct_alpha_timing_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "direct_alpha_timing.csv"
+            saved = save_monthly_direct_alpha_timing(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "preset": "balanced",
+                        "scheduled_rebalance_date": "2024-07-01",
+                        "snapshot_target_overlap_count": 2,
+                        "timing_diagnostic": "current_timing_best",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,preset,scheduled_rebalance_date", text.splitlines()[0])
+        self.assertIn("timing_diagnostic", text.splitlines()[0])
         self.assertIn("walk_forward_unit", text)
 
     def test_analyze_monthly_train_decision_path_explains_fallback_choices(self):

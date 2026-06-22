@@ -618,6 +618,55 @@ DIRECT_ALPHA_PATH_DRIFT_COLUMNS = [
     "train_coverage_removed",
 ]
 
+DIRECT_ALPHA_TIMING_COLUMNS = [
+    "scenario",
+    "preset",
+    "scheduled_rebalance_date",
+    "category",
+    "train_start",
+    "train_end",
+    "scheduled_rebalance_index",
+    "signal_date",
+    "previous_scheduled_rebalance_date",
+    "days_since_previous_scheduled_rebalance",
+    "first_trade_date",
+    "first_trade_delay_days",
+    "train_end_selected_count",
+    "train_end_selected_symbols",
+    "scheduled_target_count",
+    "scheduled_target_symbols",
+    "actual_held_count",
+    "actual_held_symbols",
+    "snapshot_target_overlap_count",
+    "snapshot_target_overlap_symbols",
+    "snapshot_actual_overlap_count",
+    "snapshot_actual_overlap_symbols",
+    "snapshot_missing_from_scheduled_targets",
+    "snapshot_missing_from_actual_holdings",
+    "scheduled_targets_not_in_snapshot",
+    "available_snapshot_symbols",
+    "unavailable_snapshot_symbols",
+    "missed_snapshot_reason",
+    "previous_target_overlap_count",
+    "current_target_overlap_count",
+    "next_target_overlap_count",
+    "best_timing_offset",
+    "best_timing_overlap_count",
+    "timing_diagnostic",
+    "candidate_excess_return_pct",
+    "benchmark_avg_return_pct",
+    "benchmark_median_return_pct",
+    "raw_symbols",
+    "universe_symbols",
+    "pit_symbols",
+    "liquid_symbols",
+    "train_symbols",
+    "universe_removed",
+    "pit_filter_removed",
+    "liquidity_removed",
+    "train_coverage_removed",
+]
+
 MONTHLY_TRAIN_DECISION_PATH_COLUMNS = [
     "scenario",
     "walk_forward_preset",
@@ -3926,6 +3975,31 @@ def save_monthly_direct_alpha_path_drift(rows: list[dict[str, Any]], output_path
     return len(rows)
 
 
+def analyze_monthly_direct_alpha_timing(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    cases: list[MonthlyValidationCase],
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        if not case.train_start or not case.train_end:
+            continue
+        rows.extend(_monthly_direct_alpha_timing_for_case(symbol_candles, case=case, config=config))
+    return rows
+
+
+def save_monthly_direct_alpha_timing(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=DIRECT_ALPHA_TIMING_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in DIRECT_ALPHA_TIMING_COLUMNS})
+    return len(rows)
+
+
 def analyze_monthly_train_decision_path(
     symbol_candles: dict[str, list[Candle]],
     *,
@@ -5134,6 +5208,261 @@ def _monthly_direct_alpha_path_drift_for_case(
                 )
             previous_active_rebalance_date = rebalance_date
     return rows
+
+
+def _monthly_direct_alpha_timing_for_case(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    case: MonthlyValidationCase,
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    try:
+        universe_candles = filter_symbol_candles_by_universe(
+            symbol_candles,
+            config.point_in_time_universe,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+        )
+        point_in_time_candles = select_point_in_time_universe(
+            universe_candles,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+            min_reference_price=config.point_in_time_min_reference_price,
+            max_trailing_return_pct=config.point_in_time_max_trailing_return_pct,
+            trailing_return_days=config.point_in_time_trailing_return_days,
+        )
+        decision_candles = (
+            select_liquid_universe(
+                point_in_time_candles,
+                signal_date=case.train_end,
+                top_n=config.point_in_time_liquidity_top_n,
+                window_days=config.point_in_time_liquidity_window_days,
+            )
+            if config.point_in_time_liquidity_top_n > 0
+            else point_in_time_candles
+        )
+        train_candles = slice_asof_symbol_candles(
+            decision_candles,
+            start=case.train_start,
+            end=case.train_end,
+            min_rows=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+        )
+    except ValueError:
+        return []
+    if not train_candles:
+        return []
+
+    counts = {
+        "raw_symbols": len(symbol_candles),
+        "universe_symbols": len(universe_candles),
+        "pit_symbols": len(point_in_time_candles),
+        "liquid_symbols": len(decision_candles),
+        "train_symbols": len(train_candles),
+        "universe_removed": max(0, len(symbol_candles) - len(universe_candles)),
+        "pit_filter_removed": max(0, len(universe_candles) - len(point_in_time_candles)),
+        "liquidity_removed": max(0, len(point_in_time_candles) - len(decision_candles)),
+        "train_coverage_removed": max(0, len(decision_candles) - len(train_candles)),
+    }
+    return_values = list(dict(_period_symbol_returns(train_candles, start=case.train_start, end=case.train_end)).values())
+    benchmark_avg = mean(return_values) if return_values else None
+    benchmark_median = median(return_values) if return_values else None
+    all_dates = sorted({candle.date for candles in train_candles.values() for candle in candles})
+    date_index = {value: index for index, value in enumerate(all_dates)}
+    rows: list[dict[str, Any]] = []
+    for preset in config.presets:
+        preset_config = momentum_rotation_config_for_preset(preset)
+        candidate_result = run_momentum_rotation_backtest(train_candles, preset_config)
+        train_end_selected = rank_momentum_targets(train_candles, signal_date=case.train_end, config=preset_config)
+        train_end_selected_set = set(train_end_selected)
+        scheduled_dates = _direct_alpha_scheduled_rebalance_dates(train_candles, preset_config)
+        target_by_rebalance_date: dict[str, list[str]] = {}
+        signal_by_rebalance_date: dict[str, str] = {}
+        for rebalance_date in scheduled_dates:
+            signal_date = _direct_alpha_signal_date_for_rebalance(all_dates, rebalance_date)
+            signal_by_rebalance_date[rebalance_date] = signal_date
+            target_by_rebalance_date[rebalance_date] = (
+                rank_momentum_targets(train_candles, signal_date=signal_date, config=preset_config)
+                if signal_date
+                else []
+            )
+
+        trades_by_date: dict[str, list[Any]] = {}
+        first_trade_date = ""
+        for trade in candidate_result.trades:
+            trades_by_date.setdefault(trade.date, []).append(trade)
+            if trade.action == "BUY" and not first_trade_date:
+                first_trade_date = trade.date
+        first_trade_delay_days = (
+            _date_span_days(case.train_start, first_trade_date) - 1
+            if first_trade_date
+            else ""
+        )
+
+        holdings: set[str] = set()
+        previous_scheduled_date = ""
+        for scheduled_index, rebalance_date in enumerate(scheduled_dates, start=1):
+            for trade in trades_by_date.get(rebalance_date, []):
+                if trade.action == "SELL":
+                    holdings.discard(trade.symbol)
+                elif trade.action == "BUY":
+                    holdings.add(trade.symbol)
+            scheduled_targets = target_by_rebalance_date.get(rebalance_date, [])
+            scheduled_target_set = set(scheduled_targets)
+            held_set = set(holdings)
+            available_snapshot = sorted(
+                symbol for symbol in train_end_selected
+                if symbol in train_candles and date_index.get(rebalance_date) is not None
+                and any(candle.date == rebalance_date for candle in train_candles[symbol])
+            )
+            unavailable_snapshot = sorted(train_end_selected_set - set(available_snapshot))
+            snapshot_target_overlap = sorted(train_end_selected_set & scheduled_target_set)
+            snapshot_actual_overlap = sorted(train_end_selected_set & held_set)
+            snapshot_missing_targets = sorted(train_end_selected_set - scheduled_target_set)
+            snapshot_missing_holdings = sorted(train_end_selected_set - held_set)
+            scheduled_not_snapshot = sorted(scheduled_target_set - train_end_selected_set)
+            previous_targets = (
+                target_by_rebalance_date.get(scheduled_dates[scheduled_index - 2], [])
+                if scheduled_index > 1
+                else []
+            )
+            next_targets = (
+                target_by_rebalance_date.get(scheduled_dates[scheduled_index], [])
+                if scheduled_index < len(scheduled_dates)
+                else []
+            )
+            previous_overlap = len(train_end_selected_set & set(previous_targets))
+            current_overlap = len(snapshot_target_overlap)
+            next_overlap = len(train_end_selected_set & set(next_targets))
+            best_offset, best_overlap = _direct_alpha_best_timing_overlap(
+                previous_overlap=previous_overlap,
+                current_overlap=current_overlap,
+                next_overlap=next_overlap,
+            )
+            timing_diagnostic = _direct_alpha_timing_diagnostic(
+                best_offset=best_offset,
+                current_overlap=current_overlap,
+                best_overlap=best_overlap,
+                scheduled_targets=scheduled_targets,
+                snapshot_missing_holdings=snapshot_missing_holdings,
+            )
+            missed_reason = _direct_alpha_missed_snapshot_reason(
+                train_end_selected=train_end_selected,
+                available_snapshot=set(available_snapshot),
+                scheduled_targets=scheduled_target_set,
+                held_symbols=held_set,
+            )
+            rows.append(
+                {
+                    "scenario": case.name,
+                    "preset": preset,
+                    "scheduled_rebalance_date": rebalance_date,
+                    "category": case.category,
+                    "train_start": case.train_start,
+                    "train_end": case.train_end,
+                    "scheduled_rebalance_index": scheduled_index,
+                    "signal_date": signal_by_rebalance_date.get(rebalance_date, ""),
+                    "previous_scheduled_rebalance_date": previous_scheduled_date,
+                    "days_since_previous_scheduled_rebalance": (
+                        _date_span_days(previous_scheduled_date, rebalance_date) - 1
+                        if previous_scheduled_date
+                        else ""
+                    ),
+                    "first_trade_date": first_trade_date,
+                    "first_trade_delay_days": first_trade_delay_days,
+                    "train_end_selected_count": len(train_end_selected),
+                    "train_end_selected_symbols": ";".join(train_end_selected),
+                    "scheduled_target_count": len(scheduled_targets),
+                    "scheduled_target_symbols": ";".join(scheduled_targets),
+                    "actual_held_count": len(holdings),
+                    "actual_held_symbols": ";".join(sorted(holdings)),
+                    "snapshot_target_overlap_count": current_overlap,
+                    "snapshot_target_overlap_symbols": ";".join(snapshot_target_overlap),
+                    "snapshot_actual_overlap_count": len(snapshot_actual_overlap),
+                    "snapshot_actual_overlap_symbols": ";".join(snapshot_actual_overlap),
+                    "snapshot_missing_from_scheduled_targets": ";".join(snapshot_missing_targets),
+                    "snapshot_missing_from_actual_holdings": ";".join(snapshot_missing_holdings),
+                    "scheduled_targets_not_in_snapshot": ";".join(scheduled_not_snapshot),
+                    "available_snapshot_symbols": ";".join(available_snapshot),
+                    "unavailable_snapshot_symbols": ";".join(unavailable_snapshot),
+                    "missed_snapshot_reason": missed_reason,
+                    "previous_target_overlap_count": previous_overlap,
+                    "current_target_overlap_count": current_overlap,
+                    "next_target_overlap_count": next_overlap,
+                    "best_timing_offset": best_offset,
+                    "best_timing_overlap_count": best_overlap,
+                    "timing_diagnostic": timing_diagnostic,
+                    "candidate_excess_return_pct": _format_optional_float(candidate_result.excess_return_pct),
+                    "benchmark_avg_return_pct": _format_optional_float(benchmark_avg),
+                    "benchmark_median_return_pct": _format_optional_float(benchmark_median),
+                    **counts,
+                }
+            )
+            previous_scheduled_date = rebalance_date
+    return rows
+
+
+def _direct_alpha_signal_date_for_rebalance(dates: list[str], rebalance_date: str) -> str:
+    try:
+        index = dates.index(rebalance_date)
+    except ValueError:
+        return ""
+    if index <= 0:
+        return ""
+    return dates[index - 1]
+
+
+def _direct_alpha_best_timing_overlap(
+    *,
+    previous_overlap: int,
+    current_overlap: int,
+    next_overlap: int,
+) -> tuple[str, int]:
+    candidates = [
+        ("current", current_overlap),
+        ("previous", previous_overlap),
+        ("next", next_overlap),
+    ]
+    return max(candidates, key=lambda item: (item[1], 1 if item[0] == "current" else 0))
+
+
+def _direct_alpha_timing_diagnostic(
+    *,
+    best_offset: str,
+    current_overlap: int,
+    best_overlap: int,
+    scheduled_targets: list[str],
+    snapshot_missing_holdings: list[str],
+) -> str:
+    if not scheduled_targets:
+        return "no_scheduled_targets"
+    if best_offset != "current" and best_overlap > current_overlap:
+        return f"{best_offset}_rebalance_has_better_snapshot_overlap"
+    if snapshot_missing_holdings:
+        return "current_timing_targets_differ_from_train_end_snapshot"
+    return "current_timing_best"
+
+
+def _direct_alpha_missed_snapshot_reason(
+    *,
+    train_end_selected: list[str],
+    available_snapshot: set[str],
+    scheduled_targets: set[str],
+    held_symbols: set[str],
+) -> str:
+    counts: Counter[str] = Counter()
+    for symbol in train_end_selected:
+        if symbol in held_symbols:
+            continue
+        if symbol not in available_snapshot:
+            counts["unavailable_on_rebalance"] += 1
+        elif symbol not in scheduled_targets:
+            counts["not_selected_on_rebalance_signal"] += 1
+        else:
+            counts["scheduled_target_not_held"] += 1
+    if not counts:
+        return "no_snapshot_miss"
+    return ";".join(f"{reason}={counts[reason]}" for reason in sorted(counts))
 
 
 def _direct_alpha_path_drift_role(
