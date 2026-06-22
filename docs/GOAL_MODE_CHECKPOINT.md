@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 13:09 KST
+Last updated: 2026-06-22 13:28 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 386 tests.
+- `python -m unittest discover -s tests`: PASS, 388 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,28 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Improved direct-alpha failure drilldown and report-source safety:
+
+- Failure drilldown now classifies train-window failures with negative direct alpha candidate scores as `direct_alpha_ineligible`.
+- Current root-cause counts:
+  - `insufficient_recovery=2`
+  - `direct_alpha_ineligible=2`
+  - `selection_or_exposure_regression=1`
+  - `over_defense_or_filter_drag=1`
+  - `drawdown_pressure=1`
+  - `candidate_fixed_failure=1`
+- Affected walk-forward rows:
+  - `walk_forward_003`: `direct_alpha_ineligible`
+  - `walk_forward_004`: `direct_alpha_ineligible`
+  - `walk_forward_005`: `insufficient_recovery`
+  - `walk_forward_002`: `over_defense_or_filter_drag`
+  - `walk_forward_001`: `candidate_fixed_failure`
+- Added production readiness protection for `monthly_performance_concentration.csv` source mismatch.
+- If the concentration report is accidentally overwritten by `monthly-backtest`, production-check now warns with `unexpected_source`.
+- Regenerated monthly validation after detecting this overwrite risk; current concentration source is back to `monthly-validate:2024-01-01..2026-06-18`.
+- Production readiness status counts are `BLOCK=8`, `PASS=31`, `WARN=8`.
+- Health remains `WARN` only for stale scalper data.
 
 Clarified walk-forward train alpha weakness:
 
@@ -152,7 +174,7 @@ Latest drilldown summary:
 - `insufficient_recovery=2`
   - `regime_sideways`
   - `walk_forward_005`
-- `train_window_selection=2`
+- `direct_alpha_ineligible=2`
   - `walk_forward_003`
   - `walk_forward_004`
 - `selection_or_exposure_regression=1`
@@ -181,7 +203,7 @@ Production readiness:
   - `PERSISTENT_BLOCK=3`
   - `REGRESSION_RISK=3`
 - `validation_failure_drilldown`: PASS
-  - root causes: `insufficient_recovery=2`, `train_window_selection=2`, `selection_or_exposure_regression=1`, `over_defense_or_filter_drag=1`, `drawdown_pressure=1`, `candidate_fixed_failure=1`
+  - root causes: `insufficient_recovery=2`, `direct_alpha_ineligible=2`, `selection_or_exposure_regression=1`, `over_defense_or_filter_drag=1`, `drawdown_pressure=1`, `candidate_fixed_failure=1`
   - evidence gaps: 0 scenarios
 - `walk_forward_train_candidate_coverage`: WARN
   - `under_covered=5`
@@ -269,6 +291,15 @@ python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_v
 python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_walk_forward_validation_records_direct_train_candidate_scores tests.test_readiness.ProductionReadinessTests.test_walk_forward_fallback_only_with_negative_direct_scores_reports_ineligible_alpha
 python -m unittest tests.test_readiness.ProductionReadinessTests.test_walk_forward_direct_alpha_ineligible_recommends_train_alpha_diagnosis
 python -m unittest tests.test_readiness.ProductionReadinessTests.test_walk_forward_fallback_only_with_negative_direct_scores_reports_ineligible_alpha tests.test_readiness.ProductionReadinessTests.test_walk_forward_direct_alpha_ineligible_recommends_train_alpha_diagnosis tests.test_readiness.ProductionReadinessTests.test_walk_forward_train_candidate_warning_recommends_candidate_expansion
+python -m backtester monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end 2026-06-18 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-output data/reports/monthly_validation_scenarios_pit_universe.csv --deployment-gate-output data/reports/monthly_deployment_gate_pit_universe.csv
+python -m backtester monthly-failure-patterns --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --output data/reports/monthly_validation_failure_patterns.csv
+python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --patterns data/reports/monthly_validation_failure_patterns.csv --output data/reports/monthly_validation_failure_drilldown.csv
+python -m backtester production-check --allow-blocked-exit-zero
+python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
+python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_validation_failure_drilldown_flags_direct_alpha_ineligible
+python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_validation_failure_drilldown_summarizes_root_cause_and_gaps tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_validation_failure_drilldown_uses_train_candidate_scores tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_validation_failure_drilldown_flags_direct_alpha_ineligible tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_validation_failure_drilldown_writes_csv
+python -m unittest tests.test_readiness.ProductionReadinessTests.test_performance_concentration_wrong_source_warns_readiness
+python -m unittest tests.test_readiness.ProductionReadinessTests.test_missing_performance_concentration_report_warns_readiness tests.test_readiness.ProductionReadinessTests.test_performance_concentration_block_blocks_readiness tests.test_readiness.ProductionReadinessTests.test_performance_concentration_wrong_source_warns_readiness
 python -m backtester monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end 2026-06-18 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-output data/reports/monthly_validation_scenarios_pit_universe.csv --deployment-gate-output data/reports/monthly_deployment_gate_pit_universe.csv
 python -m backtester monthly-failure-patterns --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --output data/reports/monthly_validation_failure_patterns.csv
 python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --patterns data/reports/monthly_validation_failure_patterns.csv --output data/reports/monthly_validation_failure_drilldown.csv

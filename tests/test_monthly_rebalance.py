@@ -1387,6 +1387,55 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(rows[0]["likely_root_cause"], "train_window_selection")
         self.assertEqual(rows[0]["evidence_gaps"], "")
 
+    def test_analyze_monthly_validation_failure_drilldown_flags_direct_alpha_ineligible(self):
+        baseline_rows = [
+            {
+                "name": "walk_forward_003",
+                "category": "walk_forward",
+                "required": True,
+                "deployable": False,
+                "reason": "train_window_rejected",
+                "train_start": "2024-01-01",
+                "train_end": "2024-06-30",
+                "selected_preset": "balanced",
+                "train_excess_return_pct": "-1.3",
+                "train_candidate_scores": "balanced:excess=-1.3,drawdown=-5,trades=4,score=-6.3",
+                "train_candidate_direct_scores": (
+                    "balanced:excess=-4,drawdown=-8,trades=3,score=-12; "
+                    "aggressive:excess=-2,drawdown=-9,trades=2,score=-11"
+                ),
+                "start": "2024-07-01",
+                "end": "2024-12-31",
+            },
+        ]
+        pattern_rows = [
+            {
+                "scenario": "walk_forward_003",
+                "pattern_status": "PERSISTENT_BLOCK",
+                "dominant_diagnostic": "same_failure_persists=3",
+                "suggested_action": "REVIEW_PERSISTENT_FAILURE",
+            },
+        ]
+        decision_rows = [
+            {
+                "scenario": "walk_forward_003",
+                "selected_symbols": "005930;000660",
+                "target_exposure": "0.99",
+                "cash_weight": "0.01",
+            }
+        ]
+
+        rows = analyze_monthly_validation_failure_drilldown(
+            baseline_rows,
+            pattern_rows,
+            [],
+            decision_attribution_rows=decision_rows,
+        )
+
+        self.assertEqual(rows[0]["likely_root_cause"], "direct_alpha_ineligible")
+        self.assertEqual(rows[0]["evidence_gaps"], "")
+        self.assertIn("direct alpha train candidates", rows[0]["next_action"])
+
     def test_save_monthly_validation_failure_drilldown_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "drilldown.csv"

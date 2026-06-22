@@ -258,6 +258,21 @@ class ProductionReadinessTests(unittest.TestCase):
         concentration = [check for check in checks if check.name == "performance_concentration"][0]
         self.assertIn("top_1_month_contribution", concentration.detail)
 
+    def test_performance_concentration_wrong_source_warns_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            report = Path(temp_dir) / "concentration.csv"
+            report.write_text(
+                "source,concentration_status,concentration_reasons,top_1_month_contribution,top_5_symbol_contribution\n"
+                "monthly-backtest:2024-01-02..2024-03-01,PASS,,0.1,0.2\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(performance_concentration_path=report)
+
+        concentration = [check for check in checks if check.name == "performance_concentration"][0]
+        self.assertEqual(concentration.status, "WARN")
+        self.assertIn("unexpected_source", concentration.detail)
+
     def test_recommend_readiness_actions_splits_performance_bottlenecks(self):
         with TemporaryDirectory() as temp_dir:
             performance = Path(temp_dir) / "performance.csv"

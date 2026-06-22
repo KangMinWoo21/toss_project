@@ -1199,12 +1199,17 @@ def _performance_concentration_check(path: Path) -> ReadinessCheck:
     if not rows:
         return ReadinessCheck("performance_concentration", "BLOCK", f"empty: {path}")
     row = rows[-1]
+    source = str(row.get("source", path)).strip()
     status = str(row.get("concentration_status", "")).strip().upper() or "BLOCK"
     if status not in {"PASS", "WARN", "BLOCK"}:
         status = "BLOCK"
     reasons = str(row.get("concentration_reasons", "")).strip() or "no reasons"
+    if source and not source.startswith("monthly-validate"):
+        reasons = f"unexpected_source:{source}; {reasons}"
+        if status == "PASS":
+            status = "WARN"
     detail = (
-        f"{row.get('source', path)}:{reasons}; "
+        f"{source or path}:{reasons}; "
         f"top_1_month={row.get('top_1_month_contribution', '')}; "
         f"top_5_symbol={row.get('top_5_symbol_contribution', '')}"
     )

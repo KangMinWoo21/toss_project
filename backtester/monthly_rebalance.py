@@ -3490,6 +3490,8 @@ def _validation_failure_likely_root_cause(
     pattern_status = str(pattern.get("pattern_status", "")).strip().upper()
     diagnostic = str(pattern.get("dominant_diagnostic", "")).strip()
     if reason == "train_window_rejected" or "train_gate_regression" in diagnostic:
+        if _direct_train_candidates_are_ineligible(str(baseline.get("train_candidate_direct_scores", ""))):
+            return "direct_alpha_ineligible"
         return "train_window_selection"
     if reason == "max_drawdown_breach":
         return "drawdown_pressure"
@@ -3539,6 +3541,8 @@ def _validation_failure_available_evidence(
     available = set(attribution_evidence)
     if str(baseline.get("train_candidate_scores", "")).strip():
         available.add("train_window_candidate_scores")
+    if str(baseline.get("train_candidate_direct_scores", "")).strip():
+        available.add("direct_train_candidate_scores")
     return available
 
 
@@ -3555,6 +3559,8 @@ def _validation_failure_evidence_gaps(
         gaps.extend(["selected_symbols", "exposure", "cash_weight"])
     if likely_root_cause == "train_window_selection":
         gaps.append("train_window_candidate_scores")
+    if likely_root_cause == "direct_alpha_ineligible":
+        gaps.append("direct_train_candidate_scores")
     if likely_root_cause in {"weak_window_return_drag", "selection_or_exposure_regression", "insufficient_recovery"}:
         gaps.append("symbol_pnl_attribution")
     gaps = [gap for gap in gaps if gap not in available]
@@ -3562,6 +3568,10 @@ def _validation_failure_evidence_gaps(
 
 
 def _validation_failure_next_action(likely_root_cause: str, evidence_gaps: str) -> str:
+    if likely_root_cause == "direct_alpha_ineligible":
+        return (
+            "Diagnose why direct alpha train candidates have non-positive excess returns before loosening gates."
+        )
     if likely_root_cause == "train_window_selection":
         return "Review training window rejection and no-trade gate before tuning parameters."
     if likely_root_cause == "drawdown_pressure":
@@ -3577,6 +3587,23 @@ def _validation_failure_next_action(likely_root_cause: str, evidence_gaps: str) 
     if evidence_gaps:
         return "Run scenario attribution with selected symbols, exposure, cash weight, and symbol PnL before tuning more parameters."
     return "Review scenario metrics before adding another parameter experiment."
+
+
+def _direct_train_candidates_are_ineligible(value: str) -> bool:
+    scores = [part.strip() for part in value.split(";") if part.strip()]
+    if not scores:
+        return False
+    excess_values: list[float] = []
+    for score in scores:
+        marker = "excess="
+        if marker not in score:
+            return False
+        raw_value = score.split(marker, 1)[-1].split(",", 1)[0].strip()
+        try:
+            excess_values.append(float(raw_value))
+        except ValueError:
+            return False
+    return bool(excess_values) and all(value <= 0.0 for value in excess_values)
 
 
 def _median_numeric(values: Any) -> float | None:
