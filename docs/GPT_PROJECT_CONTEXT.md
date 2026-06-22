@@ -1,6 +1,6 @@
 # GPT Project Context: Toss Securities Paper-Operation Trading System
 
-Generated at: 2026-06-22 16:26 KST
+Generated at: 2026-06-22 16:43 KST
 
 This document is a compact project handoff for GPT. It summarizes the current repository state, safety rules, architecture, reports, validation results, and next work. It intentionally excludes secrets, `.env` values, private credentials, and raw downloaded market data.
 
@@ -46,31 +46,31 @@ Why:
 Recent commits:
 
 ```text
+fc51fb3 Add train decision path diagnostics
 bb7d015 Add direct alpha holding path diagnostics
 958249b Add direct alpha selection diagnostics
 8cd4dcc Add direct alpha train diagnostics
 bd9b613 Classify direct alpha train failures
-cb6dfb7 Add direct train alpha diagnostics
 ```
 
-Latest committed checkpoint:
+Latest committed checkpoint before this loop:
 
-- `bb7d015 Add direct alpha holding path diagnostics`
-- Extended `monthly-direct-alpha-diagnostics` with `--path-output`.
-- Added `data/reports/monthly_direct_alpha_path_diagnostics.csv`.
-- Tests cover holding-path analysis, no-trade scheduled rebalance snapshots, CSV saving, and CLI report generation.
-- `python -m unittest discover -s tests`: PASS, 394 tests.
+- `fc51fb3 Add train decision path diagnostics`
+- Added `monthly-train-decision-diagnostics`.
+- Added `data/reports/monthly_train_decision_path_diagnostics.csv`.
+- The report reconstructs recursive monthly train decisions inside walk-forward train windows and explains `alpha_ratio=0` with row-level decision mode, reason, `alpha_block_reason`, direct candidate scores/rejection reasons, prior breadth, target exposure, cash weight, and universe counts.
+- `python -m unittest discover -s tests`: PASS, 397 tests.
 - `python -m compileall -q backtester`: PASS.
 
-Latest uncommitted/next checkpoint work:
+Latest current loop work:
 
-- Added `monthly-train-decision-diagnostics` CLI.
-- Added `data/reports/monthly_train_decision_path_diagnostics.csv`.
-- This report reconstructs recursive monthly train decisions inside walk-forward train windows and explains `alpha_ratio=0` with row-level decision mode, reason, `alpha_block_reason`, direct candidate scores/rejection reasons, prior breadth, target exposure, cash weight, and universe counts.
-- `walk_forward_003`: 13 train decisions, all `market_beta_proxy`, `0 alpha`; alpha block reasons are `no_eligible_direct_candidate=12` and `weak_breadth_and_weak_train_average=1`.
-- `walk_forward_004`: 13 train decisions, all `market_beta_proxy`, `0 alpha`; alpha block reasons are also `no_eligible_direct_candidate=12` and `weak_breadth_and_weak_train_average=1`.
-- Current full verification after this work: `python -m unittest discover -s tests` PASS with `397` tests; `python -m compileall -q backtester` PASS.
-- `production-check` remains `BLOCK` with `BLOCK=8`, `PASS=31`, `WARN=8`; `health-check` remains `WARN` because scalper data is stale.
+- Extended `monthly-train-decision-diagnostics` with `--stability-output`.
+- Added `data/reports/monthly_train_stability_window_diagnostics.csv`.
+- The report decomposes candidate `train_positive_ratio` into stability subwindows with subwindow total/buy-hold/excess return, drawdown, trade count, positive flag, and rejection reasons.
+- `walk_forward_003`: 52 counted stability rows; 16 positive and 36 nonpositive/no-trade subwindows; candidate positive ratios are mainly `0.25` or `0.5`; worst subwindow is `train_stability_2024_2025` ending `2025-04-30`, excess `-55.0564`.
+- `walk_forward_004`: 52 counted stability rows; 17 positive and 35 nonpositive/no-trade subwindows; candidate positive ratios range `0.0` to `0.75`; worst subwindow is also `train_stability_2024_2025` ending `2025-04-30`, excess `-55.0564`.
+- Current full verification after this work: `python -m unittest discover -s tests` PASS with `399` tests; `python -m compileall -q backtester` PASS.
+- `production-check` remains `BLOCK` with `BLOCK=8`, `PASS=31`, `WARN=8`; `health-check` remains `WARN` because scalper data is stale (`age_hours=303.89` observed).
 
 ## Current Git Worktree Warning
 
@@ -124,7 +124,7 @@ Tests:
 
 - Standard library `unittest`.
 - Tests live under `tests/`.
-- Current full suite: 389 tests passing as of the latest checkpoint.
+- Current full suite: 399 tests passing as of the latest checkpoint.
 - Important files:
   - `tests/test_monthly_rebalance.py`
   - `tests/test_readiness.py`
@@ -204,6 +204,12 @@ Regenerate failure drilldown:
 
 ```powershell
 python -m backtester monthly-failure-drilldown --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --patterns data/reports/monthly_validation_failure_patterns.csv --output data/reports/monthly_validation_failure_drilldown.csv
+```
+
+Regenerate recursive train decision and stability diagnostics:
+
+```powershell
+python -m backtester monthly-train-decision-diagnostics --data-dir data/krx_expanded --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --scenario walk_forward_003 --scenario walk_forward_004 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --output data/reports/monthly_train_decision_path_diagnostics.csv --stability-output data/reports/monthly_train_stability_window_diagnostics.csv
 ```
 
 ## Current Readiness State
@@ -340,6 +346,50 @@ Interpretation: train coverage is not missing and the broad backdrop is not weak
 
 Interpretation: the direct alpha candidate badly lagged a very strong buy-hold backdrop. Do not solve this by loosening train gates.
 
+## Recursive Train Decision And Stability Diagnostics
+
+Reports:
+
+```text
+data/reports/monthly_train_decision_path_diagnostics.csv
+data/reports/monthly_train_stability_window_diagnostics.csv
+```
+
+Generated for:
+
+- `walk_forward_003`
+- `walk_forward_004`
+
+Decision-path findings:
+
+- Both scenarios have `13` recursive train decisions.
+- Both scenarios are fallback-only in the train path: `13 market_beta_proxy`, `0 alpha`, `0 cash`.
+- `alpha_ratio=0`.
+- Main alpha block reasons:
+  - `no_eligible_direct_candidate=12`
+  - `weak_breadth_and_weak_train_average=1`
+- The system is not missing candidates entirely; the single direct candidate usually fails stability/positive-ratio gates, and later often fails nonpositive-excess as well.
+
+Stability-window findings:
+
+- `walk_forward_003`
+  - `52` counted stability rows.
+  - `16` positive subwindows, `36` nonpositive/no-trade subwindows.
+  - Candidate positive ratios are mainly `0.25` or `0.5`.
+  - Worst subwindow: `train_stability_2024_2025`, `2024-01-01..2025-04-30`, excess `-55.0564`, trades `34`.
+- `walk_forward_004`
+  - `52` counted stability rows.
+  - `17` positive subwindows, `35` nonpositive/no-trade subwindows.
+  - Candidate positive ratios range from `0.0` to `0.75`.
+  - Worst subwindow: `train_stability_2024_2025`, `2024-01-01..2025-04-30`, excess `-55.0564`, trades `34`.
+
+Interpretation:
+
+- `low_positive_ratio` is now decomposed into concrete windows, not just a compact score.
+- Older windows such as `2021_2022`, `2022_2023`, and `2023_2024` repeatedly have negative excess even when headline candidate excess is positive in late 2024.
+- In 2025, the direct candidate often becomes both unstable and outright negative-excess.
+- Do not loosen the positive-ratio gate yet.
+
 ## Direct Alpha Symbol-Selection Diagnostics
 
 New report:
@@ -376,7 +426,7 @@ Current report size:
 
 Next diagnostic:
 
-- Compare actual in-period holdings by rebalance date against the train-end selected snapshot and benchmark constituents.
+- Shift from direct-alpha eligibility to scenario failure attribution, especially `regime_sideways` and `walk_forward_005` (`insufficient_recovery`).
 
 ## Important Strategic Interpretation
 
@@ -392,7 +442,7 @@ Evidence:
 Implication:
 
 - Expanding preset names without changing actual decision diversity will not fix the system.
-- Need to inspect selection, turnover, benchmark construction, top-100 liquid universe behavior, and train-window alpha mechanics.
+- Selection, turnover, benchmark construction, top-100 liquid universe behavior, and train-window stability have now been inspected for `walk_forward_003` and `walk_forward_004`; the next high-value work is attribution for the remaining required scenario failures.
 
 ## Candidate Experiment History
 
@@ -445,12 +495,11 @@ Operational safety required before any real order path:
 
 ## Suggested Next Highest-Value Work
 
-1. Build a narrow diagnostic for direct alpha symbol selection inside the top-100 liquid train universe.
-2. Compare direct alpha selected symbols, weights, turnover, and benchmark composition for `walk_forward_003` and `walk_forward_004`.
-3. Diagnose why recursive monthly train decisions are fallback-only with `alpha_ratio=0`.
-4. Preserve the candidate behavior that fixed `stress_exclude_500pct_winners` and `walk_forward_001`, but isolate it so it does not create `regime_bear`, `walk_forward_002`, or `walk_forward_004` regressions.
-5. Continue working from failed scenario evidence, not from broad parameter sweeps.
-6. Keep all changes paper-only.
+1. Build a narrow attribution drilldown for `regime_sideways` and `walk_forward_005`, the remaining `insufficient_recovery` failures.
+2. Compare exposure, cash ratio, worst holding periods, and symbol-level contribution against the now-explained `walk_forward_003` direct-alpha-ineligible case.
+3. Preserve the candidate behavior that fixed `stress_exclude_500pct_winners` and `walk_forward_001`, but isolate it so it does not create `regime_bear`, `walk_forward_002`, or `walk_forward_004` regressions.
+4. Continue working from failed scenario evidence, not from broad parameter sweeps.
+5. Keep all changes paper-only.
 
 ## Resume Procedure For GPT
 
@@ -493,10 +542,10 @@ Absolute rules:
 Current state:
 - production-check is BLOCK.
 - health-check is WARN only because scalper data is stale.
-- Full unittest recently passed: 389 tests.
+- Full unittest recently passed: 399 tests.
 - compileall passed.
 - Required validation failures remain: stress_exclude_500pct_winners, regime_sideways, walk_forward_001, walk_forward_003, walk_forward_005.
-- Main current research issue: direct alpha train candidates are ineligible, especially walk_forward_003 and walk_forward_004. The latest diagnostics show the broad train regime is risk_on and coverage is not missing, but direct alpha badly underperforms buy-hold after PIT/top-100 liquidity filtering.
+- Main current research issue: direct alpha train candidates are ineligible, especially walk_forward_003 and walk_forward_004. The latest diagnostics show the broad train regime is risk_on and coverage is not missing, direct alpha badly underperforms buy-hold after PIT/top-100 liquidity filtering, and `low_positive_ratio` is caused by concrete negative stability subwindows rather than missing data.
 
 Your next task should start from the current BLOCK causes, not from a new strategy idea.
 ```

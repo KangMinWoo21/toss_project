@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 16:26 KST
+Last updated: 2026-06-22 16:43 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 397 tests.
+- `python -m unittest discover -s tests`: PASS, 399 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,80 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added recursive train stability-window diagnostics:
+
+- Extended `python -m backtester monthly-train-decision-diagnostics` with `--stability-output`.
+- New report: `data/reports/monthly_train_stability_window_diagnostics.csv`.
+- Purpose: decompose the direct candidate `train_positive_ratio` behind `low_positive_ratio` rejections into the actual stability subwindows, with each subwindow's excess return, drawdown, trade count, positive flag, and rejection reason.
+- Added CSV fields for:
+  - scenario, walk-forward preset, as-of date, signal date, and actual train decision mode/reason,
+  - `alpha_block_reason`,
+  - inner train start/end,
+  - stability window name/start/end,
+  - subwindow symbol count, total/buy-hold/excess return, max drawdown, trade count, positive flag, and subwindow rejection reasons,
+  - candidate full-train total/buy-hold/excess return, max drawdown, trade count, subwindow counts, positive ratio, average/worst subwindow excess, and candidate rejection reasons,
+  - raw/PIT/liquidity/train universe counts and filter removals.
+- Added deterministic tests for:
+  - stability-window decomposition of candidate positive ratio,
+  - stability-window CSV saving,
+  - `monthly-train-decision-diagnostics --stability-output` CLI report generation.
+- Regenerated train decision and train stability-window diagnostics for `walk_forward_003` and `walk_forward_004`.
+- Current train decision path report rows: `26` (`2` scenarios x `13` train decisions).
+- Current train stability-window report rows: `104`.
+
+Train stability-window findings:
+
+- `walk_forward_003`
+  - Counted stability rows: `52`.
+  - Positive subwindows: `16`; nonpositive/no-trade subwindows: `36`.
+  - Candidate positive ratios seen by decision date: `0.25` and `0.5`.
+  - Candidate rejection reasons across subwindow rows:
+    - `low_positive_ratio=24`
+    - `eligible=4`
+    - `nonpositive_excess;low_positive_ratio=16`
+    - `nonpositive_excess=8`
+  - Subwindow rejection summary:
+    - `nonpositive_excess=36`
+    - `positive=16`
+  - Worst subwindow: `2025-05-02`, `train_stability_2024_2025`, `2024-01-01..2025-04-30`, excess `-55.0564`, trades `34`, candidate excess `-63.6368`.
+- `walk_forward_004`
+  - Counted stability rows: `52`.
+  - Positive subwindows: `17`; nonpositive/no-trade subwindows: `35`.
+  - Candidate positive ratios seen by decision date: `0.0`, `0.25`, `0.5`, and `0.75`.
+  - Candidate rejection reasons across subwindow rows:
+    - `low_positive_ratio=12`
+    - `eligible=4`
+    - `nonpositive_excess;low_positive_ratio=24`
+    - `nonpositive_excess=12`
+  - Subwindow rejection summary:
+    - `nonpositive_excess=34`
+    - `no_trades=2`
+    - `positive=17`
+  - Worst subwindow: `2025-05-02`, `train_stability_2024_2025`, `2024-01-01..2025-04-30`, excess `-55.0564`, trades `34`, candidate excess `-63.6368`.
+- Interpretation:
+  - `low_positive_ratio` is not a bookkeeping artifact. The candidate repeatedly fails across older two-year windows (`2021_2022`, `2022_2023`, `2023_2024`) even when headline candidate excess is positive in late 2024.
+  - In 2025, the candidate often adds `nonpositive_excess`, with the `2024_2025` stability window becoming the largest negative contributor.
+  - This supports keeping the alpha gate strict for now. Loosening the positive-ratio gate would admit candidates with unstable historical subwindow behavior and large recent subwindow losses.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `397` tests.
+- RED check: new stability-window tests failed because the functions and `--stability-output` CLI option did not exist.
+- Targeted GREEN: `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_breaks_positive_ratio_into_subwindows tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_windows_writes_csv tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report`: PASS.
+- Related regression scope: `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `161` tests.
+- Full verification: `python -m unittest discover -s tests`: PASS, `399` tests.
+- Full syntax check: `python -m compileall -q backtester`: PASS.
+- `monthly_performance_concentration.csv` remained sourced from `monthly-validate:2024-01-01..2026-06-18` after full unittest.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, status counts `BLOCK=8`, `PASS=31`, `WARN=8`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=303.89` observed).
+
+Next recommended action:
+
+- Move from direct-alpha train eligibility to scenario failure attribution for the remaining required blockers. Start with `regime_sideways` and `walk_forward_005` (`insufficient_recovery`) and compare decision exposure/cash ratio, worst holding periods, and symbol-level contribution against the now-explained `direct_alpha_ineligible` cases.
+
+Previous loop:
 
 Added recursive monthly train decision path diagnostics:
 
@@ -483,6 +557,22 @@ Touched in latest loop:
 Current loop additions:
 
 ```powershell
+python -m compileall -q backtester
+python -m backtester production-check --allow-blocked-exit-zero
+python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
+python -m unittest discover -s tests
+python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_breaks_positive_ratio_into_subwindows tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_windows_writes_csv tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report
+python -m backtester monthly-train-decision-diagnostics --data-dir data/krx_expanded --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --scenario walk_forward_003 --scenario walk_forward_004 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --output data/reports/monthly_train_decision_path_diagnostics.csv --stability-output data/reports/monthly_train_stability_window_diagnostics.csv
+python -m unittest tests.test_monthly_rebalance tests.test_cli
+python -m unittest discover -s tests
+python -m compileall -q backtester
+python -m backtester production-check --allow-blocked-exit-zero
+python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
+```
+
+Previous recorded additions:
+
+```powershell
 python -m unittest discover -s tests
 python -m compileall -q backtester
 python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_direct_alpha_selection_explains_selected_and_rejected_symbols tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_direct_alpha_selection_writes_csv
@@ -547,18 +637,19 @@ python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
 
 ## Next Highest-Value Work
 
-1. Build a narrower diagnostic experiment around `PERSISTENT_BLOCK` scenarios only:
+1. Build a narrower attribution experiment around `PERSISTENT_BLOCK` scenarios only:
    - `regime_sideways`
-   - `walk_forward_003`
    - `walk_forward_005`
-2. Inspect why monthly walk-forward train candidates are fallback-only:
-   - all current train decision profiles show `alpha_ratio=0`,
-   - most decisions are `market_beta_proxy`, sometimes `cash`,
-   - confirm whether `select_best_train_candidate` is too strict, train windows are too short, or recursive monthly training prevents alpha selection,
-   - add deterministic tests before changing behavior.
-3. Use the new attribution reports to avoid blind parameter sweeps:
+   - compare them against the now-explained `walk_forward_003` direct-alpha-ineligible case.
+2. Use the new attribution reports to avoid blind parameter sweeps:
    - `regime_sideways` and `walk_forward_005` failed despite partial recovery and high exposure in weak months.
    - `walk_forward_003` has negative train excess and should stay blocked unless independent validation improves.
+3. Specifically decompose `insufficient_recovery`:
+   - exposure and cash ratio over time,
+   - worst holding periods,
+   - symbol-level contribution,
+   - benchmark comparison,
+   - whether failures are recovery drag or selection/exposure regression.
 4. Separately preserve the behavior that fixed:
    - `stress_exclude_500pct_winners`
    - `walk_forward_001`

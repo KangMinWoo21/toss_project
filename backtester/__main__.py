@@ -55,6 +55,7 @@ from .monthly_rebalance import (
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_performance_concentration,
     analyze_monthly_train_decision_path,
+    analyze_monthly_train_stability_windows,
     analyze_monthly_validation_failures,
     analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
@@ -102,6 +103,7 @@ from .monthly_rebalance import (
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
     save_monthly_train_decision_path,
+    save_monthly_train_stability_windows,
     save_monthly_performance_audit_rows,
     save_monthly_performance_concentration,
     save_monthly_validation_failures,
@@ -1149,6 +1151,10 @@ def main() -> int:
         "--output",
         default="data/reports/monthly_train_decision_path_diagnostics.csv",
     )
+    monthly_train_decision_parser.add_argument(
+        "--stability-output",
+        default="data/reports/monthly_train_stability_window_diagnostics.csv",
+    )
 
     production_check_parser = subparsers.add_parser(
         "production-check",
@@ -1524,35 +1530,44 @@ def main() -> int:
             and (not scenario_filter or str(row.get("name", "")).strip() in scenario_filter)
         ]
         presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
+        diagnostic_config = MonthlyRebalanceConfig(
+            presets=presets,
+            min_train_trades=args.min_train_trades,
+            min_train_positive_ratio=args.min_train_positive_ratio,
+            min_rows_per_window=args.min_rows_per_window,
+            start_grace_days=args.start_grace_days,
+            train_stability_years=args.train_stability_years,
+            fallback_breadth_days=args.fallback_breadth_days,
+            fallback_breadth_threshold=args.fallback_breadth_threshold,
+            market_beta_breadth_threshold=args.market_beta_breadth_threshold,
+            market_beta_proxy_size=args.market_beta_proxy_size,
+            point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
+            point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
+            point_in_time_min_history_days=args.point_in_time_min_history_days,
+            point_in_time_min_reference_price=args.point_in_time_min_reference_price,
+            point_in_time_max_trailing_return_pct=args.point_in_time_max_trailing_return_pct,
+            point_in_time_trailing_return_days=args.point_in_time_trailing_return_days,
+            point_in_time_universe=point_in_time_universe,
+        )
         rows = analyze_monthly_train_decision_path(
             symbol_candles,
             cases=cases,
-            config=MonthlyRebalanceConfig(
-                presets=presets,
-                min_train_trades=args.min_train_trades,
-                min_train_positive_ratio=args.min_train_positive_ratio,
-                min_rows_per_window=args.min_rows_per_window,
-                start_grace_days=args.start_grace_days,
-                train_stability_years=args.train_stability_years,
-                fallback_breadth_days=args.fallback_breadth_days,
-                fallback_breadth_threshold=args.fallback_breadth_threshold,
-                market_beta_breadth_threshold=args.market_beta_breadth_threshold,
-                market_beta_proxy_size=args.market_beta_proxy_size,
-                point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
-                point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
-                point_in_time_min_history_days=args.point_in_time_min_history_days,
-                point_in_time_min_reference_price=args.point_in_time_min_reference_price,
-                point_in_time_max_trailing_return_pct=args.point_in_time_max_trailing_return_pct,
-                point_in_time_trailing_return_days=args.point_in_time_trailing_return_days,
-                point_in_time_universe=point_in_time_universe,
-            ),
+            config=diagnostic_config,
+        )
+        stability_rows = analyze_monthly_train_stability_windows(
+            symbol_candles,
+            cases=cases,
+            config=diagnostic_config,
         )
         saved = save_monthly_train_decision_path(rows, args.output)
+        stability_saved = save_monthly_train_stability_windows(stability_rows, args.stability_output)
         print("Monthly train decision diagnostics")
         _print_data_quality_exclusions(data_quality_exclusions)
         print(f"walk_forward_cases  {len(cases)}")
         print(f"diagnostic_rows  {saved}")
         print(f"train_decision_path_report  {args.output}")
+        print(f"train_stability_rows  {stability_saved}")
+        print(f"train_stability_report  {args.stability_output}")
         return 0
 
     if args.command == "production-check":

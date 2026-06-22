@@ -25,6 +25,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_validation_failures,
     analyze_monthly_train_decision_path,
+    analyze_monthly_train_stability_windows,
     analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
     analyze_monthly_validation_remediation,
@@ -83,6 +84,7 @@ from backtester.monthly_rebalance import (
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
     save_monthly_train_decision_path,
+    save_monthly_train_stability_windows,
     save_order_plan,
     save_order_plan_summary,
     save_universe_filter_report,
@@ -2348,6 +2350,71 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("scenario,walk_forward_preset,as_of_date", text.splitlines()[0])
         self.assertIn("insufficient_trades", text)
+
+    def test_analyze_monthly_train_stability_windows_breaks_positive_ratio_into_subwindows(self):
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2025-03-31",
+            start="2025-04-01",
+            end="2025-04-30",
+        )
+        rows = analyze_monthly_train_stability_windows(
+            {
+                "AAA": _trend_candles_with_volume("2024-01-01", 460, close=100, step=0.7, volume=3_000),
+                "BBB": _trend_candles_with_volume("2024-01-01", 460, close=100, step=0.5, volume=2_000),
+                "CCC": _trend_candles_with_volume("2024-01-01", 460, close=180, step=-0.2, volume=1_000),
+            },
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                train_start="2024-01-01",
+                presets=("balanced",),
+                min_train_positive_ratio=1.1,
+                min_rows_per_window=20,
+                start_grace_days=0,
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_window_days=20,
+                point_in_time_liquidity_top_n=3,
+                train_stability_years=1,
+            ),
+        )
+
+        counted_rows = [row for row in rows if row["subwindow_counted_flag"] == "true"]
+        self.assertTrue(counted_rows)
+        row = counted_rows[0]
+        self.assertEqual(row["scenario"], "walk_forward_unit")
+        self.assertEqual(row["walk_forward_preset"], "balanced")
+        self.assertEqual(row["preset"], "balanced")
+        self.assertIn("train_stability_", row["stability_window"])
+        self.assertIn(row["subwindow_positive_flag"], {"true", "false"})
+        self.assertIn("candidate_train_positive_ratio", row)
+        self.assertIn("low_positive_ratio", row["candidate_rejection_reasons"])
+        self.assertIn("candidate_excess_return_pct", row)
+        self.assertGreaterEqual(int(float(row["candidate_train_subwindows"])), 1)
+
+    def test_save_monthly_train_stability_windows_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "train_stability.csv"
+            saved = save_monthly_train_stability_windows(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "walk_forward_preset": "balanced",
+                        "as_of_date": "2025-02-01",
+                        "stability_window": "train_stability_2024",
+                        "subwindow_positive_flag": "false",
+                        "candidate_rejection_reasons": "low_positive_ratio",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,walk_forward_preset,as_of_date", text.splitlines()[0])
+        self.assertIn("low_positive_ratio", text)
 
     def test_generate_monthly_validation_cases_includes_duration_regime_and_stress(self):
         cases = generate_monthly_validation_cases(

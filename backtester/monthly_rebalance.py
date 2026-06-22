@@ -581,6 +581,54 @@ MONTHLY_TRAIN_DECISION_PATH_COLUMNS = [
     "filter_error",
 ]
 
+MONTHLY_TRAIN_STABILITY_WINDOW_COLUMNS = [
+    "scenario",
+    "walk_forward_preset",
+    "as_of_date",
+    "signal_date",
+    "category",
+    "decision_mode",
+    "decision_selected_preset",
+    "decision_reason",
+    "alpha_block_reason",
+    "inner_train_start",
+    "inner_train_end",
+    "stability_window",
+    "stability_start",
+    "stability_end",
+    "preset",
+    "subwindow_counted_flag",
+    "subwindow_symbol_count",
+    "subwindow_total_return_pct",
+    "subwindow_buy_hold_return_pct",
+    "subwindow_excess_return_pct",
+    "subwindow_max_drawdown_pct",
+    "subwindow_trade_count",
+    "subwindow_positive_flag",
+    "subwindow_rejection_reasons",
+    "candidate_total_return_pct",
+    "candidate_buy_hold_return_pct",
+    "candidate_excess_return_pct",
+    "candidate_max_drawdown_pct",
+    "candidate_trade_count",
+    "candidate_train_subwindows",
+    "candidate_train_positive_subwindows",
+    "candidate_train_positive_ratio",
+    "candidate_train_avg_subwindow_excess_pct",
+    "candidate_train_worst_subwindow_excess_pct",
+    "candidate_rejection_reasons",
+    "raw_symbols",
+    "universe_symbols",
+    "pit_symbols",
+    "liquid_symbols",
+    "train_symbols",
+    "universe_removed",
+    "pit_filter_removed",
+    "liquidity_removed",
+    "train_coverage_removed",
+    "filter_error",
+]
+
 PERFORMANCE_CONCENTRATION_COLUMNS = [
     "source",
     "start",
@@ -2817,6 +2865,47 @@ def save_monthly_train_decision_path(rows: list[dict[str, Any]], output_path: Pa
     return len(rows)
 
 
+def analyze_monthly_train_stability_windows(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    cases: list[MonthlyValidationCase],
+    config: MonthlyRebalanceConfig,
+    initial_cash: float = 10_000_000.0,
+    fee_rate: float = 0.00015,
+    tax_rate: float = 0.0018,
+    slippage_rate: float = 0.0005,
+    min_trade_value: float = 10_000.0,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        if not case.train_start or not case.train_end:
+            continue
+        rows.extend(
+            _monthly_train_stability_windows_for_case(
+                symbol_candles,
+                case=case,
+                config=config,
+                initial_cash=initial_cash,
+                fee_rate=fee_rate,
+                tax_rate=tax_rate,
+                slippage_rate=slippage_rate,
+                min_trade_value=min_trade_value,
+            )
+        )
+    return rows
+
+
+def save_monthly_train_stability_windows(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MONTHLY_TRAIN_STABILITY_WINDOW_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in MONTHLY_TRAIN_STABILITY_WINDOW_COLUMNS})
+    return len(rows)
+
+
 def _monthly_train_decision_path_for_case(
     symbol_candles: dict[str, list[Candle]],
     *,
@@ -2884,6 +2973,247 @@ def _monthly_train_decision_path_for_case(
             }
             rows.append(row)
     return rows
+
+
+def _monthly_train_stability_windows_for_case(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    case: MonthlyValidationCase,
+    config: MonthlyRebalanceConfig,
+    initial_cash: float,
+    fee_rate: float,
+    tax_rate: float,
+    slippage_rate: float,
+    min_trade_value: float,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for preset in config.presets:
+        preset_config = replace(config, presets=(preset,))
+        result = run_monthly_rebalance_backtest(
+            symbol_candles,
+            start=case.train_start,
+            end=case.train_end,
+            config=preset_config,
+            initial_cash=initial_cash,
+            fee_rate=fee_rate,
+            tax_rate=tax_rate,
+            slippage_rate=slippage_rate,
+            min_trade_value=min_trade_value,
+        )
+        for decision in result.decisions:
+            decision_evidence = _monthly_train_decision_evidence(
+                symbol_candles,
+                as_of_date=decision.as_of_date,
+                config=preset_config,
+            )
+            for stability in _monthly_train_stability_window_evidence(
+                symbol_candles,
+                as_of_date=decision.as_of_date,
+                config=preset_config,
+            ):
+                rows.append(
+                    {
+                        "scenario": case.name,
+                        "category": case.category,
+                        "walk_forward_preset": preset,
+                        "as_of_date": decision.as_of_date,
+                        "signal_date": decision.signal_date,
+                        "decision_mode": decision.mode,
+                        "decision_selected_preset": decision.selected_preset,
+                        "decision_reason": decision.reason,
+                        "alpha_block_reason": _monthly_alpha_block_reason(decision, decision_evidence),
+                        **stability,
+                    }
+                )
+    return rows
+
+
+def _monthly_train_stability_window_evidence(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    as_of_date: str,
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    raw_symbol_count = len(symbol_candles)
+    try:
+        signal_date = latest_signal_date(symbol_candles, as_of_date=as_of_date)
+        universe_candles = filter_symbol_candles_by_universe(
+            symbol_candles,
+            config.point_in_time_universe,
+            signal_date=signal_date,
+            min_history_days=config.point_in_time_min_history_days,
+        )
+        point_in_time_candles = select_point_in_time_universe(
+            universe_candles,
+            signal_date=signal_date,
+            min_history_days=config.point_in_time_min_history_days,
+            min_reference_price=config.point_in_time_min_reference_price,
+            max_trailing_return_pct=config.point_in_time_max_trailing_return_pct,
+            trailing_return_days=config.point_in_time_trailing_return_days,
+        )
+        decision_candles = (
+            select_liquid_universe(
+                point_in_time_candles,
+                signal_date=signal_date,
+                top_n=config.point_in_time_liquidity_top_n,
+                window_days=config.point_in_time_liquidity_window_days,
+            )
+            if config.point_in_time_liquidity_top_n > 0
+            else point_in_time_candles
+        )
+        inner_train_start = config.train_start or _default_train_start(signal_date, config.train_years)
+        train_candles = slice_asof_symbol_candles(
+            decision_candles,
+            start=inner_train_start,
+            end=signal_date,
+            min_rows=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+        )
+        preset_configs = {
+            preset: momentum_rotation_config_for_preset(preset)
+            for preset in config.presets
+        }
+        candidate_rows = _train_candidate_rows(
+            decision_candles,
+            train_candles=train_candles,
+            train_start=inner_train_start,
+            train_end=signal_date,
+            preset_configs=preset_configs,
+            min_rows_per_window=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+            train_stability_years=config.train_stability_years,
+        )
+        counts = {
+            "raw_symbols": raw_symbol_count,
+            "universe_symbols": len(universe_candles),
+            "pit_symbols": len(point_in_time_candles),
+            "liquid_symbols": len(decision_candles),
+            "train_symbols": len(train_candles),
+            "universe_removed": max(0, raw_symbol_count - len(universe_candles)),
+            "pit_filter_removed": max(0, len(universe_candles) - len(point_in_time_candles)),
+            "liquidity_removed": max(0, len(point_in_time_candles) - len(decision_candles)),
+            "train_coverage_removed": max(0, len(decision_candles) - len(train_candles)),
+            "filter_error": "",
+        }
+        rows: list[dict[str, Any]] = []
+        for candidate in candidate_rows:
+            preset = str(candidate.get("preset", ""))
+            preset_config = preset_configs[preset]
+            candidate_reasons = _monthly_train_candidate_rejection_reasons(candidate, config)
+            candidate_summary = {
+                "inner_train_start": inner_train_start,
+                "inner_train_end": signal_date,
+                "preset": preset,
+                "candidate_total_return_pct": candidate.get("total_return_pct", ""),
+                "candidate_buy_hold_return_pct": candidate.get("buy_hold_return_pct", ""),
+                "candidate_excess_return_pct": candidate.get("excess_return_pct", ""),
+                "candidate_max_drawdown_pct": candidate.get("max_drawdown_pct", ""),
+                "candidate_trade_count": candidate.get("trades", ""),
+                "candidate_train_subwindows": candidate.get("train_subwindows", ""),
+                "candidate_train_positive_subwindows": candidate.get("train_positive_subwindows", ""),
+                "candidate_train_positive_ratio": candidate.get("train_positive_ratio", ""),
+                "candidate_train_avg_subwindow_excess_pct": candidate.get("train_avg_subwindow_excess_pct", ""),
+                "candidate_train_worst_subwindow_excess_pct": candidate.get("train_worst_subwindow_excess_pct", ""),
+                "candidate_rejection_reasons": ";".join(candidate_reasons) if candidate_reasons else "eligible",
+            }
+            for window in generate_train_stability_windows(
+                inner_train_start,
+                signal_date,
+                stability_years=config.train_stability_years,
+            ):
+                sub_candles = slice_asof_symbol_candles(
+                    decision_candles,
+                    start=window.train_start,
+                    end=window.train_end,
+                    min_rows=config.min_rows_per_window,
+                    start_grace_days=config.start_grace_days,
+                )
+                row = {
+                    **candidate_summary,
+                    "stability_window": window.name,
+                    "stability_start": window.train_start,
+                    "stability_end": window.train_end,
+                    **counts,
+                }
+                if not sub_candles:
+                    rows.append(
+                        {
+                            **row,
+                            "subwindow_counted_flag": "false",
+                            "subwindow_symbol_count": 0,
+                            "subwindow_total_return_pct": "",
+                            "subwindow_buy_hold_return_pct": "",
+                            "subwindow_excess_return_pct": "",
+                            "subwindow_max_drawdown_pct": "",
+                            "subwindow_trade_count": "",
+                            "subwindow_positive_flag": "false",
+                            "subwindow_rejection_reasons": "no_subwindow_symbols",
+                        }
+                    )
+                    continue
+                sub_result = run_momentum_rotation_backtest(sub_candles, preset_config)
+                sub_reasons: list[str] = []
+                if sub_result.excess_return_pct <= 0:
+                    sub_reasons.append("nonpositive_excess")
+                if sub_result.trade_count <= 0:
+                    sub_reasons.append("no_trades")
+                positive = sub_result.excess_return_pct > 0 and sub_result.trade_count > 0
+                rows.append(
+                    {
+                        **row,
+                        "subwindow_counted_flag": "true",
+                        "subwindow_symbol_count": len(sub_candles),
+                        "subwindow_total_return_pct": round(sub_result.total_return_pct, 4),
+                        "subwindow_buy_hold_return_pct": round(sub_result.buy_hold_return_pct, 4),
+                        "subwindow_excess_return_pct": round(sub_result.excess_return_pct, 4),
+                        "subwindow_max_drawdown_pct": round(sub_result.max_drawdown_pct, 4),
+                        "subwindow_trade_count": sub_result.trade_count,
+                        "subwindow_positive_flag": "true" if positive else "false",
+                        "subwindow_rejection_reasons": ";".join(sub_reasons) if sub_reasons else "",
+                    }
+                )
+        return rows
+    except ValueError as exc:
+        return [
+            {
+                "inner_train_start": "",
+                "inner_train_end": "",
+                "stability_window": "",
+                "stability_start": "",
+                "stability_end": "",
+                "preset": "",
+                "subwindow_counted_flag": "false",
+                "subwindow_symbol_count": "",
+                "subwindow_total_return_pct": "",
+                "subwindow_buy_hold_return_pct": "",
+                "subwindow_excess_return_pct": "",
+                "subwindow_max_drawdown_pct": "",
+                "subwindow_trade_count": "",
+                "subwindow_positive_flag": "false",
+                "subwindow_rejection_reasons": "",
+                "candidate_total_return_pct": "",
+                "candidate_buy_hold_return_pct": "",
+                "candidate_excess_return_pct": "",
+                "candidate_max_drawdown_pct": "",
+                "candidate_trade_count": "",
+                "candidate_train_subwindows": "",
+                "candidate_train_positive_subwindows": "",
+                "candidate_train_positive_ratio": "",
+                "candidate_train_avg_subwindow_excess_pct": "",
+                "candidate_train_worst_subwindow_excess_pct": "",
+                "candidate_rejection_reasons": "",
+                "raw_symbols": raw_symbol_count,
+                "universe_symbols": "",
+                "pit_symbols": "",
+                "liquid_symbols": "",
+                "train_symbols": "",
+                "universe_removed": "",
+                "pit_filter_removed": "",
+                "liquidity_removed": "",
+                "train_coverage_removed": "",
+                "filter_error": _diagnostic_token(str(exc)),
+            }
+        ]
 
 
 def _monthly_train_decision_evidence(

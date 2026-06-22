@@ -1116,6 +1116,7 @@ class CliTests(unittest.TestCase):
                 encoding="utf-8",
             )
             output = root / "train_decisions.csv"
+            stability_output = root / "train_stability.csv"
 
             completed = self._run_backtester_in_cwd(
                 root,
@@ -1141,10 +1142,14 @@ class CliTests(unittest.TestCase):
                     "20",
                     "--start-grace-days",
                     "0",
+                    "--train-stability-years",
+                    "1",
                     "--min-train-trades",
                     "999",
                     "--output",
                     str(output),
+                    "--stability-output",
+                    str(stability_output),
                 ],
             )
             if output.exists():
@@ -1152,11 +1157,19 @@ class CliTests(unittest.TestCase):
                     rows = list(csv.DictReader(f))
             else:
                 rows = []
+            if stability_output.exists():
+                with stability_output.open(encoding="utf-8") as f:
+                    stability_rows = list(csv.DictReader(f))
+            else:
+                stability_rows = []
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("train_decision_path_report", completed.stdout)
+        self.assertIn("train_stability_report", completed.stdout)
         self.assertTrue(rows)
         self.assertTrue(any(row["direct_candidate_rejection_reasons"] or row["filter_error"] for row in rows))
+        self.assertTrue(stability_rows)
+        self.assertTrue(any("subwindow_positive_flag" in row for row in stability_rows))
 
     def test_monthly_compare_validation_cli_writes_comparison(self):
         with TemporaryDirectory() as temp_dir:
