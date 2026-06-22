@@ -667,6 +667,59 @@ DIRECT_ALPHA_TIMING_COLUMNS = [
     "train_coverage_removed",
 ]
 
+DIRECT_ALPHA_RANK_DRIFT_COLUMNS = [
+    "scenario",
+    "preset",
+    "scheduled_rebalance_date",
+    "signal_date",
+    "category",
+    "train_start",
+    "train_end",
+    "scheduled_rebalance_index",
+    "symbol",
+    "symbol_role",
+    "in_train_end_selected_snapshot",
+    "in_scheduled_targets",
+    "in_actual_holdings",
+    "train_end_rank",
+    "scheduled_rank",
+    "rank_delta",
+    "train_end_target_rank",
+    "scheduled_target_rank",
+    "train_end_momentum_score_pct",
+    "scheduled_momentum_score_pct",
+    "momentum_delta_pct",
+    "train_end_rejection_reason",
+    "scheduled_rejection_reason",
+    "train_end_average_trading_value",
+    "scheduled_average_trading_value",
+    "market_breadth_at_signal",
+    "market_breadth_allows_entry",
+    "ranking_top_n_at_signal",
+    "ranking_trend_filter_days_at_signal",
+    "train_end_selected_count",
+    "scheduled_target_count",
+    "actual_held_count",
+    "train_end_selected_symbols",
+    "scheduled_target_symbols",
+    "actual_held_symbols",
+    "snapshot_target_overlap_count",
+    "drop_reason",
+    "timing_diagnostic",
+    "candidate_excess_return_pct",
+    "benchmark_avg_return_pct",
+    "benchmark_median_return_pct",
+    "raw_symbols",
+    "universe_symbols",
+    "pit_symbols",
+    "liquid_symbols",
+    "train_symbols",
+    "universe_removed",
+    "pit_filter_removed",
+    "liquidity_removed",
+    "train_coverage_removed",
+]
+
 MONTHLY_TRAIN_DECISION_PATH_COLUMNS = [
     "scenario",
     "walk_forward_preset",
@@ -4000,6 +4053,31 @@ def save_monthly_direct_alpha_timing(rows: list[dict[str, Any]], output_path: Pa
     return len(rows)
 
 
+def analyze_monthly_direct_alpha_rank_drift(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    cases: list[MonthlyValidationCase],
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        if not case.train_start or not case.train_end:
+            continue
+        rows.extend(_monthly_direct_alpha_rank_drift_for_case(symbol_candles, case=case, config=config))
+    return rows
+
+
+def save_monthly_direct_alpha_rank_drift(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=DIRECT_ALPHA_RANK_DRIFT_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in DIRECT_ALPHA_RANK_DRIFT_COLUMNS})
+    return len(rows)
+
+
 def analyze_monthly_train_decision_path(
     symbol_candles: dict[str, list[Candle]],
     *,
@@ -5402,6 +5480,218 @@ def _monthly_direct_alpha_timing_for_case(
     return rows
 
 
+def _monthly_direct_alpha_rank_drift_for_case(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    case: MonthlyValidationCase,
+    config: MonthlyRebalanceConfig,
+) -> list[dict[str, Any]]:
+    try:
+        universe_candles = filter_symbol_candles_by_universe(
+            symbol_candles,
+            config.point_in_time_universe,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+        )
+        point_in_time_candles = select_point_in_time_universe(
+            universe_candles,
+            signal_date=case.train_end,
+            min_history_days=config.point_in_time_min_history_days,
+            min_reference_price=config.point_in_time_min_reference_price,
+            max_trailing_return_pct=config.point_in_time_max_trailing_return_pct,
+            trailing_return_days=config.point_in_time_trailing_return_days,
+        )
+        decision_candles = (
+            select_liquid_universe(
+                point_in_time_candles,
+                signal_date=case.train_end,
+                top_n=config.point_in_time_liquidity_top_n,
+                window_days=config.point_in_time_liquidity_window_days,
+            )
+            if config.point_in_time_liquidity_top_n > 0
+            else point_in_time_candles
+        )
+        train_candles = slice_asof_symbol_candles(
+            decision_candles,
+            start=case.train_start,
+            end=case.train_end,
+            min_rows=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+        )
+    except ValueError:
+        return []
+    if not train_candles:
+        return []
+
+    counts = {
+        "raw_symbols": len(symbol_candles),
+        "universe_symbols": len(universe_candles),
+        "pit_symbols": len(point_in_time_candles),
+        "liquid_symbols": len(decision_candles),
+        "train_symbols": len(train_candles),
+        "universe_removed": max(0, len(symbol_candles) - len(universe_candles)),
+        "pit_filter_removed": max(0, len(universe_candles) - len(point_in_time_candles)),
+        "liquidity_removed": max(0, len(point_in_time_candles) - len(decision_candles)),
+        "train_coverage_removed": max(0, len(decision_candles) - len(train_candles)),
+    }
+    return_values = list(dict(_period_symbol_returns(train_candles, start=case.train_start, end=case.train_end)).values())
+    benchmark_avg = mean(return_values) if return_values else None
+    benchmark_median = median(return_values) if return_values else None
+    all_dates = sorted({candle.date for candles in train_candles.values() for candle in candles})
+    rows: list[dict[str, Any]] = []
+    for preset in config.presets:
+        preset_config = momentum_rotation_config_for_preset(preset)
+        candidate_result = run_momentum_rotation_backtest(train_candles, preset_config)
+        train_end_selected = rank_momentum_targets(train_candles, signal_date=case.train_end, config=preset_config)
+        train_end_selected_set = set(train_end_selected)
+        train_end_target_rank = {symbol: index for index, symbol in enumerate(train_end_selected, start=1)}
+        _, _, _, train_end_trend_days = _direct_alpha_market_breadth_profile(
+            train_candles,
+            signal_date=case.train_end,
+            config=preset_config,
+        )
+        train_end_rank_info = _direct_alpha_rank_info(
+            train_candles,
+            signal_date=case.train_end,
+            config=preset_config,
+            trend_filter_days=train_end_trend_days,
+        )
+        scheduled_dates = _direct_alpha_scheduled_rebalance_dates(train_candles, preset_config)
+
+        trades_by_date: dict[str, list[Any]] = {}
+        for trade in candidate_result.trades:
+            trades_by_date.setdefault(trade.date, []).append(trade)
+
+        holdings: set[str] = set()
+        for scheduled_index, rebalance_date in enumerate(scheduled_dates, start=1):
+            for trade in trades_by_date.get(rebalance_date, []):
+                if trade.action == "SELL":
+                    holdings.discard(trade.symbol)
+                elif trade.action == "BUY":
+                    holdings.add(trade.symbol)
+
+            signal_date = _direct_alpha_signal_date_for_rebalance(all_dates, rebalance_date)
+            scheduled_targets = (
+                rank_momentum_targets(train_candles, signal_date=signal_date, config=preset_config)
+                if signal_date
+                else []
+            )
+            scheduled_target_set = set(scheduled_targets)
+            scheduled_target_rank = {symbol: index for index, symbol in enumerate(scheduled_targets, start=1)}
+            market_breadth, market_allows_entry, ranking_top_n, ranking_trend_days = (
+                _direct_alpha_market_breadth_profile(train_candles, signal_date=signal_date, config=preset_config)
+            )
+            scheduled_rank_info = _direct_alpha_rank_info(
+                train_candles,
+                signal_date=signal_date,
+                config=preset_config,
+                trend_filter_days=ranking_trend_days,
+            )
+            held_set = set(holdings)
+            row_symbols = sorted(train_end_selected_set | scheduled_target_set | held_set)
+            snapshot_target_overlap = train_end_selected_set & scheduled_target_set
+            snapshot_missing_targets = sorted(train_end_selected_set - scheduled_target_set)
+            timing_diagnostic = _direct_alpha_timing_diagnostic(
+                best_offset="current",
+                current_overlap=len(snapshot_target_overlap),
+                best_overlap=len(snapshot_target_overlap),
+                scheduled_targets=scheduled_targets,
+                snapshot_missing_holdings=snapshot_missing_targets,
+            )
+
+            for symbol in row_symbols:
+                in_train_end = symbol in train_end_selected_set
+                in_scheduled = symbol in scheduled_target_set
+                in_actual = symbol in held_set
+                train_info = train_end_rank_info.get(symbol, {})
+                scheduled_info = scheduled_rank_info.get(symbol, {})
+                train_rank = train_info.get("candidate_rank")
+                scheduled_rank = scheduled_info.get("candidate_rank")
+                train_momentum = _float_or_none(train_info.get("momentum_score_pct"))
+                scheduled_momentum = _float_or_none(scheduled_info.get("momentum_score_pct"))
+                rank_delta = (
+                    int(scheduled_rank) - int(train_rank)
+                    if train_rank is not None and scheduled_rank is not None
+                    else ""
+                )
+                momentum_delta = (
+                    scheduled_momentum - train_momentum
+                    if train_momentum is not None and scheduled_momentum is not None
+                    else None
+                )
+                scheduled_rejection_reason = (
+                    ""
+                    if in_scheduled
+                    else str(scheduled_info.get("rejection_reason", "") or "not_ranked")
+                )
+                train_end_rejection_reason = (
+                    ""
+                    if in_train_end
+                    else str(train_info.get("rejection_reason", "") or "not_ranked")
+                )
+                rows.append(
+                    {
+                        "scenario": case.name,
+                        "preset": preset,
+                        "scheduled_rebalance_date": rebalance_date,
+                        "signal_date": signal_date,
+                        "category": case.category,
+                        "train_start": case.train_start,
+                        "train_end": case.train_end,
+                        "scheduled_rebalance_index": scheduled_index,
+                        "symbol": symbol,
+                        "symbol_role": _direct_alpha_rank_drift_symbol_role(
+                            in_train_end_selected_snapshot=in_train_end,
+                            in_scheduled_targets=in_scheduled,
+                            in_actual_holdings=in_actual,
+                        ),
+                        "in_train_end_selected_snapshot": str(in_train_end).lower(),
+                        "in_scheduled_targets": str(in_scheduled).lower(),
+                        "in_actual_holdings": str(in_actual).lower(),
+                        "train_end_rank": train_rank if train_rank is not None else "",
+                        "scheduled_rank": scheduled_rank if scheduled_rank is not None else "",
+                        "rank_delta": rank_delta,
+                        "train_end_target_rank": train_end_target_rank.get(symbol, ""),
+                        "scheduled_target_rank": scheduled_target_rank.get(symbol, ""),
+                        "train_end_momentum_score_pct": _format_optional_float(train_momentum),
+                        "scheduled_momentum_score_pct": _format_optional_float(scheduled_momentum),
+                        "momentum_delta_pct": _format_optional_float(momentum_delta),
+                        "train_end_rejection_reason": train_end_rejection_reason,
+                        "scheduled_rejection_reason": scheduled_rejection_reason,
+                        "train_end_average_trading_value": _format_optional_float(
+                            train_info.get("average_trading_value")
+                        ),
+                        "scheduled_average_trading_value": _format_optional_float(
+                            scheduled_info.get("average_trading_value")
+                        ),
+                        "market_breadth_at_signal": _format_optional_float(market_breadth),
+                        "market_breadth_allows_entry": str(market_allows_entry).lower(),
+                        "ranking_top_n_at_signal": ranking_top_n,
+                        "ranking_trend_filter_days_at_signal": ranking_trend_days,
+                        "train_end_selected_count": len(train_end_selected),
+                        "scheduled_target_count": len(scheduled_targets),
+                        "actual_held_count": len(holdings),
+                        "train_end_selected_symbols": ";".join(train_end_selected),
+                        "scheduled_target_symbols": ";".join(scheduled_targets),
+                        "actual_held_symbols": ";".join(sorted(holdings)),
+                        "snapshot_target_overlap_count": len(snapshot_target_overlap),
+                        "drop_reason": _direct_alpha_rank_drift_drop_reason(
+                            in_train_end_selected_snapshot=in_train_end,
+                            in_scheduled_targets=in_scheduled,
+                            scheduled_targets=scheduled_targets,
+                            scheduled_rank=scheduled_rank,
+                            scheduled_rejection_reason=scheduled_rejection_reason,
+                        ),
+                        "timing_diagnostic": timing_diagnostic,
+                        "candidate_excess_return_pct": _format_optional_float(candidate_result.excess_return_pct),
+                        "benchmark_avg_return_pct": _format_optional_float(benchmark_avg),
+                        "benchmark_median_return_pct": _format_optional_float(benchmark_median),
+                        **counts,
+                    }
+                )
+    return rows
+
+
 def _direct_alpha_signal_date_for_rebalance(dates: list[str], rebalance_date: str) -> str:
     try:
         index = dates.index(rebalance_date)
@@ -5465,6 +5755,90 @@ def _direct_alpha_missed_snapshot_reason(
     return ";".join(f"{reason}={counts[reason]}" for reason in sorted(counts))
 
 
+def _direct_alpha_rank_drift_symbol_role(
+    *,
+    in_train_end_selected_snapshot: bool,
+    in_scheduled_targets: bool,
+    in_actual_holdings: bool,
+) -> str:
+    if in_train_end_selected_snapshot and in_scheduled_targets:
+        return "both"
+    if in_train_end_selected_snapshot:
+        return "train_end_snapshot_only"
+    if in_scheduled_targets:
+        return "scheduled_target_only"
+    if in_actual_holdings:
+        return "actual_holding_only"
+    return "context_only"
+
+
+def _direct_alpha_rank_drift_drop_reason(
+    *,
+    in_train_end_selected_snapshot: bool,
+    in_scheduled_targets: bool,
+    scheduled_targets: list[str],
+    scheduled_rank: Any,
+    scheduled_rejection_reason: str,
+) -> str:
+    if in_train_end_selected_snapshot and in_scheduled_targets:
+        return "still_selected"
+    if in_scheduled_targets:
+        return "entered_scheduled_targets"
+    if not in_train_end_selected_snapshot:
+        return "not_in_train_end_snapshot"
+    if not scheduled_targets:
+        return "no_scheduled_targets"
+    if scheduled_rejection_reason == "below_selected_rank":
+        return "rank_dropped_below_top_n"
+    if scheduled_rejection_reason:
+        return scheduled_rejection_reason
+    if scheduled_rank not in (None, ""):
+        return "rank_dropped_below_top_n"
+    return "unranked_on_rebalance_signal"
+
+
+def _direct_alpha_market_breadth_profile(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    signal_date: str,
+    config: MomentumRotationConfig,
+) -> tuple[float | None, bool, int, int]:
+    market_breadth = _direct_alpha_market_breadth_value(
+        symbol_candles,
+        signal_date=signal_date,
+        trend_days=config.market_trend_filter_days,
+    )
+    if config.market_trend_filter_days <= 0 or config.market_breadth_threshold <= 0:
+        allows_entry = True
+    else:
+        allows_entry = market_breadth is not None and market_breadth >= config.market_breadth_threshold
+    if market_breadth is not None and market_breadth >= config.bull_breadth_threshold:
+        return market_breadth, allows_entry, config.bull_top_n, config.bull_trend_filter_days
+    return market_breadth, allows_entry, config.top_n, config.trend_filter_days
+
+
+def _direct_alpha_market_breadth_value(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    signal_date: str,
+    trend_days: int,
+) -> float | None:
+    if not signal_date or trend_days <= 0:
+        return None
+    checks: list[bool] = []
+    for candles in symbol_candles.values():
+        sorted_candles = sorted(candles, key=lambda candle: candle.date)
+        signal_index = next((index for index, candle in enumerate(sorted_candles) if candle.date == signal_date), None)
+        if signal_index is None or signal_index + 1 < trend_days:
+            continue
+        trend_values = sorted_candles[signal_index - trend_days + 1 : signal_index + 1]
+        trend_average = sum(candle.close for candle in trend_values) / len(trend_values)
+        checks.append(sorted_candles[signal_index].close >= trend_average)
+    if not checks:
+        return None
+    return sum(checks) / len(checks)
+
+
 def _direct_alpha_path_drift_role(
     *,
     in_actual_holdings: bool,
@@ -5498,9 +5872,11 @@ def _direct_alpha_rank_info(
     *,
     signal_date: str,
     config: MomentumRotationConfig,
+    trend_filter_days: int | None = None,
 ) -> dict[str, dict[str, Any]]:
     rows: list[tuple[str, float]] = []
     info: dict[str, dict[str, Any]] = {}
+    selected_trend_filter_days = config.trend_filter_days if trend_filter_days is None else trend_filter_days
     for symbol, candles in symbol_candles.items():
         sorted_candles = sorted(candles, key=lambda candle: candle.date)
         signal_index = next((index for index, candle in enumerate(sorted_candles) if candle.date == signal_date), None)
@@ -5534,11 +5910,11 @@ def _direct_alpha_rank_info(
             average_trading_value is None or average_trading_value < config.min_average_trading_value
         ):
             symbol_info["rejection_reason"] = "liquidity_threshold"
-        elif config.trend_filter_days > 0:
-            if signal_index + 1 < config.trend_filter_days:
+        elif selected_trend_filter_days > 0:
+            if signal_index + 1 < selected_trend_filter_days:
                 symbol_info["rejection_reason"] = "insufficient_trend_history"
             else:
-                trend_values = sorted_candles[signal_index - config.trend_filter_days + 1 : signal_index + 1]
+                trend_values = sorted_candles[signal_index - selected_trend_filter_days + 1 : signal_index + 1]
                 trend_average = sum(candle.close for candle in trend_values) / len(trend_values)
                 if signal_close < trend_average:
                     symbol_info["rejection_reason"] = "trend_filter_failed"

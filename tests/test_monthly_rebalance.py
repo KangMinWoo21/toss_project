@@ -23,6 +23,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_path_drift,
+    analyze_monthly_direct_alpha_rank_drift,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_direct_alpha_timing,
     analyze_monthly_path_attribution,
@@ -95,6 +96,7 @@ from backtester.monthly_rebalance import (
     save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_path_drift,
+    save_monthly_direct_alpha_rank_drift,
     save_monthly_direct_alpha_selection,
     save_monthly_direct_alpha_timing,
     save_monthly_path_attribution,
@@ -181,6 +183,38 @@ def _trend_candles_with_volume(start_day: str, count: int, *, close: float, step
     rows: list[Candle] = []
     for index in range(count):
         price = close + (step * index)
+        rows.append(
+            Candle(
+                date=(start + timedelta(days=index)).isoformat(),
+                open=price,
+                high=price + 1,
+                low=max(1, price - 1),
+                close=price,
+                volume=volume,
+            )
+        )
+    return rows
+
+
+def _piecewise_candles_with_volume(
+    start_day: str,
+    count: int,
+    *,
+    close: float,
+    steps: list[tuple[int, float]],
+    volume: float,
+) -> list[Candle]:
+    start = date.fromisoformat(start_day)
+    rows: list[Candle] = []
+    price = close
+    step_index = 0
+    current_step = steps[0][1]
+    for index in range(count):
+        while step_index + 1 < len(steps) and index >= steps[step_index + 1][0]:
+            step_index += 1
+            current_step = steps[step_index][1]
+        if index > 0:
+            price += current_step
         rows.append(
             Candle(
                 date=(start + timedelta(days=index)).isoformat(),
@@ -3142,6 +3176,96 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("scenario,preset,scheduled_rebalance_date", text.splitlines()[0])
         self.assertIn("timing_diagnostic", text.splitlines()[0])
+        self.assertIn("walk_forward_unit", text)
+
+    def test_analyze_monthly_direct_alpha_rank_drift_compares_train_end_and_rebalance_signal_ranks(self):
+        symbol_candles = {
+            "LATE": _piecewise_candles_with_volume(
+                "2024-01-01",
+                260,
+                close=100,
+                steps=[(0, 0.04), (181, 2.3)],
+                volume=10_000,
+            ),
+            "EARLY": _piecewise_candles_with_volume(
+                "2024-01-01",
+                260,
+                close=100,
+                steps=[(0, 1.5), (181, 0.02)],
+                volume=9_000,
+            ),
+            "AAA": _trend_candles_with_volume("2024-01-01", 260, close=100, step=1.0, volume=8_000),
+            "BBB": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.8, volume=7_000),
+            "CCC": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.6, volume=6_000),
+            "DDD": _trend_candles_with_volume("2024-01-01", 260, close=100, step=0.4, volume=5_000),
+        }
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2024-09-16",
+            start="2024-09-17",
+            end="2024-10-31",
+        )
+
+        rows = analyze_monthly_direct_alpha_rank_drift(
+            symbol_candles,
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                presets=("balanced",),
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=50,
+                point_in_time_liquidity_top_n=6,
+                point_in_time_liquidity_window_days=20,
+                min_rows_per_window=20,
+                start_grace_days=0,
+                train_stability_years=1,
+            ),
+        )
+
+        self.assertTrue(rows)
+        late_rows = [row for row in rows if row["symbol"] == "LATE"]
+        self.assertTrue(late_rows)
+        late = late_rows[0]
+        self.assertEqual(late["scenario"], "walk_forward_unit")
+        self.assertEqual(late["preset"], "balanced")
+        self.assertEqual(late["in_train_end_selected_snapshot"], "true")
+        self.assertEqual(late["in_scheduled_targets"], "false")
+        self.assertIn("scheduled_rebalance_date", late)
+        self.assertIn("signal_date", late)
+        self.assertIn("train_end_momentum_score_pct", late)
+        self.assertIn("scheduled_momentum_score_pct", late)
+        self.assertIn("momentum_delta_pct", late)
+        self.assertIn("train_end_rank", late)
+        self.assertIn("scheduled_rank", late)
+        self.assertIn("market_breadth_at_signal", late)
+        self.assertIn("market_breadth_allows_entry", late)
+        self.assertIn("ranking_top_n_at_signal", late)
+        self.assertIn("ranking_trend_filter_days_at_signal", late)
+        self.assertIn(late["drop_reason"], {"rank_dropped_below_top_n", "below_selected_rank"})
+        self.assertTrue(any(row["symbol_role"] == "both" for row in rows))
+
+    def test_save_monthly_direct_alpha_rank_drift_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "direct_alpha_rank_drift.csv"
+            saved = save_monthly_direct_alpha_rank_drift(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "preset": "balanced",
+                        "scheduled_rebalance_date": "2024-07-01",
+                        "symbol": "AAA",
+                        "momentum_delta_pct": "1.23",
+                        "drop_reason": "still_selected",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,preset,scheduled_rebalance_date", text.splitlines()[0])
+        self.assertIn("momentum_delta_pct", text.splitlines()[0])
         self.assertIn("walk_forward_unit", text)
 
     def test_analyze_monthly_train_decision_path_explains_fallback_choices(self):

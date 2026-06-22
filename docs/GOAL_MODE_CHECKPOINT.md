@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 21:52 KST
+Last updated: 2026-06-22 22:06 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 424 tests.
+- `python -m unittest discover -s tests`: PASS, 431 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,112 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only direct-alpha rank-drift diagnostic:
+
+- Added `analyze_monthly_direct_alpha_rank_drift`.
+- Added `save_monthly_direct_alpha_rank_drift`.
+- Extended `python -m backtester monthly-direct-alpha-diagnostics` with:
+  - `--rank-drift-output`
+  - default: `data/reports/monthly_direct_alpha_rank_drift_diagnostics.csv`
+- The report expands each scheduled direct-alpha rebalance date into per-symbol rows and compares:
+  - train-end selected snapshot membership,
+  - scheduled rebalance signal target membership,
+  - actual holding membership,
+  - train-end rank vs scheduled signal rank,
+  - train-end momentum vs scheduled signal momentum,
+  - rank and momentum deltas,
+  - scheduled rejection reason,
+  - market breadth at the signal date,
+  - ranking top-N and trend-filter days used at the signal date,
+  - PIT/universe/liquidity/train coverage counts.
+- This is diagnostic-only and paper-only.
+- Existing strategy behavior, train gates, validation gates, execution planning, and Toss/API behavior are unchanged.
+
+Regenerated reports:
+
+- `data/reports/monthly_direct_alpha_selection_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_path_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_path_drift_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_timing_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_rank_drift_diagnostics.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Current rank-drift findings:
+
+- `monthly_direct_alpha_rank_drift_diagnostics.csv` has `29` rows.
+- `walk_forward_003`, `2025-04-08`:
+  - `scheduled_target_count=0`.
+  - `market_breadth_at_signal=0.27`.
+  - `market_breadth_allows_entry=false`.
+  - The no-target row is a market-breadth gate problem, not a missing-data or order-execution problem.
+  - Missed train-end names had large momentum decay:
+    - `108490`: train-end rank `1`, scheduled rank `17`, momentum `376.4201 -> 28.7835`.
+    - `002020`: train-end rank `2`, scheduled rank `16`, momentum `279.8343 -> 29.1745`.
+    - `000880`: train-end rank `3`, scheduled rank `11`, momentum `236 -> 37.2822`.
+    - `294570`: train-end rank `4`, scheduled rank `8`, momentum `212.9127 -> 48.6667`.
+    - `064260`: train-end rank `5`, scheduled signal momentum `-33.8624`, `trend_filter_failed`.
+- `walk_forward_003`, `2025-06-10`:
+  - `market_breadth_at_signal=0.78`, `market_breadth_allows_entry=true`.
+  - Missed train-end names were not blocked by market breadth.
+  - `002020`, `064260`, and `294570` all fell below the top-N by the scheduled signal date.
+  - Momentum deltas were `-148.9145`, `-160.0474`, and `-77.5412`.
+- `walk_forward_004`, `2025-07-11`:
+  - `market_breadth_at_signal=0.85`, `market_breadth_allows_entry=true`.
+  - `006800` fell from rank `5` to `9`.
+  - `222800` fell from rank `2` to `54`.
+  - `226950` had large momentum decay and failed the scheduled signal trend filter.
+- `walk_forward_004`, `2025-09-08`:
+  - `market_breadth_at_signal=0.88`, `market_breadth_allows_entry=true`.
+  - `006800` and `124500` failed the scheduled signal trend filter under the active 60-day ranking profile.
+  - `222800` was mainly a rank-drift miss, falling from train-end rank `2` to scheduled rank `13`.
+
+Interpretation:
+
+- The missed train-end snapshot names are mostly not liquidity or availability failures.
+- The active misses are mainly lookback-window momentum decay and rank drift.
+- Important trend-filter failures are now visible:
+  - `226950` on `walk_forward_004` `2025-07-11`.
+  - `006800` and `124500` on `walk_forward_004` `2025-09-08`.
+- The `walk_forward_003` `2025-04-08` no-target row is explained by weak market breadth.
+- This supports the current safety posture:
+  - keep direct-alpha train gates strict,
+  - do not loosen `min_train_positive_ratio`,
+  - do not adopt rejected direct-alpha candidates,
+  - do not change rebalance cadence or rank filters from this evidence alone.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `429` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED checks:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_direct_alpha_rank_drift_compares_train_end_and_rebalance_signal_ranks tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_direct_alpha_rank_drift_writes_csv tests.test_cli.CliTests.test_monthly_direct_alpha_diagnostics_cli_writes_selection_report`: failed because `analyze_monthly_direct_alpha_rank_drift`, `save_monthly_direct_alpha_rank_drift`, and `--rank-drift-output` did not exist.
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_direct_alpha_rank_drift_compares_train_end_and_rebalance_signal_ranks`: failed until market-breadth/ranking-profile columns were added.
+- Targeted GREEN:
+  - same rank-drift/CLI command: PASS.
+  - same market-breadth unit test: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `193` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `431` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=309.33` observed).
+
+Next recommended action:
+
+- Keep direct-alpha train gates strict.
+- Move from rebalance-rank drift to direct-candidate stability-window attribution:
+  - decompose `low_positive_ratio` by stability subwindow,
+  - show subwindow excess return, drawdown, trade count, positive/negative outcome, and rejection reason,
+  - connect subwindow failures back to `direct_alpha_ineligible` in `walk_forward_003` and `walk_forward_004`.
+- Do not change strategy defaults until stability-window evidence is available and validated.
+
+Previous loop:
 
 Added a paper-only direct-alpha cadence/timing diagnostic:
 
