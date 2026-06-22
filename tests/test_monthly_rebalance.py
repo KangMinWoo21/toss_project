@@ -36,6 +36,7 @@ from backtester.monthly_rebalance import (
     build_monthly_validation_candidate_decision,
     build_monthly_validation_candidate_followup_rows,
     compare_monthly_attribution_reports,
+    compare_monthly_decision_attribution_reports,
     compare_monthly_validation_scenario_deltas,
     compare_monthly_validation_reports,
     run_monthly_validation_sweep_results,
@@ -85,6 +86,7 @@ from backtester.monthly_rebalance import (
     save_monthly_attribution_rows,
     save_monthly_attribution_comparison,
     save_monthly_decision_attribution,
+    save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
     save_monthly_proxy_decision_diagnostics,
@@ -2009,6 +2011,73 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("candidate_crossed_drawdown_threshold", text.splitlines()[0])
         self.assertIn("new_drawdown_breach", text)
+
+    def test_compare_monthly_decision_attribution_reports_flags_exposure_and_symbol_rotation(self):
+        rows = compare_monthly_decision_attribution_reports(
+            [
+                {
+                    "as_of_date": "2025-03-31",
+                    "signal_date": "2025-03-28",
+                    "mode": "market_beta_proxy",
+                    "selected_preset": "balanced",
+                    "selected_symbols": "AAA;BBB;CCC",
+                    "target_exposure": "0.99",
+                    "cash_weight": "0.01",
+                    "position_count": "3",
+                    "reason": "baseline_high_exposure",
+                }
+            ],
+            [
+                {
+                    "as_of_date": "2025-03-31",
+                    "signal_date": "2025-03-28",
+                    "mode": "market_beta_proxy",
+                    "selected_preset": "balanced",
+                    "selected_symbols": "AAA;DDD",
+                    "target_exposure": "0.5",
+                    "cash_weight": "0.5",
+                    "position_count": "2",
+                    "reason": "neutral_breadth_proxy_cap",
+                }
+            ],
+            scenario="full_period",
+            candidate_label="neutral_cap",
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "full_period")
+        self.assertEqual(row["candidate_label"], "neutral_cap")
+        self.assertEqual(row["month"], "2025-03")
+        self.assertEqual(row["target_exposure_delta"], "-0.49")
+        self.assertEqual(row["cash_weight_delta"], "0.49")
+        self.assertEqual(row["position_count_delta"], "-1")
+        self.assertEqual(row["shared_symbol_count"], "1")
+        self.assertEqual(row["baseline_only_symbols"], "BBB;CCC")
+        self.assertEqual(row["candidate_only_symbols"], "DDD")
+        self.assertIn("exposure_reduced", row["diagnostic"])
+        self.assertIn("cash_increased", row["diagnostic"])
+        self.assertIn("symbol_rotation", row["diagnostic"])
+        self.assertIn("reason_changed", row["diagnostic"])
+
+    def test_save_monthly_decision_attribution_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "decision_compare.csv"
+            saved = save_monthly_decision_attribution_comparison(
+                [
+                    {
+                        "scenario": "unit",
+                        "as_of_date": "2025-03-31",
+                        "diagnostic": "exposure_reduced;symbol_rotation",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("target_exposure_delta", text.splitlines()[0])
+        self.assertIn("symbol_rotation", text)
 
     def test_analyze_monthly_recovery_attribution_summarizes_exposure_and_loss_symbols(self):
         result = MonthlyBacktestResult(

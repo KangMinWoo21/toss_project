@@ -74,6 +74,7 @@ from .monthly_rebalance import (
     build_monthly_validation_gate,
     build_universe_filter_report,
     compare_monthly_attribution_reports,
+    compare_monthly_decision_attribution_reports,
     compare_monthly_validation_reports,
     compare_monthly_validation_scenario_deltas,
     decide_monthly_allocation,
@@ -104,6 +105,7 @@ from .monthly_rebalance import (
     save_monthly_attribution_rows,
     save_monthly_attribution_comparison,
     save_monthly_decision_attribution,
+    save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
     save_monthly_proxy_decision_diagnostics,
@@ -997,6 +999,19 @@ def main() -> int:
         default="data/reports/monthly_attribution_comparison.csv",
     )
 
+    monthly_compare_decisions_parser = subparsers.add_parser(
+        "monthly-compare-decisions",
+        help="Compare baseline and candidate monthly decision attribution CSV reports",
+    )
+    monthly_compare_decisions_parser.add_argument("--baseline", required=True)
+    monthly_compare_decisions_parser.add_argument("--candidate", required=True)
+    monthly_compare_decisions_parser.add_argument("--scenario", default="")
+    monthly_compare_decisions_parser.add_argument("--candidate-label", default="candidate")
+    monthly_compare_decisions_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_decision_attribution_comparison.csv",
+    )
+
     monthly_candidate_followup_parser = subparsers.add_parser(
         "monthly-candidate-followup",
         help="Create full-validation and comparison commands for improved sweep candidates",
@@ -1428,6 +1443,30 @@ def main() -> int:
                 "worst_candidate_drawdown_month  "
                 f"{worst_row.get('month', '')} drawdown={worst_row.get('candidate_worst_drawdown_pct', '')}"
             )
+        return 0
+
+    if args.command == "monthly-compare-decisions":
+        baseline_rows = _read_csv_dicts(Path(args.baseline))
+        candidate_rows = _read_csv_dicts(Path(args.candidate))
+        rows = compare_monthly_decision_attribution_reports(
+            baseline_rows,
+            candidate_rows,
+            scenario=args.scenario,
+            candidate_label=args.candidate_label,
+        )
+        saved = save_monthly_decision_attribution_comparison(rows, args.output)
+        changed_rows = [row for row in rows if str(row.get("diagnostic", "")) != "same_decision"]
+        exposure_reduced_rows = [
+            row for row in rows if "exposure_reduced" in str(row.get("diagnostic", ""))
+        ]
+        symbol_rotation_rows = [
+            row for row in rows if "symbol_rotation" in str(row.get("diagnostic", ""))
+        ]
+        print(f"decision_comparison_report  {args.output}")
+        print(f"comparison_rows  {saved}")
+        print(f"changed_decision_rows  {len(changed_rows)}")
+        print(f"exposure_reduced_rows  {len(exposure_reduced_rows)}")
+        print(f"symbol_rotation_rows  {len(symbol_rotation_rows)}")
         return 0
 
     if args.command == "monthly-candidate-followup":

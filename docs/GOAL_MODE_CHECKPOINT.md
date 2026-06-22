@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 18:35 KST
+Last updated: 2026-06-22 19:04 KST
 
 ## Objective
 
@@ -36,6 +36,77 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only monthly decision attribution comparison report to explain the rejected `neutral_breadth_proxy_cap_50` March-April 2025 drawdown regression:
+
+- Added `compare_monthly_decision_attribution_reports`.
+- Added `save_monthly_decision_attribution_comparison`.
+- Added CLI:
+  - `python -m backtester monthly-compare-decisions`
+- The report compares baseline vs candidate decision attribution rows by `as_of_date`.
+- New comparison fields include:
+  - baseline/candidate mode and reason,
+  - baseline/candidate target exposure and cash weight,
+  - exposure/cash/position-count deltas,
+  - shared/baseline-only/candidate-only symbol counts,
+  - baseline-only and candidate-only symbols,
+  - a diagnostic such as `exposure_reduced`, `cash_increased`, `symbol_rotation`, `reason_changed`, `missing_decision`, or `same_decision`.
+- This is diagnostic-only and paper-only. It does not change strategy behavior or execution behavior.
+
+Generated decision comparison reports:
+
+- `data/reports/full_period_decision_comparison_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/stress_slippage_x3_decision_comparison_neutral_breadth_proxy_cap_50.csv`
+
+Findings:
+
+- Both `full_period` and `stress_slippage_x3` had `30` compared decision rows.
+- Both scenarios had only `3` changed decision rows.
+- All changed rows were exposure/cash changes; `symbol_rotation_rows=0`.
+- Changed rows:
+  - `2024-11-01`: candidate capped neutral-breadth proxy exposure from `0.99` to `0.50`.
+  - `2024-12-02`: candidate capped neutral-breadth proxy exposure from `0.99` to `0.50`.
+  - `2025-06-02`: candidate entered drawdown-guard scaling from `0.99` to `0.7425`.
+- `2025-03-04` decision was identical between baseline and candidate:
+  - mode `market_beta_proxy`,
+  - target exposure `0.99`,
+  - cash weight `0.01`,
+  - position count `12`,
+  - reason `no_train_candidate_strong_breadth_proxy`.
+- `2025-04-01` decision was also identical:
+  - mode `market_beta_proxy`,
+  - target exposure `0.7425`,
+  - cash weight `0.2575`,
+  - position count `12`,
+  - reason `no_train_candidate_strong_breadth_proxy_drawdown_guard`.
+- Interpretation:
+  - The March-April 2025 new drawdown breach is not explained by same-month decision mode changes or selected-symbol rotation.
+  - The candidate's useful November-December neutral-breadth de-risking improved drawdown into February, but the later March return/drawdown regression happened with identical March/April decision rows.
+  - The next diagnostic should inspect path/position/quantity/cost or daily equity differences between February-end and April 2025, not add another broad exposure cap immediately.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `412` tests.
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- RED check: new decision comparison tests failed because `compare_monthly_decision_attribution_reports`, `save_monthly_decision_attribution_comparison`, and `monthly-compare-decisions` did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_compare_monthly_decision_attribution_reports_flags_exposure_and_symbol_rotation tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_decision_attribution_comparison_writes_csv tests.test_cli.CliTests.test_monthly_compare_decisions_cli_writes_exposure_and_symbol_delta_report`: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `177` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `415` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=305.91` observed).
+
+Next recommended action:
+
+- Do not adopt `neutral_breadth_proxy_cap_50`.
+- Compare baseline vs candidate daily equity, holdings/quantity, turnover, and transaction-cost path from `2025-02-28` through `2025-04-30`.
+- The next report should explain why March 2025 return worsened despite identical March decision rows and no selected-symbol rotation.
+- Avoid additional strategy changes until that path-level cause is identified.
+
+Previous loop:
 
 Created and refreshed GPT handoff documentation for the current working tree:
 

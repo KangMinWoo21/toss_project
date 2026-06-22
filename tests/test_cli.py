@@ -727,6 +727,54 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[1]["diagnostic"], "new_drawdown_breach")
         self.assertEqual(rows[1]["candidate_label"], "neutral_cap")
 
+    def test_monthly_compare_decisions_cli_writes_exposure_and_symbol_delta_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            baseline = root / "baseline_decisions.csv"
+            candidate = root / "candidate_decisions.csv"
+            output = root / "decision_compare.csv"
+            baseline.write_text(
+                "as_of_date,signal_date,mode,selected_preset,position_count,selected_symbols,"
+                "target_exposure,cash_weight,max_position_weight,min_position_weight,target_weights,reason\n"
+                "2025-03-31,2025-03-28,market_beta_proxy,balanced,3,AAA;BBB;CCC,"
+                "0.99,0.01,0.33,0.33,AAA:0.33;BBB:0.33;CCC:0.33,baseline_high_exposure\n",
+                encoding="utf-8",
+            )
+            candidate.write_text(
+                "as_of_date,signal_date,mode,selected_preset,position_count,selected_symbols,"
+                "target_exposure,cash_weight,max_position_weight,min_position_weight,target_weights,reason\n"
+                "2025-03-31,2025-03-28,market_beta_proxy,balanced,2,AAA;DDD,"
+                "0.5,0.5,0.25,0.25,AAA:0.25;DDD:0.25,neutral_breadth_proxy_cap\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-decisions",
+                    "--baseline",
+                    str(baseline),
+                    "--candidate",
+                    str(candidate),
+                    "--scenario",
+                    "full_period",
+                    "--candidate-label",
+                    "neutral_cap",
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("decision_comparison_report", completed.stdout)
+        self.assertIn("changed_decision_rows  1", completed.stdout)
+        self.assertEqual(rows[0]["target_exposure_delta"], "-0.49")
+        self.assertEqual(rows[0]["baseline_only_symbols"], "BBB;CCC")
+        self.assertEqual(rows[0]["candidate_only_symbols"], "DDD")
+        self.assertIn("symbol_rotation", rows[0]["diagnostic"])
+
     def test_monthly_validate_help_includes_failure_diagnostics_output(self):
         completed = subprocess.run(
             [

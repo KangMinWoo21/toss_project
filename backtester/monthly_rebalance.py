@@ -788,6 +788,38 @@ MONTHLY_ATTRIBUTION_COMPARISON_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_DECISION_ATTRIBUTION_COMPARISON_COLUMNS = [
+    "scenario",
+    "candidate_label",
+    "as_of_date",
+    "month",
+    "baseline_signal_date",
+    "candidate_signal_date",
+    "baseline_mode",
+    "candidate_mode",
+    "baseline_selected_preset",
+    "candidate_selected_preset",
+    "baseline_reason",
+    "candidate_reason",
+    "baseline_target_exposure",
+    "candidate_target_exposure",
+    "target_exposure_delta",
+    "baseline_cash_weight",
+    "candidate_cash_weight",
+    "cash_weight_delta",
+    "baseline_position_count",
+    "candidate_position_count",
+    "position_count_delta",
+    "shared_symbol_count",
+    "baseline_only_symbol_count",
+    "candidate_only_symbol_count",
+    "baseline_only_symbols",
+    "candidate_only_symbols",
+    "baseline_selected_symbols",
+    "candidate_selected_symbols",
+    "diagnostic",
+]
+
 DEPLOYMENT_GATE_COLUMNS = [
     "deployable",
     "reason",
@@ -1915,6 +1947,140 @@ def _monthly_attribution_comparison_diagnostic(
     return "unchanged"
 
 
+def compare_monthly_decision_attribution_reports(
+    baseline_rows: list[dict[str, Any]],
+    candidate_rows: list[dict[str, Any]],
+    *,
+    scenario: str = "",
+    candidate_label: str = "candidate",
+) -> list[dict[str, str]]:
+    baseline_by_date = {
+        str(row.get("as_of_date", "")): row
+        for row in baseline_rows
+        if str(row.get("as_of_date", ""))
+    }
+    candidate_by_date = {
+        str(row.get("as_of_date", "")): row
+        for row in candidate_rows
+        if str(row.get("as_of_date", ""))
+    }
+    rows: list[dict[str, str]] = []
+    for as_of_date in sorted(set(baseline_by_date) | set(candidate_by_date)):
+        baseline = baseline_by_date.get(as_of_date, {})
+        candidate = candidate_by_date.get(as_of_date, {})
+        baseline_exposure = _float_or_none(baseline.get("target_exposure"))
+        candidate_exposure = _float_or_none(candidate.get("target_exposure"))
+        baseline_cash = _float_or_none(baseline.get("cash_weight"))
+        candidate_cash = _float_or_none(candidate.get("cash_weight"))
+        baseline_count = _float_or_none(baseline.get("position_count"))
+        candidate_count = _float_or_none(candidate.get("position_count"))
+        baseline_symbols = _decision_symbol_list(baseline)
+        candidate_symbols = _decision_symbol_list(candidate)
+        baseline_symbol_set = set(baseline_symbols)
+        candidate_symbol_set = set(candidate_symbols)
+        baseline_only = [symbol for symbol in baseline_symbols if symbol not in candidate_symbol_set]
+        candidate_only = [symbol for symbol in candidate_symbols if symbol not in baseline_symbol_set]
+        shared_count = len(baseline_symbol_set & candidate_symbol_set)
+        exposure_delta = _optional_delta(candidate_exposure, baseline_exposure)
+        cash_delta = _optional_delta(candidate_cash, baseline_cash)
+        position_delta = _optional_delta(candidate_count, baseline_count)
+        diagnostics = _monthly_decision_comparison_diagnostics(
+            baseline,
+            candidate,
+            exposure_delta=exposure_delta,
+            cash_delta=cash_delta,
+            position_delta=position_delta,
+            baseline_only=baseline_only,
+            candidate_only=candidate_only,
+        )
+        rows.append(
+            {
+                "scenario": scenario,
+                "candidate_label": candidate_label,
+                "as_of_date": as_of_date,
+                "month": as_of_date[:7],
+                "baseline_signal_date": str(baseline.get("signal_date", "")),
+                "candidate_signal_date": str(candidate.get("signal_date", "")),
+                "baseline_mode": str(baseline.get("mode", "")),
+                "candidate_mode": str(candidate.get("mode", "")),
+                "baseline_selected_preset": str(baseline.get("selected_preset", "")),
+                "candidate_selected_preset": str(candidate.get("selected_preset", "")),
+                "baseline_reason": str(baseline.get("reason", "")),
+                "candidate_reason": str(candidate.get("reason", "")),
+                "baseline_target_exposure": _format_optional_float(baseline_exposure),
+                "candidate_target_exposure": _format_optional_float(candidate_exposure),
+                "target_exposure_delta": _format_optional_float(exposure_delta),
+                "baseline_cash_weight": _format_optional_float(baseline_cash),
+                "candidate_cash_weight": _format_optional_float(candidate_cash),
+                "cash_weight_delta": _format_optional_float(cash_delta),
+                "baseline_position_count": _format_optional_float(baseline_count),
+                "candidate_position_count": _format_optional_float(candidate_count),
+                "position_count_delta": _format_optional_float(position_delta),
+                "shared_symbol_count": str(shared_count),
+                "baseline_only_symbol_count": str(len(baseline_only)),
+                "candidate_only_symbol_count": str(len(candidate_only)),
+                "baseline_only_symbols": ";".join(baseline_only),
+                "candidate_only_symbols": ";".join(candidate_only),
+                "baseline_selected_symbols": ";".join(baseline_symbols),
+                "candidate_selected_symbols": ";".join(candidate_symbols),
+                "diagnostic": ";".join(diagnostics) if diagnostics else "same_decision",
+            }
+        )
+    return rows
+
+
+def _decision_symbol_list(row: dict[str, Any]) -> list[str]:
+    symbols = [
+        symbol.strip()
+        for symbol in str(row.get("selected_symbols", "")).split(";")
+        if symbol.strip()
+    ]
+    if symbols:
+        return symbols
+    target_weights = str(row.get("target_weights", ""))
+    return [
+        token.split(":", 1)[0].strip()
+        for token in target_weights.split(";")
+        if token.split(":", 1)[0].strip()
+    ]
+
+
+def _monthly_decision_comparison_diagnostics(
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+    *,
+    exposure_delta: float | None,
+    cash_delta: float | None,
+    position_delta: float | None,
+    baseline_only: list[str],
+    candidate_only: list[str],
+) -> list[str]:
+    if not baseline or not candidate:
+        return ["missing_decision"]
+    diagnostics: list[str] = []
+    if str(baseline.get("mode", "")) != str(candidate.get("mode", "")):
+        diagnostics.append("mode_changed")
+    if str(baseline.get("selected_preset", "")) != str(candidate.get("selected_preset", "")):
+        diagnostics.append("preset_changed")
+    if str(baseline.get("reason", "")) != str(candidate.get("reason", "")):
+        diagnostics.append("reason_changed")
+    if exposure_delta is not None:
+        if exposure_delta < 0:
+            diagnostics.append("exposure_reduced")
+        elif exposure_delta > 0:
+            diagnostics.append("exposure_increased")
+    if cash_delta is not None:
+        if cash_delta > 0:
+            diagnostics.append("cash_increased")
+        elif cash_delta < 0:
+            diagnostics.append("cash_reduced")
+    if position_delta is not None and position_delta != 0:
+        diagnostics.append("position_count_changed")
+    if baseline_only or candidate_only:
+        diagnostics.append("symbol_rotation")
+    return diagnostics
+
+
 def analyze_symbol_realized_pnl_attribution(result: MonthlyBacktestResult) -> list[dict[str, str]]:
     lots: dict[str, list[dict[str, float]]] = {}
     stats: dict[str, dict[str, Any]] = {}
@@ -2291,6 +2457,14 @@ def save_monthly_recovery_attribution(rows: list[dict[str, Any]], output_path: P
 
 def save_monthly_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_ATTRIBUTION_COMPARISON_COLUMNS)
+
+
+def save_monthly_decision_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_DECISION_ATTRIBUTION_COMPARISON_COLUMNS,
+    )
 
 
 def save_monthly_attribution_rows(
