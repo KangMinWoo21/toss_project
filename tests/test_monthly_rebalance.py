@@ -36,6 +36,7 @@ from backtester.monthly_rebalance import (
     build_monthly_validation_sweep_plan,
     build_monthly_validation_candidate_decision,
     build_monthly_validation_candidate_followup_rows,
+    build_monthly_validation_candidate_summary,
     compare_monthly_attribution_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
@@ -82,6 +83,7 @@ from backtester.monthly_rebalance import (
     save_monthly_validation_comparison,
     save_monthly_validation_candidate_decision,
     save_monthly_validation_candidate_followup_rows,
+    save_monthly_validation_candidate_summary,
     save_monthly_validation_failure_drilldown,
     save_monthly_validation_failure_patterns,
     save_monthly_validation_scenario_deltas,
@@ -1713,6 +1715,104 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("drawdown_buffer_regressions=1", row["decision_reasons"])
         self.assertIn("equity_improved_but_drawdown_buffer_worse=1", row["new_failure_diagnostics"])
         self.assertIn("drawdown buffer", row["recommendation"])
+
+    def test_build_monthly_validation_candidate_summary_combines_delta_and_path_evidence(self):
+        rows = build_monthly_validation_candidate_summary(
+            decision_rows=[
+                {
+                    "candidate_label": "neutral_breadth_proxy_cap_50",
+                    "comparison_status": "REJECT",
+                    "decision": "REJECT",
+                    "decision_reasons": "comparison_rejected; new_failures=2; drawdown_buffer_regressions=2",
+                    "baseline_failed_required": "5",
+                    "candidate_failed_required": "6",
+                    "failed_delta": "1",
+                    "resolved_count": "1",
+                    "new_failure_count": "2",
+                    "unchanged_failure_count": "4",
+                    "resolved_failure_names": "walk_forward_003",
+                    "new_failure_names": "full_period; stress_slippage_x3",
+                    "new_failure_diagnostics": "equity_improved_but_drawdown_buffer_worse=2",
+                    "recommendation": "Do not adopt this candidate.",
+                }
+            ],
+            delta_rows=[
+                {
+                    "candidate_label": "neutral_breadth_proxy_cap_50",
+                    "name": "walk_forward_003",
+                    "classification": "RESOLVED",
+                    "diagnostic": "candidate_fixed_required_failure",
+                },
+                {
+                    "candidate_label": "neutral_breadth_proxy_cap_50",
+                    "name": "full_period",
+                    "classification": "NEW_FAILURE",
+                    "diagnostic": "equity_improved_but_drawdown_buffer_worse",
+                    "excess_return_delta": "0.0247",
+                    "max_drawdown_delta": "-1.0891",
+                },
+            ],
+            path_comparison_rows=[
+                {
+                    "candidate_label": "neutral_breadth_proxy_cap_50",
+                    "scenario": "full_period",
+                    "date": "2025-04-07",
+                    "equity_delta": "154349.6019",
+                    "rolling_peak_delta": "387782.9119",
+                    "drawdown_delta_pct": "-1.1549",
+                    "diagnostic": "equity_improved;drawdown_regression;higher_turnover",
+                },
+                {
+                    "candidate_label": "neutral_breadth_proxy_cap_50",
+                    "scenario": "stress_slippage_x3",
+                    "date": "2025-04-07",
+                    "equity_delta": "140457.5058",
+                    "rolling_peak_delta": "359575.5263",
+                    "drawdown_delta_pct": "-1.1128",
+                    "diagnostic": "equity_improved;drawdown_regression",
+                },
+            ],
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["candidate_rank"], "1")
+        self.assertEqual(row["candidate_label"], "neutral_breadth_proxy_cap_50")
+        self.assertEqual(row["decision"], "REJECT")
+        self.assertEqual(row["resolved_count"], "1")
+        self.assertEqual(row["new_failure_count"], "2")
+        self.assertEqual(row["drawdown_buffer_regression_count"], "2")
+        self.assertEqual(row["path_days_compared"], "2")
+        self.assertEqual(row["path_equity_regression_days"], "0")
+        self.assertEqual(row["path_equity_improved_days"], "2")
+        self.assertEqual(row["path_drawdown_regression_days"], "2")
+        self.assertEqual(row["path_higher_turnover_days"], "1")
+        self.assertEqual(row["path_min_equity_delta"], "140457.5058")
+        self.assertEqual(row["path_worst_drawdown_delta_pct"], "-1.1549")
+        self.assertEqual(row["path_max_rolling_peak_delta"], "387782.9119")
+        self.assertIn("resolved=1", row["summary"])
+        self.assertIn("new_failures=2", row["summary"])
+        self.assertIn("drawdown_buffer_regressions=2", row["summary"])
+
+    def test_save_monthly_validation_candidate_summary_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "candidate_summary.csv"
+            saved = save_monthly_validation_candidate_summary(
+                [
+                    {
+                        "candidate_rank": "1",
+                        "candidate_label": "neutral_breadth_proxy_cap_50",
+                        "decision": "REJECT",
+                        "summary": "resolved=1; new_failures=2",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("candidate_rank", text.splitlines()[0])
+        self.assertIn("neutral_breadth_proxy_cap_50", text)
 
     def test_save_monthly_validation_candidate_decision_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

@@ -404,6 +404,38 @@ VALIDATION_CANDIDATE_DECISION_COLUMNS = [
     "recommendation",
 ]
 
+VALIDATION_CANDIDATE_SUMMARY_COLUMNS = [
+    "candidate_rank",
+    "candidate_label",
+    "decision",
+    "comparison_status",
+    "baseline_failed_required",
+    "candidate_failed_required",
+    "failed_delta",
+    "resolved_count",
+    "new_failure_count",
+    "unchanged_failure_count",
+    "drawdown_buffer_regression_count",
+    "equity_improved_new_failure_count",
+    "path_scenario_count",
+    "path_days_compared",
+    "path_equity_regression_days",
+    "path_equity_improved_days",
+    "path_drawdown_regression_days",
+    "path_symbol_rotation_days",
+    "path_higher_turnover_days",
+    "path_higher_trade_cost_days",
+    "path_min_equity_delta",
+    "path_worst_drawdown_delta_pct",
+    "path_max_rolling_peak_delta",
+    "evaluation_score",
+    "resolved_failure_names",
+    "new_failure_names",
+    "new_failure_diagnostics",
+    "summary",
+    "recommendation",
+]
+
 VALIDATION_FAILURE_PATTERN_COLUMNS = [
     "scenario",
     "baseline_failed",
@@ -5486,6 +5518,145 @@ def save_monthly_validation_candidate_decision(rows: list[dict[str, Any]], outpu
     return len(rows)
 
 
+def build_monthly_validation_candidate_summary(
+    decision_rows: list[dict[str, Any]],
+    delta_rows: list[dict[str, Any]],
+    path_comparison_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    path_rows = path_comparison_rows or []
+    labels = _candidate_summary_labels(decision_rows, delta_rows, path_rows)
+    rows: list[dict[str, Any]] = []
+    for label in labels:
+        decision = _first_candidate_summary_row(decision_rows, label)
+        candidate_deltas = _candidate_summary_rows(delta_rows, label, labels)
+        candidate_paths = _candidate_summary_rows(path_rows, label, labels)
+        classifications = Counter(str(row.get("classification", "")).strip() for row in candidate_deltas)
+        diagnostics = Counter(str(row.get("diagnostic", "")).strip() for row in candidate_deltas)
+
+        resolved_count = _candidate_summary_int(decision, "resolved_count", classifications.get("RESOLVED", 0))
+        new_failure_count = _candidate_summary_int(
+            decision,
+            "new_failure_count",
+            classifications.get("NEW_FAILURE", 0),
+        )
+        unchanged_failure_count = _candidate_summary_int(
+            decision,
+            "unchanged_failure_count",
+            classifications.get("UNCHANGED_FAILURE", 0),
+        )
+        drawdown_buffer_count = sum(
+            diagnostics.get(name, 0)
+            for name in (
+                "equity_improved_but_drawdown_buffer_worse",
+                "drawdown_buffer_regression",
+                "candidate_introduced_drawdown_breach",
+            )
+        )
+        drawdown_buffer_count = max(
+            drawdown_buffer_count,
+            _candidate_summary_counter_value(
+                str(decision.get("decision_reasons", "")),
+                "drawdown_buffer_regressions",
+            ),
+        )
+        equity_improved_new_failure_count = diagnostics.get(
+            "equity_improved_but_drawdown_buffer_worse",
+            0,
+        )
+
+        path_diagnostics = [str(row.get("diagnostic", "")) for row in candidate_paths]
+        path_equity_regression_days = _count_diagnostics(path_diagnostics, "equity_regression")
+        path_equity_improved_days = _count_diagnostics(path_diagnostics, "equity_improved")
+        path_drawdown_regression_days = _count_diagnostics(path_diagnostics, "drawdown_regression")
+        path_symbol_rotation_days = _count_diagnostics(path_diagnostics, "symbol_rotation")
+        path_higher_turnover_days = _count_diagnostics(path_diagnostics, "higher_turnover")
+        path_higher_trade_cost_days = _count_diagnostics(path_diagnostics, "higher_trade_cost")
+        path_min_equity_delta = _min_numeric(row.get("equity_delta") for row in candidate_paths)
+        path_worst_drawdown_delta = _min_numeric(row.get("drawdown_delta_pct") for row in candidate_paths)
+        path_max_rolling_peak_delta = _max_numeric(row.get("rolling_peak_delta") for row in candidate_paths)
+        evaluation_score = (
+            resolved_count * 100
+            - new_failure_count * 200
+            - drawdown_buffer_count * 50
+            - path_equity_regression_days * 5
+            - path_drawdown_regression_days
+            - path_symbol_rotation_days * 5
+            - path_higher_turnover_days
+        )
+        rows.append(
+            {
+                "candidate_rank": "",
+                "candidate_label": label,
+                "decision": decision.get("decision", ""),
+                "comparison_status": decision.get("comparison_status", ""),
+                "baseline_failed_required": decision.get("baseline_failed_required", ""),
+                "candidate_failed_required": decision.get("candidate_failed_required", ""),
+                "failed_delta": decision.get("failed_delta", ""),
+                "resolved_count": str(resolved_count),
+                "new_failure_count": str(new_failure_count),
+                "unchanged_failure_count": str(unchanged_failure_count),
+                "drawdown_buffer_regression_count": str(drawdown_buffer_count),
+                "equity_improved_new_failure_count": str(equity_improved_new_failure_count),
+                "path_scenario_count": str(
+                    len({str(row.get("scenario", "")).strip() for row in candidate_paths if row.get("scenario", "")})
+                ),
+                "path_days_compared": str(len(candidate_paths)),
+                "path_equity_regression_days": str(path_equity_regression_days),
+                "path_equity_improved_days": str(path_equity_improved_days),
+                "path_drawdown_regression_days": str(path_drawdown_regression_days),
+                "path_symbol_rotation_days": str(path_symbol_rotation_days),
+                "path_higher_turnover_days": str(path_higher_turnover_days),
+                "path_higher_trade_cost_days": str(path_higher_trade_cost_days),
+                "path_min_equity_delta": _format_optional_float(path_min_equity_delta),
+                "path_worst_drawdown_delta_pct": _format_optional_float(path_worst_drawdown_delta),
+                "path_max_rolling_peak_delta": _format_optional_float(path_max_rolling_peak_delta),
+                "evaluation_score": str(evaluation_score),
+                "resolved_failure_names": str(
+                    decision.get("resolved_failure_names", "")
+                    or "; ".join(_scenario_names_by_classification(candidate_deltas, "RESOLVED"))
+                ),
+                "new_failure_names": str(
+                    decision.get("new_failure_names", "")
+                    or "; ".join(_scenario_names_by_classification(candidate_deltas, "NEW_FAILURE"))
+                ),
+                "new_failure_diagnostics": str(
+                    decision.get("new_failure_diagnostics", "")
+                    or _candidate_summary_diagnostic_summary(candidate_deltas, "NEW_FAILURE")
+                ),
+                "summary": (
+                    f"resolved={resolved_count}; new_failures={new_failure_count}; "
+                    f"drawdown_buffer_regressions={drawdown_buffer_count}; "
+                    f"path_equity_regression_days={path_equity_regression_days}; "
+                    f"path_drawdown_regression_days={path_drawdown_regression_days}; "
+                    f"path_higher_turnover_days={path_higher_turnover_days}"
+                ),
+                "recommendation": decision.get("recommendation", ""),
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            -_safe_int(row.get("evaluation_score")),
+            _safe_int(row.get("new_failure_count")),
+            _safe_int(row.get("drawdown_buffer_regression_count")),
+            str(row.get("candidate_label", "")),
+        )
+    )
+    for index, row in enumerate(rows, start=1):
+        row["candidate_rank"] = str(index)
+    return rows
+
+
+def save_monthly_validation_candidate_summary(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=VALIDATION_CANDIDATE_SUMMARY_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in VALIDATION_CANDIDATE_SUMMARY_COLUMNS})
+    return len(rows)
+
+
 def analyze_monthly_validation_failure_patterns(
     baseline_rows: list[dict[str, Any]],
     delta_rows: list[dict[str, Any]],
@@ -6165,6 +6336,72 @@ def _split_semicolon_values(value: str) -> list[str]:
     return [part.strip() for part in value.split(";") if part.strip()]
 
 
+def _candidate_summary_labels(
+    decision_rows: list[dict[str, Any]],
+    delta_rows: list[dict[str, Any]],
+    path_rows: list[dict[str, Any]],
+) -> list[str]:
+    labels: list[str] = []
+    for rows in (decision_rows, delta_rows, path_rows):
+        for row in rows:
+            label = str(row.get("candidate_label", "")).strip()
+            if label and label not in labels:
+                labels.append(label)
+    if labels:
+        return labels
+    return ["candidate"] if decision_rows or delta_rows or path_rows else []
+
+
+def _candidate_summary_rows(
+    rows: list[dict[str, Any]],
+    label: str,
+    all_labels: list[str],
+) -> list[dict[str, Any]]:
+    if len(all_labels) == 1:
+        return [
+            row
+            for row in rows
+            if str(row.get("candidate_label", "")).strip() in {"", label}
+        ]
+    return [row for row in rows if str(row.get("candidate_label", "")).strip() == label]
+
+
+def _first_candidate_summary_row(rows: list[dict[str, Any]], label: str) -> dict[str, Any]:
+    matches = _candidate_summary_rows(rows, label, [label])
+    return matches[0] if matches else {}
+
+
+def _candidate_summary_int(row: dict[str, Any], field_name: str, default: int) -> int:
+    value = str(row.get(field_name, "")).strip()
+    if not value:
+        return default
+    return _safe_int(value, default=default)
+
+
+def _candidate_summary_counter_value(value: str, key: str) -> int:
+    for part in str(value or "").replace(",", ";").split(";"):
+        if "=" not in part:
+            continue
+        name, raw_count = part.split("=", 1)
+        if name.strip() == key:
+            return _safe_int(raw_count)
+    return 0
+
+
+def _candidate_summary_diagnostic_summary(rows: list[dict[str, Any]], classification: str) -> str:
+    counts = Counter(
+        str(row.get("diagnostic", "")).strip()
+        for row in rows
+        if str(row.get("classification", "")).strip() == classification
+        and str(row.get("diagnostic", "")).strip()
+    )
+    return ", ".join(f"{name}={count}" for name, count in sorted(counts.items()))
+
+
+def _count_diagnostics(values: list[str], token: str) -> int:
+    return sum(1 for value in values if token in value)
+
+
 def _count_failed_required(rows: list[dict[str, Any]]) -> int:
     return sum(
         1
@@ -6187,6 +6424,12 @@ def _min_numeric(values: Any) -> float | None:
     numeric_values = [_float_or_none(value) for value in values]
     numeric_values = [value for value in numeric_values if value is not None]
     return min(numeric_values) if numeric_values else None
+
+
+def _max_numeric(values: Any) -> float | None:
+    numeric_values = [_float_or_none(value) for value in values]
+    numeric_values = [value for value in numeric_values if value is not None]
+    return max(numeric_values) if numeric_values else None
 
 
 def _format_optional_float(value: float | None) -> str:

@@ -1434,6 +1434,68 @@ class CliTests(unittest.TestCase):
         self.assertIn("NEW_FAILURE", delta_text)
         self.assertIn("REJECT", decision_text)
 
+    def test_monthly_candidate_summary_cli_combines_deltas_and_path_comparison(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            decision = root / "candidate_decision.csv"
+            deltas = root / "candidate_deltas.csv"
+            path = root / "path_comparison.csv"
+            output = root / "candidate_summary.csv"
+            decision.write_text(
+                "candidate_label,comparison_status,decision,decision_reasons,baseline_failed_required,"
+                "candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,"
+                "resolved_failure_names,new_failure_names,new_failure_diagnostics,recommendation\n"
+                "neutral_breadth_proxy_cap_50,REJECT,REJECT,"
+                "comparison_rejected; new_failures=2; drawdown_buffer_regressions=2,5,6,1,1,2,4,"
+                "walk_forward_003,full_period; stress_slippage_x3,"
+                "equity_improved_but_drawdown_buffer_worse=2,Do not adopt.\n",
+                encoding="utf-8",
+            )
+            deltas.write_text(
+                "candidate_label,name,classification,diagnostic,excess_return_delta,max_drawdown_delta\n"
+                "neutral_breadth_proxy_cap_50,walk_forward_003,RESOLVED,candidate_fixed_required_failure,1,2\n"
+                "neutral_breadth_proxy_cap_50,full_period,NEW_FAILURE,"
+                "equity_improved_but_drawdown_buffer_worse,0.0247,-1.0891\n",
+                encoding="utf-8",
+            )
+            path.write_text(
+                "candidate_label,scenario,date,equity_delta,rolling_peak_delta,drawdown_delta_pct,diagnostic\n"
+                "neutral_breadth_proxy_cap_50,full_period,2025-04-07,154349.6019,387782.9119,-1.1549,"
+                "equity_improved;drawdown_regression;higher_turnover\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "backtester",
+                    "monthly-candidate-summary",
+                    "--decision",
+                    str(decision),
+                    "--deltas",
+                    str(deltas),
+                    "--path-comparison",
+                    str(path),
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            with output.open(newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("candidate_summary_report", completed.stdout)
+        self.assertIn("candidate_rows  1", completed.stdout)
+        self.assertIn("top_candidate  neutral_breadth_proxy_cap_50 decision=REJECT", completed.stdout)
+        self.assertEqual(rows[0]["drawdown_buffer_regression_count"], "2")
+        self.assertEqual(rows[0]["path_equity_improved_days"], "1")
+        self.assertEqual(rows[0]["path_higher_turnover_days"], "1")
+
     def test_production_check_includes_validation_candidate_decision_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

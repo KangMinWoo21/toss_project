@@ -67,6 +67,7 @@ from .monthly_rebalance import (
     build_monthly_validation_sweep_plan,
     build_monthly_validation_candidate_decision,
     build_monthly_validation_candidate_followup_rows,
+    build_monthly_validation_candidate_summary,
     audit_monthly_validation_data,
     audit_point_in_time_price_coverage,
     build_deployment_gate,
@@ -125,6 +126,7 @@ from .monthly_rebalance import (
     save_monthly_validation_comparison,
     save_monthly_validation_candidate_decision,
     save_monthly_validation_candidate_followup_rows,
+    save_monthly_validation_candidate_summary,
     save_monthly_validation_failure_drilldown,
     save_monthly_validation_failure_patterns,
     save_monthly_validation_scenario_deltas,
@@ -990,6 +992,31 @@ def main() -> int:
         help="Candidate adoption decision report derived from comparison deltas",
     )
 
+    monthly_candidate_summary_parser = subparsers.add_parser(
+        "monthly-candidate-summary",
+        help="Summarize candidate validation deltas with optional path comparison evidence",
+    )
+    monthly_candidate_summary_parser.add_argument(
+        "--decision",
+        required=True,
+        help="Candidate decision CSV from monthly-compare-validation",
+    )
+    monthly_candidate_summary_parser.add_argument(
+        "--deltas",
+        required=True,
+        help="Scenario delta CSV from monthly-compare-validation",
+    )
+    monthly_candidate_summary_parser.add_argument(
+        "--path-comparison",
+        action="append",
+        default=[],
+        help="Optional path comparison CSV. Can be repeated.",
+    )
+    monthly_candidate_summary_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_validation_candidate_summary.csv",
+    )
+
     monthly_compare_attribution_parser = subparsers.add_parser(
         "monthly-compare-attribution",
         help="Compare baseline and candidate monthly attribution CSV reports",
@@ -1434,6 +1461,29 @@ def main() -> int:
         print(f"candidate_failed_required  {comparison['candidate_failed_required']}")
         print(f"failed_delta  {comparison['failed_delta']}")
         print(f"comparison_report  {args.output}")
+        return 0
+
+    if args.command == "monthly-candidate-summary":
+        decision_rows = _read_csv_dicts(Path(args.decision))
+        delta_rows = _read_csv_dicts(Path(args.deltas))
+        path_rows: list[dict[str, str]] = []
+        for path in args.path_comparison:
+            path_rows.extend(_read_csv_dicts(Path(path)))
+        rows = build_monthly_validation_candidate_summary(
+            decision_rows,
+            delta_rows,
+            path_comparison_rows=path_rows,
+        )
+        saved = save_monthly_validation_candidate_summary(rows, args.output)
+        top_row = rows[0] if rows else {}
+        print(f"candidate_summary_report  {args.output}")
+        print(f"candidate_rows  {saved}")
+        if top_row:
+            print(
+                "top_candidate  "
+                f"{top_row.get('candidate_label', '')} decision={top_row.get('decision', '')} "
+                f"score={top_row.get('evaluation_score', '')}"
+            )
         return 0
 
     if args.command == "monthly-compare-attribution":

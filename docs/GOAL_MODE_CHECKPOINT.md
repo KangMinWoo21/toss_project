@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 19:19 KST
+Last updated: 2026-06-22 20:58 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 421 tests.
+- `python -m unittest discover -s tests`: PASS, 424 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,92 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only validation candidate summary/ranking report that combines candidate decision, scenario delta, and path-comparison evidence:
+
+- Added `build_monthly_validation_candidate_summary`.
+- Added `save_monthly_validation_candidate_summary`.
+- Added CLI:
+  - `python -m backtester monthly-candidate-summary`
+- Inputs:
+  - `--decision`: candidate decision CSV from `monthly-compare-validation`,
+  - `--deltas`: scenario delta CSV from `monthly-compare-validation`,
+  - `--path-comparison`: optional path-comparison CSV, repeatable.
+- Output:
+  - `data/reports/monthly_validation_candidate_summary.csv`
+- This is diagnostic-only and paper-only. It does not change strategy behavior, deployment gates, execution planning, or any Toss/API behavior.
+
+The summary report ranks candidates by:
+
+- failures resolved,
+- new failures introduced,
+- drawdown-buffer regressions,
+- path equity regression/improvement days,
+- path drawdown regression days,
+- symbol-rotation days,
+- higher-turnover and higher-trade-cost days,
+- worst path drawdown delta,
+- minimum path equity delta,
+- maximum rolling-peak delta.
+
+Generated report:
+
+- `data/reports/monthly_validation_candidate_summary.csv`
+
+Current candidate summary for `neutral_breadth_proxy_cap_50`:
+
+- `candidate_rank=1`.
+- `decision=REJECT`.
+- `resolved_count=1`.
+- `new_failure_count=2`.
+- `drawdown_buffer_regression_count=2`.
+- `path_days_compared=86`.
+- `path_equity_regression_days=0`.
+- `path_equity_improved_days=86`.
+- `path_drawdown_regression_days=86`.
+- `path_higher_turnover_days=4`.
+- `path_min_equity_delta=133957.5058`.
+- `path_worst_drawdown_delta_pct=-1.1549`.
+- `path_max_rolling_peak_delta=387782.9119`.
+- `evaluation_score=-490`.
+- Summary:
+  - `resolved=1; new_failures=2; drawdown_buffer_regressions=2; path_equity_regression_days=0; path_drawdown_regression_days=86; path_higher_turnover_days=4`.
+
+Interpretation:
+
+- `neutral_breadth_proxy_cap_50` still should not be adopted.
+- It preserves positive absolute path equity versus baseline across the compared windows, but it worsens drawdown relative to the higher rolling peak on every compared path day.
+- The regression is not symbol rotation (`path_symbol_rotation_days=0`) and is not an absolute-equity regression (`path_equity_regression_days=0`).
+- The practical next research step is still a narrow drawdown-buffer preserving acceptance/ranking rule or path-aware candidate filter, not a broad exposure cap.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `421` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_build_monthly_validation_candidate_summary_combines_delta_and_path_evidence tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_validation_candidate_summary_writes_csv tests.test_cli.CliTests.test_monthly_candidate_summary_cli_combines_deltas_and_path_comparison`: failed because `build_monthly_validation_candidate_summary`, `save_monthly_validation_candidate_summary`, and `monthly-candidate-summary` did not exist.
+- Targeted GREEN:
+  - same command: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `186` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `424` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=308.13` observed).
+
+Next recommended action:
+
+- Keep `neutral_breadth_proxy_cap_50` rejected.
+- Use `data/reports/monthly_validation_candidate_summary.csv` as the candidate triage front door.
+- Next, add a path-aware candidate acceptance rule/report that explicitly rejects candidates when:
+  - absolute path equity improves,
+  - but hard-gate drawdown buffer falls below `-25%`,
+  - and the improvement comes from a higher rolling peak rather than same-window recovery.
+- Continue direct-alpha stability diagnostics for `walk_forward_003`/`walk_forward_004` before loosening train gates.
+
+Previous loop:
 
 Added a paper-only candidate acceptance diagnostic for candidates that improve return/equity evidence but lose hard drawdown-gate buffer:
 
