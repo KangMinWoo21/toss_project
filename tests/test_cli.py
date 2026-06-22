@@ -681,6 +681,52 @@ class CliTests(unittest.TestCase):
         self.assertIn("recommended_next_action", proxy_rows[0])
         self.assertIn("diagnostic", rows[0])
 
+    def test_monthly_compare_attribution_cli_writes_monthly_delta_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            baseline = root / "baseline.csv"
+            candidate = root / "candidate.csv"
+            output = root / "compare.csv"
+            baseline.write_text(
+                "month,return_pct,equity_change,worst_drawdown_pct,status\n"
+                "2026-02,8,800,-10,GAIN\n"
+                "2026-03,-18,-1800,-24,LOSS\n",
+                encoding="utf-8",
+            )
+            candidate.write_text(
+                "month,return_pct,equity_change,worst_drawdown_pct,status\n"
+                "2026-02,7,700,-11,GAIN\n"
+                "2026-03,-20,-2100,-25.2,LOSS\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-attribution",
+                    "--baseline",
+                    str(baseline),
+                    "--candidate",
+                    str(candidate),
+                    "--scenario",
+                    "full_period",
+                    "--candidate-label",
+                    "neutral_cap",
+                    "--drawdown-threshold-pct",
+                    "-25",
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("attribution_comparison_report", completed.stdout)
+        self.assertIn("new_drawdown_breach_months  1", completed.stdout)
+        self.assertEqual(rows[1]["diagnostic"], "new_drawdown_breach")
+        self.assertEqual(rows[1]["candidate_label"], "neutral_cap")
+
     def test_monthly_validate_help_includes_failure_diagnostics_output(self):
         completed = subprocess.run(
             [

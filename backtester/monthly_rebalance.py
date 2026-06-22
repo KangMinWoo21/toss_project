@@ -760,6 +760,34 @@ MONTHLY_RECOVERY_ATTRIBUTION_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_ATTRIBUTION_COMPARISON_COLUMNS = [
+    "scenario",
+    "candidate_label",
+    "month",
+    "baseline_start_date",
+    "baseline_end_date",
+    "candidate_start_date",
+    "candidate_end_date",
+    "baseline_return_pct",
+    "candidate_return_pct",
+    "return_delta_pct",
+    "baseline_equity_change",
+    "candidate_equity_change",
+    "equity_change_delta",
+    "baseline_worst_equity",
+    "candidate_worst_equity",
+    "baseline_worst_drawdown_pct",
+    "candidate_worst_drawdown_pct",
+    "drawdown_delta_pct",
+    "baseline_status",
+    "candidate_status",
+    "drawdown_threshold_pct",
+    "baseline_breached_drawdown_threshold",
+    "candidate_breached_drawdown_threshold",
+    "candidate_crossed_drawdown_threshold",
+    "diagnostic",
+]
+
 DEPLOYMENT_GATE_COLUMNS = [
     "deployable",
     "reason",
@@ -1797,6 +1825,96 @@ def analyze_monthly_drawdown_attribution(result: MonthlyBacktestResult) -> list[
     return rows
 
 
+def compare_monthly_attribution_reports(
+    baseline_rows: list[dict[str, Any]],
+    candidate_rows: list[dict[str, Any]],
+    *,
+    scenario: str = "",
+    candidate_label: str = "candidate",
+    drawdown_threshold_pct: float = -25.0,
+) -> list[dict[str, str]]:
+    baseline_by_month = {str(row.get("month", "")): row for row in baseline_rows if str(row.get("month", ""))}
+    candidate_by_month = {str(row.get("month", "")): row for row in candidate_rows if str(row.get("month", ""))}
+    rows: list[dict[str, str]] = []
+    for month in sorted(set(baseline_by_month) | set(candidate_by_month)):
+        baseline = baseline_by_month.get(month, {})
+        candidate = candidate_by_month.get(month, {})
+        baseline_return = _float_or_none(baseline.get("return_pct"))
+        candidate_return = _float_or_none(candidate.get("return_pct"))
+        baseline_change = _float_or_none(baseline.get("equity_change"))
+        candidate_change = _float_or_none(candidate.get("equity_change"))
+        baseline_drawdown = _float_or_none(baseline.get("worst_drawdown_pct"))
+        candidate_drawdown = _float_or_none(candidate.get("worst_drawdown_pct"))
+        baseline_breached = baseline_drawdown is not None and baseline_drawdown <= drawdown_threshold_pct
+        candidate_breached = candidate_drawdown is not None and candidate_drawdown <= drawdown_threshold_pct
+        crossed_threshold = candidate_breached and not baseline_breached
+        rows.append(
+            {
+                "scenario": scenario,
+                "candidate_label": candidate_label,
+                "month": month,
+                "baseline_start_date": str(baseline.get("start_date", "")),
+                "baseline_end_date": str(baseline.get("end_date", "")),
+                "candidate_start_date": str(candidate.get("start_date", "")),
+                "candidate_end_date": str(candidate.get("end_date", "")),
+                "baseline_return_pct": _format_optional_float(baseline_return),
+                "candidate_return_pct": _format_optional_float(candidate_return),
+                "return_delta_pct": _format_optional_float(_optional_delta(candidate_return, baseline_return)),
+                "baseline_equity_change": _format_optional_float(baseline_change),
+                "candidate_equity_change": _format_optional_float(candidate_change),
+                "equity_change_delta": _format_optional_float(_optional_delta(candidate_change, baseline_change)),
+                "baseline_worst_equity": str(baseline.get("worst_equity", "")),
+                "candidate_worst_equity": str(candidate.get("worst_equity", "")),
+                "baseline_worst_drawdown_pct": _format_optional_float(baseline_drawdown),
+                "candidate_worst_drawdown_pct": _format_optional_float(candidate_drawdown),
+                "drawdown_delta_pct": _format_optional_float(_optional_delta(candidate_drawdown, baseline_drawdown)),
+                "baseline_status": str(baseline.get("status", "")),
+                "candidate_status": str(candidate.get("status", "")),
+                "drawdown_threshold_pct": _format_optional_float(drawdown_threshold_pct),
+                "baseline_breached_drawdown_threshold": str(baseline_breached),
+                "candidate_breached_drawdown_threshold": str(candidate_breached),
+                "candidate_crossed_drawdown_threshold": str(crossed_threshold),
+                "diagnostic": _monthly_attribution_comparison_diagnostic(
+                    baseline,
+                    candidate,
+                    return_delta=_optional_delta(candidate_return, baseline_return),
+                    drawdown_delta=_optional_delta(candidate_drawdown, baseline_drawdown),
+                    crossed_threshold=crossed_threshold,
+                ),
+            }
+        )
+    return rows
+
+
+def _optional_delta(value: float | None, baseline: float | None) -> float | None:
+    if value is None or baseline is None:
+        return None
+    return value - baseline
+
+
+def _monthly_attribution_comparison_diagnostic(
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+    *,
+    return_delta: float | None,
+    drawdown_delta: float | None,
+    crossed_threshold: bool,
+) -> str:
+    if not baseline or not candidate:
+        return "missing_month"
+    if crossed_threshold:
+        return "new_drawdown_breach"
+    if drawdown_delta is not None and drawdown_delta < 0:
+        return "drawdown_regression"
+    if return_delta is not None and return_delta < 0:
+        return "return_drag"
+    if drawdown_delta is not None and drawdown_delta > 0:
+        return "drawdown_improved"
+    if return_delta is not None and return_delta > 0:
+        return "return_improved"
+    return "unchanged"
+
+
 def analyze_symbol_realized_pnl_attribution(result: MonthlyBacktestResult) -> list[dict[str, str]]:
     lots: dict[str, list[dict[str, float]]] = {}
     stats: dict[str, dict[str, Any]] = {}
@@ -2169,6 +2287,10 @@ def save_monthly_proxy_decision_diagnostics(rows: list[dict[str, Any]], output_p
 
 def save_monthly_recovery_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_RECOVERY_ATTRIBUTION_COLUMNS)
+
+
+def save_monthly_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_ATTRIBUTION_COMPARISON_COLUMNS)
 
 
 def save_monthly_attribution_rows(

@@ -35,6 +35,7 @@ from backtester.monthly_rebalance import (
     build_monthly_validation_sweep_plan,
     build_monthly_validation_candidate_decision,
     build_monthly_validation_candidate_followup_rows,
+    compare_monthly_attribution_reports,
     compare_monthly_validation_scenario_deltas,
     compare_monthly_validation_reports,
     run_monthly_validation_sweep_results,
@@ -82,6 +83,7 @@ from backtester.monthly_rebalance import (
     save_monthly_validation_failure_patterns,
     save_monthly_validation_scenario_deltas,
     save_monthly_attribution_rows,
+    save_monthly_attribution_comparison,
     save_monthly_decision_attribution,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
@@ -1939,6 +1941,74 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("worst_drawdown_pct", text.splitlines()[0])
         self.assertIn("LOSS", text)
+
+    def test_compare_monthly_attribution_reports_flags_new_drawdown_breach(self):
+        rows = compare_monthly_attribution_reports(
+            [
+                {
+                    "month": "2026-02",
+                    "return_pct": "8",
+                    "equity_change": "800",
+                    "worst_drawdown_pct": "-10",
+                    "status": "GAIN",
+                },
+                {
+                    "month": "2026-03",
+                    "return_pct": "-18",
+                    "equity_change": "-1800",
+                    "worst_drawdown_pct": "-24.0",
+                    "status": "LOSS",
+                },
+            ],
+            [
+                {
+                    "month": "2026-02",
+                    "return_pct": "7",
+                    "equity_change": "700",
+                    "worst_drawdown_pct": "-11",
+                    "status": "GAIN",
+                },
+                {
+                    "month": "2026-03",
+                    "return_pct": "-20",
+                    "equity_change": "-2100",
+                    "worst_drawdown_pct": "-25.2",
+                    "status": "LOSS",
+                },
+            ],
+            scenario="full_period",
+            candidate_label="neutral_cap",
+            drawdown_threshold_pct=-25.0,
+        )
+
+        by_month = {row["month"]: row for row in rows}
+        self.assertEqual(by_month["2026-03"]["scenario"], "full_period")
+        self.assertEqual(by_month["2026-03"]["candidate_label"], "neutral_cap")
+        self.assertEqual(by_month["2026-03"]["return_delta_pct"], "-2")
+        self.assertEqual(by_month["2026-03"]["equity_change_delta"], "-300")
+        self.assertEqual(by_month["2026-03"]["drawdown_delta_pct"], "-1.2")
+        self.assertEqual(by_month["2026-03"]["candidate_crossed_drawdown_threshold"], "True")
+        self.assertEqual(by_month["2026-03"]["diagnostic"], "new_drawdown_breach")
+        self.assertEqual(by_month["2026-02"]["diagnostic"], "drawdown_regression")
+
+    def test_save_monthly_attribution_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "attribution_compare.csv"
+            saved = save_monthly_attribution_comparison(
+                [
+                    {
+                        "scenario": "unit",
+                        "month": "2026-03",
+                        "diagnostic": "new_drawdown_breach",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("candidate_crossed_drawdown_threshold", text.splitlines()[0])
+        self.assertIn("new_drawdown_breach", text)
 
     def test_analyze_monthly_recovery_attribution_summarizes_exposure_and_loss_symbols(self):
         result = MonthlyBacktestResult(

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 18:06 KST
+Last updated: 2026-06-22 18:20 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 408 tests.
+- `python -m unittest discover -s tests`: PASS, 411 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,85 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only monthly attribution comparison report to explain the rejected `neutral_breadth_proxy_cap_50` drawdown regressions:
+
+- Added `compare_monthly_attribution_reports`.
+- Added `save_monthly_attribution_comparison`.
+- Added CLI:
+  - `python -m backtester monthly-compare-attribution`
+- The report compares baseline vs candidate monthly attribution rows by `month`.
+- New comparison fields include:
+  - baseline/candidate monthly returns,
+  - baseline/candidate equity change,
+  - baseline/candidate worst monthly drawdown,
+  - return/equity/drawdown deltas,
+  - whether the candidate newly crossed the drawdown threshold,
+  - a diagnostic such as `new_drawdown_breach`, `drawdown_regression`, `drawdown_improved`, or `return_drag`.
+- This is report-only and does not change strategy behavior or execution behavior.
+
+Generated baseline and candidate attribution reports for the two new failures introduced by `neutral_breadth_proxy_cap_50`:
+
+- `data/reports/full_period_baseline_monthly_attribution.csv`
+- `data/reports/full_period_baseline_symbol_attribution.csv`
+- `data/reports/full_period_baseline_decision_attribution.csv`
+- `data/reports/full_period_baseline_recovery_attribution.csv`
+- `data/reports/full_period_baseline_proxy_decision_diagnostics.csv`
+- `data/reports/full_period_neutral_breadth_proxy_cap_50_monthly_attribution.csv`
+- `data/reports/full_period_neutral_breadth_proxy_cap_50_symbol_attribution.csv`
+- `data/reports/full_period_neutral_breadth_proxy_cap_50_decision_attribution.csv`
+- `data/reports/full_period_neutral_breadth_proxy_cap_50_recovery_attribution.csv`
+- `data/reports/full_period_neutral_breadth_proxy_cap_50_proxy_decision_diagnostics.csv`
+- `data/reports/stress_slippage_x3_baseline_monthly_attribution.csv`
+- `data/reports/stress_slippage_x3_baseline_symbol_attribution.csv`
+- `data/reports/stress_slippage_x3_baseline_decision_attribution.csv`
+- `data/reports/stress_slippage_x3_baseline_recovery_attribution.csv`
+- `data/reports/stress_slippage_x3_baseline_proxy_decision_diagnostics.csv`
+- `data/reports/stress_slippage_x3_neutral_breadth_proxy_cap_50_monthly_attribution.csv`
+- `data/reports/stress_slippage_x3_neutral_breadth_proxy_cap_50_symbol_attribution.csv`
+- `data/reports/stress_slippage_x3_neutral_breadth_proxy_cap_50_decision_attribution.csv`
+- `data/reports/stress_slippage_x3_neutral_breadth_proxy_cap_50_recovery_attribution.csv`
+- `data/reports/stress_slippage_x3_neutral_breadth_proxy_cap_50_proxy_decision_diagnostics.csv`
+
+Generated monthly attribution comparison reports:
+
+- `data/reports/full_period_attribution_comparison_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/stress_slippage_x3_attribution_comparison_neutral_breadth_proxy_cap_50.csv`
+
+Findings:
+
+- Both new failures crossed the max-drawdown hard gate in `2025-04`.
+- `full_period`
+  - `2025-03`: candidate return worsened from `-9.2322%` to `-9.935%`; drawdown worsened from `-19.8137%` to `-20.8382%`.
+  - `2025-04`: candidate return was slightly better (`1.8109%` vs baseline `1.6378%`), but candidate worst drawdown crossed the hard gate (`-25.1331%` vs baseline `-24.044%`).
+- `stress_slippage_x3`
+  - `2025-03`: candidate return worsened from `-9.0285%` to `-9.8857%`; drawdown worsened from `-19.6864%` to `-20.7729%`.
+  - `2025-04`: candidate return was slightly better (`1.6683%` vs baseline `1.5526%`), but candidate worst drawdown crossed the hard gate (`-25.0493%` vs baseline `-24.0105%`).
+- Interpretation:
+  - The rejected candidate's new failures are not simple April monthly-return losses.
+  - The regression is path/drawdown-buffer related: March 2025 worsened the drawdown base, then April 2025 still crossed the `-25%` hard stop despite a positive monthly return.
+  - Any next candidate must restore the March-April 2025 drawdown buffer while preserving the `walk_forward_003` train-stability benefit.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `408` tests.
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- RED check: new attribution comparison tests failed because `compare_monthly_attribution_reports`, `save_monthly_attribution_comparison`, and `monthly-compare-attribution` did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_compare_monthly_attribution_reports_flags_new_drawdown_breach tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_attribution_comparison_writes_csv tests.test_cli.CliTests.test_monthly_compare_attribution_cli_writes_monthly_delta_report`: PASS.
+- Related regression scope: `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `173` tests.
+- Full verification: `python -m unittest discover -s tests`: PASS, `411` tests.
+- Full syntax check: `python -m compileall -q backtester`: PASS.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=305.51` observed).
+
+Next recommended action:
+
+- Do not adopt `neutral_breadth_proxy_cap_50`.
+- Use the March-April 2025 attribution comparison to test a narrower paper-only guard that avoids worsening March 2025 drawdown buffer.
+- Candidate direction should be diagnostic-first: preserve `walk_forward_003` train stability, but reject or scale configurations that push full-period/stress drawdown below `-25%` in March-April 2025.
+
+Previous loop:
 
 Added and rejected a narrower paper-only conditional proxy candidate:
 
@@ -145,7 +224,7 @@ Next recommended action:
 - The next candidate should preserve the `walk_forward_003` train-stability benefit without lowering full-period/stress drawdown buffer below the hard gate.
 - Avoid additional broad exposure caps until the month-level regression source is isolated.
 
-Previous loop:
+Earlier loop:
 
 Added paper-only proxy decision diagnostics to explain why fallback `market_beta_proxy` months help in some windows and hurt in others:
 

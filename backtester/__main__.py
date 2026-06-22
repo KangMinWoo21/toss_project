@@ -73,6 +73,7 @@ from .monthly_rebalance import (
     build_order_plan,
     build_monthly_validation_gate,
     build_universe_filter_report,
+    compare_monthly_attribution_reports,
     compare_monthly_validation_reports,
     compare_monthly_validation_scenario_deltas,
     decide_monthly_allocation,
@@ -101,6 +102,7 @@ from .monthly_rebalance import (
     save_deployment_gate,
     save_monthly_decision,
     save_monthly_attribution_rows,
+    save_monthly_attribution_comparison,
     save_monthly_decision_attribution,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
@@ -981,6 +983,20 @@ def main() -> int:
         help="Candidate adoption decision report derived from comparison deltas",
     )
 
+    monthly_compare_attribution_parser = subparsers.add_parser(
+        "monthly-compare-attribution",
+        help="Compare baseline and candidate monthly attribution CSV reports",
+    )
+    monthly_compare_attribution_parser.add_argument("--baseline", required=True)
+    monthly_compare_attribution_parser.add_argument("--candidate", required=True)
+    monthly_compare_attribution_parser.add_argument("--scenario", default="")
+    monthly_compare_attribution_parser.add_argument("--candidate-label", default="candidate")
+    monthly_compare_attribution_parser.add_argument("--drawdown-threshold-pct", type=float, default=-25.0)
+    monthly_compare_attribution_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_attribution_comparison.csv",
+    )
+
     monthly_candidate_followup_parser = subparsers.add_parser(
         "monthly-candidate-followup",
         help="Create full-validation and comparison commands for improved sweep candidates",
@@ -1383,6 +1399,35 @@ def main() -> int:
         print(f"candidate_failed_required  {comparison['candidate_failed_required']}")
         print(f"failed_delta  {comparison['failed_delta']}")
         print(f"comparison_report  {args.output}")
+        return 0
+
+    if args.command == "monthly-compare-attribution":
+        baseline_rows = _read_csv_dicts(Path(args.baseline))
+        candidate_rows = _read_csv_dicts(Path(args.candidate))
+        rows = compare_monthly_attribution_reports(
+            baseline_rows,
+            candidate_rows,
+            scenario=args.scenario,
+            candidate_label=args.candidate_label,
+            drawdown_threshold_pct=args.drawdown_threshold_pct,
+        )
+        saved = save_monthly_attribution_comparison(rows, args.output)
+        new_breach_rows = [
+            row for row in rows if str(row.get("candidate_crossed_drawdown_threshold", "")) == "True"
+        ]
+        worst_row = min(
+            rows,
+            key=lambda row: _safe_cli_float(row.get("candidate_worst_drawdown_pct")),
+            default={},
+        )
+        print(f"attribution_comparison_report  {args.output}")
+        print(f"comparison_rows  {saved}")
+        print(f"new_drawdown_breach_months  {len(new_breach_rows)}")
+        if worst_row:
+            print(
+                "worst_candidate_drawdown_month  "
+                f"{worst_row.get('month', '')} drawdown={worst_row.get('candidate_worst_drawdown_pct', '')}"
+            )
         return 0
 
     if args.command == "monthly-candidate-followup":
@@ -3296,6 +3341,13 @@ def _normalized_existing_path(path: Path) -> Path:
 def _read_csv_dicts(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
+
+
+def _safe_cli_float(value: object, *, default: float = float("inf")) -> float:
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return default
 
 
 def _read_validation_attribution_reports(
