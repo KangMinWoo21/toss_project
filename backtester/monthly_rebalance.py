@@ -529,6 +529,58 @@ DIRECT_ALPHA_HOLDING_PATH_COLUMNS = [
     "train_coverage_removed",
 ]
 
+MONTHLY_TRAIN_DECISION_PATH_COLUMNS = [
+    "scenario",
+    "walk_forward_preset",
+    "as_of_date",
+    "signal_date",
+    "category",
+    "decision_mode",
+    "decision_selected_preset",
+    "decision_reason",
+    "alpha_block_reason",
+    "decision_family",
+    "target_symbol_count",
+    "target_symbols",
+    "target_exposure",
+    "cash_weight",
+    "inner_train_start",
+    "inner_train_end",
+    "prior_breadth",
+    "fallback_breadth_threshold",
+    "market_beta_breadth_threshold",
+    "trend_scale",
+    "volatility_scale",
+    "liquidity_scale",
+    "exposure_scale",
+    "direct_candidate_count",
+    "eligible_direct_candidate_count",
+    "direct_candidate_scores",
+    "direct_candidate_rejection_reasons",
+    "best_direct_preset",
+    "best_direct_score",
+    "best_direct_excess_return_pct",
+    "best_direct_trade_count",
+    "best_direct_train_positive_ratio",
+    "outer_train_total_return_pct",
+    "outer_train_buy_hold_return_pct",
+    "outer_train_excess_return_pct",
+    "outer_train_max_drawdown_pct",
+    "outer_train_trade_count",
+    "outer_train_decision_count",
+    "outer_train_alpha_ratio",
+    "raw_symbols",
+    "universe_symbols",
+    "pit_symbols",
+    "liquid_symbols",
+    "train_symbols",
+    "universe_removed",
+    "pit_filter_removed",
+    "liquidity_removed",
+    "train_coverage_removed",
+    "filter_error",
+]
+
 PERFORMANCE_CONCENTRATION_COLUMNS = [
     "source",
     "start",
@@ -2722,6 +2774,328 @@ def save_monthly_direct_alpha_holding_path(rows: list[dict[str, Any]], output_pa
         for row in rows:
             writer.writerow({column: row.get(column, "") for column in DIRECT_ALPHA_HOLDING_PATH_COLUMNS})
     return len(rows)
+
+
+def analyze_monthly_train_decision_path(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    cases: list[MonthlyValidationCase],
+    config: MonthlyRebalanceConfig,
+    initial_cash: float = 10_000_000.0,
+    fee_rate: float = 0.00015,
+    tax_rate: float = 0.0018,
+    slippage_rate: float = 0.0005,
+    min_trade_value: float = 10_000.0,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        if not case.train_start or not case.train_end:
+            continue
+        rows.extend(
+            _monthly_train_decision_path_for_case(
+                symbol_candles,
+                case=case,
+                config=config,
+                initial_cash=initial_cash,
+                fee_rate=fee_rate,
+                tax_rate=tax_rate,
+                slippage_rate=slippage_rate,
+                min_trade_value=min_trade_value,
+            )
+        )
+    return rows
+
+
+def save_monthly_train_decision_path(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MONTHLY_TRAIN_DECISION_PATH_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in MONTHLY_TRAIN_DECISION_PATH_COLUMNS})
+    return len(rows)
+
+
+def _monthly_train_decision_path_for_case(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    case: MonthlyValidationCase,
+    config: MonthlyRebalanceConfig,
+    initial_cash: float,
+    fee_rate: float,
+    tax_rate: float,
+    slippage_rate: float,
+    min_trade_value: float,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for preset in config.presets:
+        preset_config = replace(config, presets=(preset,))
+        result = run_monthly_rebalance_backtest(
+            symbol_candles,
+            start=case.train_start,
+            end=case.train_end,
+            config=preset_config,
+            initial_cash=initial_cash,
+            fee_rate=fee_rate,
+            tax_rate=tax_rate,
+            slippage_rate=slippage_rate,
+            min_trade_value=min_trade_value,
+        )
+        decision_count = len(result.decisions)
+        alpha_ratio = (
+            sum(1 for decision in result.decisions if decision.mode == "alpha") / decision_count
+            if decision_count
+            else 0.0
+        )
+        outer_summary = {
+            "outer_train_total_return_pct": _format_optional_float(result.total_return_pct),
+            "outer_train_buy_hold_return_pct": _format_optional_float(result.buy_hold_return_pct),
+            "outer_train_excess_return_pct": _format_optional_float(result.excess_return_pct),
+            "outer_train_max_drawdown_pct": _format_optional_float(result.max_drawdown_pct),
+            "outer_train_trade_count": result.trade_count,
+            "outer_train_decision_count": decision_count,
+            "outer_train_alpha_ratio": _format_optional_float(alpha_ratio),
+        }
+        for decision in result.decisions:
+            evidence = _monthly_train_decision_evidence(
+                symbol_candles,
+                as_of_date=decision.as_of_date,
+                config=preset_config,
+            )
+            target_exposure = sum(weight for weight in decision.target_weights.values() if weight > 0)
+            row = {
+                "scenario": case.name,
+                "category": case.category,
+                "walk_forward_preset": preset,
+                "as_of_date": decision.as_of_date,
+                "signal_date": decision.signal_date,
+                "decision_mode": decision.mode,
+                "decision_selected_preset": decision.selected_preset,
+                "decision_reason": decision.reason,
+                "alpha_block_reason": _monthly_alpha_block_reason(decision, evidence),
+                "decision_family": _monthly_decision_family(decision.mode),
+                "target_symbol_count": len(decision.target_weights),
+                "target_symbols": ";".join(sorted(decision.target_weights)),
+                "target_exposure": _format_optional_float(target_exposure),
+                "cash_weight": _format_optional_float(max(0.0, 1.0 - target_exposure)),
+                **evidence,
+                **outer_summary,
+            }
+            rows.append(row)
+    return rows
+
+
+def _monthly_train_decision_evidence(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    as_of_date: str,
+    config: MonthlyRebalanceConfig,
+) -> dict[str, Any]:
+    raw_symbol_count = len(symbol_candles)
+    try:
+        signal_date = latest_signal_date(symbol_candles, as_of_date=as_of_date)
+        universe_candles = filter_symbol_candles_by_universe(
+            symbol_candles,
+            config.point_in_time_universe,
+            signal_date=signal_date,
+            min_history_days=config.point_in_time_min_history_days,
+        )
+        point_in_time_candles = select_point_in_time_universe(
+            universe_candles,
+            signal_date=signal_date,
+            min_history_days=config.point_in_time_min_history_days,
+            min_reference_price=config.point_in_time_min_reference_price,
+            max_trailing_return_pct=config.point_in_time_max_trailing_return_pct,
+            trailing_return_days=config.point_in_time_trailing_return_days,
+        )
+        decision_candles = (
+            select_liquid_universe(
+                point_in_time_candles,
+                signal_date=signal_date,
+                top_n=config.point_in_time_liquidity_top_n,
+                window_days=config.point_in_time_liquidity_window_days,
+            )
+            if config.point_in_time_liquidity_top_n > 0
+            else point_in_time_candles
+        )
+        inner_train_start = config.train_start or _default_train_start(signal_date, config.train_years)
+        train_candles = slice_asof_symbol_candles(
+            decision_candles,
+            start=inner_train_start,
+            end=signal_date,
+            min_rows=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+        )
+        preset_configs = {
+            preset: momentum_rotation_config_for_preset(preset)
+            for preset in config.presets
+        }
+        direct_rows = _train_candidate_rows(
+            decision_candles,
+            train_candles=train_candles,
+            train_start=inner_train_start,
+            train_end=signal_date,
+            preset_configs=preset_configs,
+            min_rows_per_window=config.min_rows_per_window,
+            start_grace_days=config.start_grace_days,
+            train_stability_years=config.train_stability_years,
+        )
+        prior_breadth = market_breadth_before_date(
+            decision_candles,
+            before_date=as_of_date,
+            trend_days=config.fallback_breadth_days,
+        )
+        trend_scale = market_trend_exposure_scale(
+            decision_candles,
+            before_date=as_of_date,
+            lookback_days=config.market_trend_filter_days,
+            min_return_pct=config.market_trend_min_return_pct,
+            risk_scale=config.market_trend_risk_scale,
+        )
+        volatility_scale = market_volatility_exposure_scale(
+            decision_candles,
+            before_date=as_of_date,
+            lookback_days=config.market_volatility_filter_days,
+            target_volatility_pct=config.market_volatility_target_pct,
+            min_scale=config.market_volatility_min_scale,
+        )
+        liquidity_scale = liquidity_universe_exposure_scale(
+            top_n=config.point_in_time_liquidity_top_n,
+            reference_top_n=config.liquidity_risk_reference_top_n,
+            min_scale=config.liquidity_risk_min_scale,
+            min_top_n=config.liquidity_risk_min_top_n,
+        )
+        eligible_rows = [
+            row for row in direct_rows
+            if not _monthly_train_candidate_rejection_reasons(row, config)
+        ]
+        best_row = max(direct_rows, key=_monthly_validation_train_score, default={})
+        return {
+            "inner_train_start": inner_train_start,
+            "inner_train_end": signal_date,
+            "prior_breadth": _format_optional_float(prior_breadth),
+            "fallback_breadth_threshold": _format_optional_float(config.fallback_breadth_threshold),
+            "market_beta_breadth_threshold": _format_optional_float(config.market_beta_breadth_threshold),
+            "trend_scale": _format_optional_float(trend_scale),
+            "volatility_scale": _format_optional_float(volatility_scale),
+            "liquidity_scale": _format_optional_float(liquidity_scale),
+            "exposure_scale": _format_optional_float(trend_scale * volatility_scale * liquidity_scale),
+            "direct_candidate_count": len(direct_rows),
+            "eligible_direct_candidate_count": len(eligible_rows),
+            "direct_candidate_scores": _format_monthly_validation_train_scores(direct_rows),
+            "direct_candidate_rejection_reasons": _format_train_candidate_rejection_summary(direct_rows, config),
+            "best_direct_preset": best_row.get("preset", ""),
+            "best_direct_score": _format_optional_float(
+                _monthly_validation_train_score(best_row) if best_row else None
+            ),
+            "best_direct_excess_return_pct": _format_optional_float(
+                _float_or_none(best_row.get("excess_return_pct")) if best_row else None
+            ),
+            "best_direct_trade_count": best_row.get("trades", ""),
+            "best_direct_train_positive_ratio": _format_optional_float(
+                _float_or_none(best_row.get("train_positive_ratio")) if best_row else None
+            ),
+            "raw_symbols": raw_symbol_count,
+            "universe_symbols": len(universe_candles),
+            "pit_symbols": len(point_in_time_candles),
+            "liquid_symbols": len(decision_candles),
+            "train_symbols": len(train_candles),
+            "universe_removed": max(0, raw_symbol_count - len(universe_candles)),
+            "pit_filter_removed": max(0, len(universe_candles) - len(point_in_time_candles)),
+            "liquidity_removed": max(0, len(point_in_time_candles) - len(decision_candles)),
+            "train_coverage_removed": max(0, len(decision_candles) - len(train_candles)),
+            "filter_error": "",
+        }
+    except ValueError as exc:
+        return {
+            "inner_train_start": "",
+            "inner_train_end": "",
+            "prior_breadth": "",
+            "fallback_breadth_threshold": _format_optional_float(config.fallback_breadth_threshold),
+            "market_beta_breadth_threshold": _format_optional_float(config.market_beta_breadth_threshold),
+            "trend_scale": "",
+            "volatility_scale": "",
+            "liquidity_scale": "",
+            "exposure_scale": "",
+            "direct_candidate_count": 0,
+            "eligible_direct_candidate_count": 0,
+            "direct_candidate_scores": "",
+            "direct_candidate_rejection_reasons": "",
+            "best_direct_preset": "",
+            "best_direct_score": "",
+            "best_direct_excess_return_pct": "",
+            "best_direct_trade_count": "",
+            "best_direct_train_positive_ratio": "",
+            "raw_symbols": raw_symbol_count,
+            "universe_symbols": "",
+            "pit_symbols": "",
+            "liquid_symbols": "",
+            "train_symbols": "",
+            "universe_removed": "",
+            "pit_filter_removed": "",
+            "liquidity_removed": "",
+            "train_coverage_removed": "",
+            "filter_error": _diagnostic_token(str(exc)),
+        }
+
+
+def _monthly_train_candidate_rejection_reasons(
+    row: dict[str, Any],
+    config: MonthlyRebalanceConfig,
+) -> list[str]:
+    reasons: list[str] = []
+    excess = _float_or_none(row.get("excess_return_pct"))
+    trades = int(float(row.get("trades", 0) or 0))
+    positive_ratio = _float_or_none(row.get("train_positive_ratio"))
+    if excess is None or excess <= 0:
+        reasons.append("nonpositive_excess")
+    if trades < config.min_train_trades:
+        reasons.append("insufficient_trades")
+    if positive_ratio is not None and positive_ratio < config.min_train_positive_ratio:
+        reasons.append("low_positive_ratio")
+    return reasons
+
+
+def _format_train_candidate_rejection_summary(
+    rows: list[dict[str, Any]],
+    config: MonthlyRebalanceConfig,
+) -> str:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        reasons = _monthly_train_candidate_rejection_reasons(row, config)
+        if not reasons:
+            counts["eligible"] += 1
+        for reason in reasons:
+            counts[reason] += 1
+    return ";".join(f"{reason}={counts[reason]}" for reason in sorted(counts))
+
+
+def _monthly_decision_family(mode: str) -> str:
+    if mode == "alpha":
+        return "alpha"
+    if mode in {"market_beta", "market_beta_proxy"}:
+        return "market_beta"
+    if mode == "cash":
+        return "cash"
+    return "other"
+
+
+def _monthly_alpha_block_reason(decision: MonthlyDecision, evidence: dict[str, Any]) -> str:
+    if decision.mode == "alpha":
+        return "selected_alpha"
+    if str(evidence.get("filter_error", "")).strip():
+        return "candidate_filter_error"
+    eligible_count = int(float(evidence.get("eligible_direct_candidate_count", 0) or 0))
+    if eligible_count <= 0:
+        return "no_eligible_direct_candidate"
+    if "weak_train" in decision.reason:
+        return "weak_breadth_and_weak_train_average"
+    if "no_ranked_targets" in decision.reason:
+        return "no_ranked_targets"
+    if "drawdown" in decision.reason:
+        return "risk_overlay_scaled_or_blocked_alpha"
+    return "fallback_after_candidate_selection"
 
 
 def _monthly_direct_alpha_selection_for_case(

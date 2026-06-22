@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 15:42 KST
+Last updated: 2026-06-22 16:26 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 394 tests.
+- `python -m unittest discover -s tests`: PASS, 397 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,82 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added recursive monthly train decision path diagnostics:
+
+- New CLI: `python -m backtester monthly-train-decision-diagnostics`.
+- New report: `data/reports/monthly_train_decision_path_diagnostics.csv`.
+- Purpose: explain the recursive monthly train decisions inside walk-forward train windows, especially why `alpha_ratio=0` and why train decisions fall back to `market_beta_proxy` or `cash`.
+- Added CSV fields for:
+  - scenario, walk-forward preset, as-of date, and signal date,
+  - actual train decision mode, selected preset, reason, and decision family,
+  - `alpha_block_reason`,
+  - target symbols, target exposure, and cash weight,
+  - inner train window used at that decision,
+  - prior breadth and risk overlay scales,
+  - direct candidate count, eligible candidate count, candidate scores, rejection reasons, and best direct candidate metrics,
+  - outer recursive train total/buy-hold/excess return, drawdown, trade count, decision count, and alpha ratio,
+  - raw/PIT/liquidity/train universe counts and filter removals.
+- Added deterministic tests for:
+  - fallback choice explanation with direct candidate rejection reasons,
+  - train decision path CSV saving,
+  - `monthly-train-decision-diagnostics` CLI report generation.
+- Regenerated train decision path diagnostics for `walk_forward_003` and `walk_forward_004`.
+- Current train decision path report rows: `26` (`2` scenarios x `13` train decisions).
+
+Recursive train decision findings:
+
+- `walk_forward_003`
+  - Train decision rows: `13`.
+  - Decision modes: `13 market_beta_proxy`, `0 alpha`, `0 cash`.
+  - Outer recursive train alpha ratio: `0`.
+  - Decision reasons:
+    - `no_train_candidate_strong_breadth_proxy=8`
+    - `no_train_candidate_neutral_breadth_proxy=2`
+    - `no_train_candidate_strong_breadth_proxy_drawdown_guard=2`
+    - `weak_train_neutral_breadth_proxy_trend_scaled=1`
+  - Alpha block reasons:
+    - `no_eligible_direct_candidate=12`
+    - `weak_breadth_and_weak_train_average=1`
+  - Direct candidate count was `1` at each decision, but eligible candidate count was usually `0`.
+  - Direct candidate rejection was mainly `low_positive_ratio`; some later rows also had `nonpositive_excess`.
+- `walk_forward_004`
+  - Train decision rows: `13`.
+  - Decision modes: `13 market_beta_proxy`, `0 alpha`, `0 cash`.
+  - Outer recursive train alpha ratio: `0`.
+  - Decision reasons:
+    - `no_train_candidate_strong_breadth_proxy=7`
+    - `no_train_candidate_neutral_breadth_proxy=3`
+    - `no_train_candidate_strong_breadth_proxy_drawdown_guard=2`
+    - `weak_train_neutral_breadth_proxy_trend_scaled=1`
+  - Alpha block reasons:
+    - `no_eligible_direct_candidate=12`
+    - `weak_breadth_and_weak_train_average=1`
+  - Direct candidate best excess ranged from about `-94.7878` to `55.7425`, but stability/positive-ratio gates kept recursive alpha decisions at zero.
+- Interpretation:
+  - The recursive train behavior is now explicitly fallback-only in the report, not just summarized in a compact profile string.
+  - In these windows, alpha is blocked less by missing candidates and more by unstable direct candidate subwindow performance (`low_positive_ratio`) plus weak-breadth fallback rules.
+  - Do not loosen gates yet; the next useful diagnostic is to decompose the low positive-ratio subwindows and identify which stability windows flip the direct candidate from strong headline excess to ineligible.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `394` tests.
+- RED check: new train decision path tests initially failed because the new functions/CLI did not exist.
+- RED refinement: `alpha_block_reason` was initially missing from the path rows.
+- Targeted GREEN: `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_decision_path_explains_fallback_choices tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_decision_path_writes_csv tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report`: PASS.
+- Related regression scope: `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `159` tests.
+- Full verification: `python -m unittest discover -s tests`: PASS, `397` tests.
+- Full syntax check: `python -m compileall -q backtester`: PASS.
+- `monthly_performance_concentration.csv` remained sourced from `monthly-validate:2024-01-01..2026-06-18` after full unittest.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, status counts `BLOCK=8`, `PASS=31`, `WARN=8`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=303.64` observed).
+
+Next recommended action:
+
+- Add direct candidate stability-window diagnostics: for each walk-forward train decision, show the subwindows behind `train_positive_ratio`, their excess returns, drawdowns, and trade counts so `low_positive_ratio` can be attributed to specific market periods.
+
+Previous loop:
 
 Added direct-alpha holding-path diagnostics:
 

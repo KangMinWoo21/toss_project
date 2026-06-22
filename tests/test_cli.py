@@ -1096,6 +1096,68 @@ class CliTests(unittest.TestCase):
         self.assertTrue(any(row["symbol"] == "FFF" and row["rejection_reason"] == "below_selected_rank" for row in rows))
         self.assertTrue(any("AAA" in row["held_symbols"].split(";") for row in path_rows))
 
+    def test_monthly_train_decision_diagnostics_cli_writes_path_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data_dir = root / "prices"
+            train_end = self._write_trend_price_file(data_dir, "AAA", close=100, step=1.2, volume=10_000)
+            for symbol, step, volume in [
+                ("BBB", 1.0, 9_000),
+                ("CCC", 0.8, 8_000),
+                ("DDD", 0.6, 7_000),
+                ("EEE", 0.4, 6_000),
+                ("FFF", 0.2, 5_000),
+            ]:
+                self._write_trend_price_file(data_dir, symbol, close=100, step=step, volume=volume)
+            baseline = root / "baseline.csv"
+            baseline.write_text(
+                "name,category,required,train_start,train_end,start,end,deployable,reason\n"
+                f"walk_forward_unit,walk_forward,True,2024-01-01,{train_end},2024-08-08,2024-09-30,False,train_window_rejected\n",
+                encoding="utf-8",
+            )
+            output = root / "train_decisions.csv"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-train-decision-diagnostics",
+                    "--data-dir",
+                    str(data_dir),
+                    "--baseline",
+                    str(baseline),
+                    "--scenario",
+                    "walk_forward_unit",
+                    "--point-in-time-universe",
+                    "",
+                    "--point-in-time-min-history-days",
+                    "20",
+                    "--point-in-time-min-reference-price",
+                    "50",
+                    "--point-in-time-liquidity-top-n",
+                    "6",
+                    "--point-in-time-liquidity-window-days",
+                    "20",
+                    "--min-rows-per-window",
+                    "20",
+                    "--start-grace-days",
+                    "0",
+                    "--min-train-trades",
+                    "999",
+                    "--output",
+                    str(output),
+                ],
+            )
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("train_decision_path_report", completed.stdout)
+        self.assertTrue(rows)
+        self.assertTrue(any(row["direct_candidate_rejection_reasons"] or row["filter_error"] for row in rows))
+
     def test_monthly_compare_validation_cli_writes_comparison(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

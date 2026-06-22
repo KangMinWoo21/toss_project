@@ -1,6 +1,6 @@
 # GPT Project Context: Toss Securities Paper-Operation Trading System
 
-Generated at: 2026-06-22 15:42 KST
+Generated at: 2026-06-22 16:26 KST
 
 This document is a compact project handoff for GPT. It summarizes the current repository state, safety rules, architecture, reports, validation results, and next work. It intentionally excludes secrets, `.env` values, private credentials, and raw downloaded market data.
 
@@ -46,33 +46,31 @@ Why:
 Recent commits:
 
 ```text
+bb7d015 Add direct alpha holding path diagnostics
 958249b Add direct alpha selection diagnostics
 8cd4dcc Add direct alpha train diagnostics
 bd9b613 Classify direct alpha train failures
 cb6dfb7 Add direct train alpha diagnostics
-8b847c8 Harden validation delta discovery
 ```
 
 Latest committed checkpoint:
 
-- `958249b Add direct alpha selection diagnostics`
-- Added `monthly-direct-alpha-diagnostics` CLI.
-- Added `data/reports/monthly_direct_alpha_selection_diagnostics.csv`.
-- Tests cover selected/rejected symbol rows, CSV saving, and CLI report generation.
-- `python -m unittest discover -s tests`: PASS, 392 tests.
+- `bb7d015 Add direct alpha holding path diagnostics`
+- Extended `monthly-direct-alpha-diagnostics` with `--path-output`.
+- Added `data/reports/monthly_direct_alpha_path_diagnostics.csv`.
+- Tests cover holding-path analysis, no-trade scheduled rebalance snapshots, CSV saving, and CLI report generation.
+- `python -m unittest discover -s tests`: PASS, 394 tests.
 - `python -m compileall -q backtester`: PASS.
 
 Latest uncommitted/next checkpoint work:
 
-- Extended `monthly-direct-alpha-diagnostics` with `--path-output`.
-- Added `data/reports/monthly_direct_alpha_path_diagnostics.csv`.
-- This report reconstructs scheduled direct-alpha rebalance snapshots from paper backtest trades, including no-trade rebalance dates, and compares holdings with the train-end selected snapshot.
-- It includes held/entered/exited symbols, equal holding weights, train-end selected symbols, overlap counts, holdings not in the train-end snapshot, train-end selections missing from current holdings, benchmark composition/counts, candidate total/buy-hold/excess return, and turnover counts.
-- `walk_forward_003`: path rows now include a `2025-04-08` no-trade rebalance with no holdings; later actual holdings overlapped the train-end selected snapshot by `2 of 5`; excess remained `-19.7208`.
-- `walk_forward_004`: actual rebalance holdings overlapped the train-end selected snapshot by `2 of 5` before liquidation; the second rebalance replaced three names; excess remained `-60.1564`.
-- Current full verification after this work: `python -m unittest discover -s tests` PASS with `394` tests; `python -m compileall -q backtester` PASS.
-- Baseline `monthly-validate` was regenerated after `monthly_performance_concentration.csv` was found overwritten by a `monthly-backtest` source; production readiness returned to `BLOCK=8`, `PASS=31`, `WARN=8`.
-- Test isolation was tightened so `test_monthly_backtest_can_exclude_symbols_from_data_quality_file` runs in a temp cwd and no longer overwrites workspace operation reports during full unittest.
+- Added `monthly-train-decision-diagnostics` CLI.
+- Added `data/reports/monthly_train_decision_path_diagnostics.csv`.
+- This report reconstructs recursive monthly train decisions inside walk-forward train windows and explains `alpha_ratio=0` with row-level decision mode, reason, `alpha_block_reason`, direct candidate scores/rejection reasons, prior breadth, target exposure, cash weight, and universe counts.
+- `walk_forward_003`: 13 train decisions, all `market_beta_proxy`, `0 alpha`; alpha block reasons are `no_eligible_direct_candidate=12` and `weak_breadth_and_weak_train_average=1`.
+- `walk_forward_004`: 13 train decisions, all `market_beta_proxy`, `0 alpha`; alpha block reasons are also `no_eligible_direct_candidate=12` and `weak_breadth_and_weak_train_average=1`.
+- Current full verification after this work: `python -m unittest discover -s tests` PASS with `397` tests; `python -m compileall -q backtester` PASS.
+- `production-check` remains `BLOCK` with `BLOCK=8`, `PASS=31`, `WARN=8`; `health-check` remains `WARN` because scalper data is stale.
 
 ## Current Git Worktree Warning
 

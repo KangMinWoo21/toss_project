@@ -24,6 +24,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_validation_failures,
+    analyze_monthly_train_decision_path,
     analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
     analyze_monthly_validation_remediation,
@@ -81,6 +82,7 @@ from backtester.monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
+    save_monthly_train_decision_path,
     save_order_plan,
     save_order_plan_summary,
     save_universe_filter_report,
@@ -2274,6 +2276,78 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("scenario,preset,rebalance_date", text.splitlines()[0])
         self.assertIn("walk_forward_unit", text)
+
+    def test_analyze_monthly_train_decision_path_explains_fallback_choices(self):
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2024-03-30",
+            start="2024-04-01",
+            end="2024-04-30",
+        )
+        rows = analyze_monthly_train_decision_path(
+            {
+                "AAA": _trend_candles_with_volume("2024-01-01", 90, close=100, step=1, volume=3_000),
+                "BBB": _trend_candles_with_volume("2024-01-01", 90, close=100, step=1, volume=2_000),
+                "CCC": _trend_candles_with_volume("2024-01-01", 90, close=110, step=-1, volume=1_000),
+            },
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                train_start="2024-01-01",
+                presets=("balanced",),
+                min_train_trades=999,
+                min_rows_per_window=3,
+                start_grace_days=0,
+                fallback_breadth_days=3,
+                fallback_breadth_threshold=0.8,
+                market_beta_breadth_threshold=0.5,
+                point_in_time_min_history_days=3,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_window_days=3,
+                point_in_time_liquidity_top_n=3,
+                market_beta_proxy_size=2,
+                max_position_weight=0.5,
+                train_stability_years=1,
+            ),
+        )
+
+        self.assertTrue(rows)
+        fallback_rows = [row for row in rows if row["decision_mode"] == "market_beta_proxy"]
+        self.assertTrue(fallback_rows)
+        row = fallback_rows[0]
+        self.assertEqual(row["scenario"], "walk_forward_unit")
+        self.assertEqual(row["walk_forward_preset"], "balanced")
+        self.assertIn("no_train_candidate", row["decision_reason"])
+        self.assertEqual(row["alpha_block_reason"], "no_eligible_direct_candidate")
+        self.assertIn("AAA", row["target_symbols"].split(";"))
+        self.assertGreater(row["direct_candidate_count"], 0)
+        self.assertEqual(row["eligible_direct_candidate_count"], 0)
+        self.assertIn("balanced:excess=", row["direct_candidate_scores"])
+        self.assertIn("insufficient_trades", row["direct_candidate_rejection_reasons"])
+        self.assertIn("outer_train_alpha_ratio", row)
+        self.assertLess(float(row["cash_weight"]), 1.0)
+
+    def test_save_monthly_train_decision_path_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "train_decisions.csv"
+            saved = save_monthly_train_decision_path(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "walk_forward_preset": "balanced",
+                        "as_of_date": "2024-02-01",
+                        "decision_mode": "market_beta_proxy",
+                        "direct_candidate_rejection_reasons": "insufficient_trades",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,walk_forward_preset,as_of_date", text.splitlines()[0])
+        self.assertIn("insufficient_trades", text)
 
     def test_generate_monthly_validation_cases_includes_duration_regime_and_stress(self):
         cases = generate_monthly_validation_cases(

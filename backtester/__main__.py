@@ -54,6 +54,7 @@ from .monthly_rebalance import (
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_performance_concentration,
+    analyze_monthly_train_decision_path,
     analyze_monthly_validation_failures,
     analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
@@ -100,6 +101,7 @@ from .monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
+    save_monthly_train_decision_path,
     save_monthly_performance_audit_rows,
     save_monthly_performance_concentration,
     save_monthly_validation_failures,
@@ -1106,6 +1108,48 @@ def main() -> int:
         help="Write paper-only direct alpha rebalance holding-path diagnostics.",
     )
 
+    monthly_train_decision_parser = subparsers.add_parser(
+        "monthly-train-decision-diagnostics",
+        help="Write paper-only recursive monthly train decision path diagnostics",
+    )
+    monthly_train_decision_parser.add_argument("--data-dir", default="data/krx_expanded")
+    monthly_train_decision_parser.add_argument(
+        "--baseline",
+        default="data/reports/monthly_validation_scenarios_pit_universe.csv",
+    )
+    monthly_train_decision_parser.add_argument(
+        "--scenario",
+        action="append",
+        default=None,
+        help="Walk-forward scenario name to include. Can be repeated. Defaults to all walk-forward rows.",
+    )
+    monthly_train_decision_parser.add_argument(
+        "--point-in-time-universe",
+        default="data/krx_metadata/krx_universe_monthly.csv",
+    )
+    monthly_train_decision_parser.add_argument("--presets", default="balanced")
+    monthly_train_decision_parser.add_argument("--min-train-trades", type=int, default=1)
+    monthly_train_decision_parser.add_argument("--min-train-positive-ratio", type=float, default=0.5)
+    monthly_train_decision_parser.add_argument("--min-rows-per-window", type=int, default=120)
+    monthly_train_decision_parser.add_argument("--start-grace-days", type=int, default=14)
+    monthly_train_decision_parser.add_argument("--train-stability-years", type=int, default=2)
+    monthly_train_decision_parser.add_argument("--fallback-breadth-days", type=int, default=120)
+    monthly_train_decision_parser.add_argument("--fallback-breadth-threshold", type=float, default=0.5)
+    monthly_train_decision_parser.add_argument("--market-beta-breadth-threshold", type=float, default=0.25)
+    monthly_train_decision_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
+    monthly_train_decision_parser.add_argument("--point-in-time-liquidity-top-n", type=int, default=100)
+    monthly_train_decision_parser.add_argument("--point-in-time-liquidity-window-days", type=int, default=20)
+    monthly_train_decision_parser.add_argument("--point-in-time-min-history-days", type=int, default=252)
+    monthly_train_decision_parser.add_argument("--point-in-time-min-reference-price", type=float, default=1_000.0)
+    monthly_train_decision_parser.add_argument("--point-in-time-max-trailing-return-pct", type=float, default=300.0)
+    monthly_train_decision_parser.add_argument("--point-in-time-trailing-return-days", type=int, default=252)
+    monthly_train_decision_parser.add_argument("--exclude-symbols", default=None)
+    monthly_train_decision_parser.add_argument("--ignore-data-quality-exclusions", action="store_true")
+    monthly_train_decision_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_train_decision_path_diagnostics.csv",
+    )
+
     production_check_parser = subparsers.add_parser(
         "production-check",
         help="Evaluate whether local data, validation, and risk reports are ready for live trading",
@@ -1455,6 +1499,60 @@ def main() -> int:
         print(f"direct_alpha_selection_report  {args.output}")
         print(f"direct_alpha_path_rows  {path_saved}")
         print(f"direct_alpha_path_report  {args.path_output}")
+        return 0
+
+    if args.command == "monthly-train-decision-diagnostics":
+        data_quality_exclusions = _resolve_data_quality_exclusions(
+            args.exclude_symbols,
+            ignore=args.ignore_data_quality_exclusions,
+        )
+        symbol_candles = _apply_resolved_excluded_symbols(
+            exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
+            data_quality_exclusions,
+        )
+        point_in_time_universe = (
+            load_point_in_time_universe(args.point_in_time_universe)
+            if args.point_in_time_universe
+            else None
+        )
+        scenario_filter = set(args.scenario or [])
+        baseline_rows = _read_csv_dicts(Path(args.baseline))
+        cases = [
+            _monthly_validation_case_from_row(row)
+            for row in baseline_rows
+            if str(row.get("category", "")).strip() == "walk_forward"
+            and (not scenario_filter or str(row.get("name", "")).strip() in scenario_filter)
+        ]
+        presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
+        rows = analyze_monthly_train_decision_path(
+            symbol_candles,
+            cases=cases,
+            config=MonthlyRebalanceConfig(
+                presets=presets,
+                min_train_trades=args.min_train_trades,
+                min_train_positive_ratio=args.min_train_positive_ratio,
+                min_rows_per_window=args.min_rows_per_window,
+                start_grace_days=args.start_grace_days,
+                train_stability_years=args.train_stability_years,
+                fallback_breadth_days=args.fallback_breadth_days,
+                fallback_breadth_threshold=args.fallback_breadth_threshold,
+                market_beta_breadth_threshold=args.market_beta_breadth_threshold,
+                market_beta_proxy_size=args.market_beta_proxy_size,
+                point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
+                point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
+                point_in_time_min_history_days=args.point_in_time_min_history_days,
+                point_in_time_min_reference_price=args.point_in_time_min_reference_price,
+                point_in_time_max_trailing_return_pct=args.point_in_time_max_trailing_return_pct,
+                point_in_time_trailing_return_days=args.point_in_time_trailing_return_days,
+                point_in_time_universe=point_in_time_universe,
+            ),
+        )
+        saved = save_monthly_train_decision_path(rows, args.output)
+        print("Monthly train decision diagnostics")
+        _print_data_quality_exclusions(data_quality_exclusions)
+        print(f"walk_forward_cases  {len(cases)}")
+        print(f"diagnostic_rows  {saved}")
+        print(f"train_decision_path_report  {args.output}")
         return 0
 
     if args.command == "production-check":
