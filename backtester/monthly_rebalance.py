@@ -678,6 +678,19 @@ MONTHLY_TRAIN_STABILITY_WINDOW_COLUMNS = [
     "stability_trade_count",
     "stability_positive",
     "stability_failed_reason",
+    "stability_selected_symbol_count",
+    "stability_selected_symbols",
+    "stability_benchmark_avg_return_pct",
+    "stability_benchmark_median_return_pct",
+    "stability_selected_avg_return_pct",
+    "stability_selected_median_return_pct",
+    "stability_selected_vs_benchmark_avg_return_delta_pct",
+    "stability_selected_underperformed_benchmark",
+    "stability_traded_symbol_count",
+    "stability_traded_symbols",
+    "stability_selected_not_traded_symbols",
+    "stability_traded_not_selected_symbols",
+    "stability_underperformance_driver",
     "candidate_total_return_pct",
     "candidate_buy_hold_return_pct",
     "candidate_excess_return_pct",
@@ -4200,6 +4213,19 @@ def _monthly_train_stability_window_evidence(
                             "stability_trade_count": "",
                             "stability_positive": "false",
                             "stability_failed_reason": "no_subwindow_symbols",
+                            "stability_selected_symbol_count": 0,
+                            "stability_selected_symbols": "",
+                            "stability_benchmark_avg_return_pct": "",
+                            "stability_benchmark_median_return_pct": "",
+                            "stability_selected_avg_return_pct": "",
+                            "stability_selected_median_return_pct": "",
+                            "stability_selected_vs_benchmark_avg_return_delta_pct": "",
+                            "stability_selected_underperformed_benchmark": "",
+                            "stability_traded_symbol_count": 0,
+                            "stability_traded_symbols": "",
+                            "stability_selected_not_traded_symbols": "",
+                            "stability_traded_not_selected_symbols": "",
+                            "stability_underperformance_driver": "no_subwindow_symbols",
                         }
                     )
                     continue
@@ -4215,6 +4241,13 @@ def _monthly_train_stability_window_evidence(
                 subwindow_excess_return = round(sub_result.excess_return_pct, 4)
                 subwindow_max_drawdown = round(sub_result.max_drawdown_pct, 4)
                 failed_reason = ";".join(sub_reasons) if sub_reasons else ""
+                selection_context = _stability_selection_path_context(
+                    sub_candles,
+                    train_start=window.train_start,
+                    train_end=window.train_end,
+                    preset_config=preset_config,
+                    sub_result=sub_result,
+                )
                 rows.append(
                     {
                         **row,
@@ -4234,6 +4267,7 @@ def _monthly_train_stability_window_evidence(
                         "stability_trade_count": sub_result.trade_count,
                         "stability_positive": "true" if positive else "false",
                         "stability_failed_reason": failed_reason,
+                        **selection_context,
                     }
                 )
         return rows
@@ -4292,8 +4326,93 @@ def _monthly_train_stability_window_evidence(
                 "stability_trade_count": "",
                 "stability_positive": "false",
                 "stability_failed_reason": _diagnostic_token(str(exc)),
+                "stability_selected_symbol_count": 0,
+                "stability_selected_symbols": "",
+                "stability_benchmark_avg_return_pct": "",
+                "stability_benchmark_median_return_pct": "",
+                "stability_selected_avg_return_pct": "",
+                "stability_selected_median_return_pct": "",
+                "stability_selected_vs_benchmark_avg_return_delta_pct": "",
+                "stability_selected_underperformed_benchmark": "",
+                "stability_traded_symbol_count": 0,
+                "stability_traded_symbols": "",
+                "stability_selected_not_traded_symbols": "",
+                "stability_traded_not_selected_symbols": "",
+                "stability_underperformance_driver": _diagnostic_token(str(exc)),
             }
         ]
+
+
+def _stability_selection_path_context(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    train_start: str,
+    train_end: str,
+    preset_config: MomentumRotationConfig,
+    sub_result: Any,
+) -> dict[str, Any]:
+    symbol_returns = dict(_period_symbol_returns(symbol_candles, start=train_start, end=train_end))
+    benchmark_returns = list(symbol_returns.values())
+    benchmark_avg = mean(benchmark_returns) if benchmark_returns else None
+    benchmark_median = median(benchmark_returns) if benchmark_returns else None
+    try:
+        selected_symbols = rank_momentum_targets(symbol_candles, signal_date=train_end, config=preset_config)
+    except ValueError:
+        selected_symbols = []
+    selected_returns = [
+        symbol_returns[symbol]
+        for symbol in selected_symbols
+        if symbol in symbol_returns
+    ]
+    selected_avg = mean(selected_returns) if selected_returns else None
+    selected_median = median(selected_returns) if selected_returns else None
+    selected_delta = (
+        selected_avg - benchmark_avg
+        if selected_avg is not None and benchmark_avg is not None
+        else None
+    )
+    selected_underperformed = (
+        selected_delta < 0
+        if selected_delta is not None
+        else None
+    )
+    traded_symbols = sorted({str(trade.symbol) for trade in getattr(sub_result, "trades", [])})
+    selected_set = set(selected_symbols)
+    traded_set = set(traded_symbols)
+    selected_not_traded = sorted(selected_set - traded_set)
+    traded_not_selected = sorted(traded_set - selected_set)
+    drivers: list[str] = []
+    if getattr(sub_result, "trade_count", 0) <= 0:
+        drivers.append("no_trades")
+    if selected_underperformed:
+        drivers.append("selected_underperformed_benchmark")
+    if benchmark_avg is not None and benchmark_avg > 0 and (selected_avg is None or selected_avg <= 0):
+        drivers.append("benchmark_positive_selection_nonpositive")
+    if selected_not_traded or traded_not_selected:
+        drivers.append("holding_path_differs_from_selection_snapshot")
+    if not drivers and getattr(sub_result, "excess_return_pct", 0) <= 0:
+        drivers.append("candidate_path_underperformed_benchmark")
+    return {
+        "stability_selected_symbol_count": len(selected_symbols),
+        "stability_selected_symbols": ";".join(selected_symbols),
+        "stability_benchmark_avg_return_pct": _format_optional_float(benchmark_avg),
+        "stability_benchmark_median_return_pct": _format_optional_float(benchmark_median),
+        "stability_selected_avg_return_pct": _format_optional_float(selected_avg),
+        "stability_selected_median_return_pct": _format_optional_float(selected_median),
+        "stability_selected_vs_benchmark_avg_return_delta_pct": _format_optional_float(selected_delta),
+        "stability_selected_underperformed_benchmark": (
+            ""
+            if selected_underperformed is None
+            else "true"
+            if selected_underperformed
+            else "false"
+        ),
+        "stability_traded_symbol_count": len(traded_symbols),
+        "stability_traded_symbols": ";".join(traded_symbols),
+        "stability_selected_not_traded_symbols": ";".join(selected_not_traded),
+        "stability_traded_not_selected_symbols": ";".join(traded_not_selected),
+        "stability_underperformance_driver": ";".join(drivers) if drivers else "positive_or_no_issue",
+    }
 
 
 def _monthly_train_decision_evidence(

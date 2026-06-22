@@ -1375,6 +1375,7 @@ class CliTests(unittest.TestCase):
         self.assertTrue(any("subwindow_positive_flag" in row for row in stability_rows))
         self.assertTrue(any("candidate_eligible" in row for row in stability_rows))
         self.assertTrue(any("stability_failed_reason" in row for row in stability_rows))
+        self.assertTrue(any("stability_underperformance_driver" in row for row in stability_rows))
         self.assertTrue(any(row["candidate_rejection_reasons"] for row in stability_rows))
 
     def test_monthly_compare_validation_cli_writes_comparison(self):

@@ -3122,6 +3122,49 @@ class MonthlyRebalanceTests(unittest.TestCase):
         if row["stability_positive"] == "false":
             self.assertTrue(row["stability_failed_reason"])
 
+    def test_analyze_monthly_train_stability_windows_adds_selection_and_path_context(self):
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2025-03-31",
+            start="2025-04-01",
+            end="2025-04-30",
+        )
+        rows = analyze_monthly_train_stability_windows(
+            {
+                "AAA": _trend_candles_with_volume("2024-01-01", 460, close=100, step=0.7, volume=3_000),
+                "BBB": _trend_candles_with_volume("2024-01-01", 460, close=100, step=0.5, volume=2_000),
+                "CCC": _trend_candles_with_volume("2024-01-01", 460, close=180, step=-0.2, volume=1_000),
+            },
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                train_start="2024-01-01",
+                presets=("balanced",),
+                min_train_positive_ratio=1.1,
+                min_rows_per_window=20,
+                start_grace_days=0,
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_window_days=20,
+                point_in_time_liquidity_top_n=3,
+                train_stability_years=1,
+            ),
+        )
+
+        row = next(row for row in rows if row["subwindow_counted_flag"] == "true")
+        self.assertIn("stability_selected_symbols", row)
+        self.assertIn("stability_selected_symbol_count", row)
+        self.assertIn("stability_benchmark_avg_return_pct", row)
+        self.assertIn("stability_selected_avg_return_pct", row)
+        self.assertIn("stability_selected_vs_benchmark_avg_return_delta_pct", row)
+        self.assertIn(row["stability_selected_underperformed_benchmark"], {"true", "false", ""})
+        self.assertIn("stability_traded_symbols", row)
+        self.assertIn("stability_traded_symbol_count", row)
+        self.assertIn("stability_selected_not_traded_symbols", row)
+        self.assertIn("stability_traded_not_selected_symbols", row)
+        self.assertTrue(row["stability_underperformance_driver"])
+
     def test_save_monthly_train_stability_windows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "train_stability.csv"
@@ -3145,6 +3188,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("candidate_eligible", text.splitlines()[0])
         self.assertIn("stability_failed_reason", text.splitlines()[0])
         self.assertIn("prior_breadth", text.splitlines()[0])
+        self.assertIn("stability_underperformance_driver", text.splitlines()[0])
         self.assertIn("low_positive_ratio", text)
 
     def test_generate_monthly_validation_cases_includes_duration_regime_and_stress(self):

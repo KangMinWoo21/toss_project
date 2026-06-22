@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 21:23 KST
+Last updated: 2026-06-22 21:33 KST
 
 ## Objective
 
@@ -36,6 +36,103 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Extended the direct candidate stability-window diagnostics with selection/path context:
+
+- Added subwindow-level selection and path fields to `monthly-train-decision-diagnostics --stability-output`:
+  - `stability_selected_symbol_count`,
+  - `stability_selected_symbols`,
+  - `stability_benchmark_avg_return_pct`,
+  - `stability_benchmark_median_return_pct`,
+  - `stability_selected_avg_return_pct`,
+  - `stability_selected_median_return_pct`,
+  - `stability_selected_vs_benchmark_avg_return_delta_pct`,
+  - `stability_selected_underperformed_benchmark`,
+  - `stability_traded_symbol_count`,
+  - `stability_traded_symbols`,
+  - `stability_selected_not_traded_symbols`,
+  - `stability_traded_not_selected_symbols`,
+  - `stability_underperformance_driver`.
+- These fields are diagnostic-only and paper-only.
+- Existing monthly strategy behavior, train gates, validation gates, execution planning, and Toss/API behavior are unchanged.
+
+Regenerated reports:
+
+- `data/reports/monthly_direct_alpha_selection_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_path_diagnostics.csv`
+- `data/reports/monthly_train_decision_path_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_stability_diagnostics.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Current selection/path stability findings:
+
+- `monthly_direct_alpha_stability_diagnostics.csv` has `26` rows and all new selection/path fields are present.
+- `walk_forward_003`:
+  - `2025-02-03`, `2025-03-04`, and `2025-04-01` have `0` traded symbols.
+  - Their driver is `no_trades;benchmark_positive_selection_nonpositive`.
+  - Benchmark average returns were positive (`18.4987`, `13.4596`, `16.3563`) while the candidate had no trade path.
+  - `2025-05-02`, `2025-06-02`, and `2025-07-01` traded `5` symbols.
+  - Their driver is `holding_path_differs_from_selection_snapshot`.
+  - Selected snapshot averages were strong versus benchmark, but the actual traded path still produced negative excess:
+    - selected-vs-benchmark avg deltas: `217.0274`, `221.6126`, `156.2665`.
+- `walk_forward_004`:
+  - `2025-05-02`, `2025-06-02`, and `2025-07-01` have `0` traded symbols.
+  - Their driver is `no_trades;benchmark_positive_selection_nonpositive`.
+  - Benchmark average returns were positive (`37.5580`, `42.7915`, `56.4524`) while the candidate had no trade path.
+  - `2025-08-01`, `2025-09-01`, and `2025-10-01` traded `5`, `5`, and `9` symbols.
+  - Their driver is `holding_path_differs_from_selection_snapshot`.
+  - Selected snapshot averages were strong versus benchmark, but the actual traded path still produced negative excess:
+    - selected-vs-benchmark avg deltas: `200.3097`, `155.8623`, `104.0951`.
+- `monthly_direct_alpha_selection_diagnostics.csv` has `200` rows:
+  - each scenario has `5` selected and `95` rejected symbols.
+- `monthly_direct_alpha_path_diagnostics.csv` has `6` rows:
+  - `walk_forward_003` full train-window candidate excess: `-19.7208`, benchmark average: `53.6167`.
+  - `walk_forward_004` full train-window candidate excess: `-60.1564`, benchmark average: `87.4997`.
+  - Actual holdings overlap with train-end selected snapshot is only `2/5` on the active rebalance rows in both scenarios.
+
+Interpretation:
+
+- The direct-alpha failures are now better explained:
+  - early failed subwindows have a no-trade path against a positive benchmark,
+  - later failed subwindows are not primarily weak selected snapshots; they are holding/path drift problems versus the selection snapshot and a very strong benchmark.
+- This reinforces the existing gate decision:
+  - do not loosen `min_train_positive_ratio`,
+  - do not adopt rejected direct candidates,
+  - next work should isolate whether rebalance cadence, lookback delay, or turnover/path drift causes the selected snapshot to fail as a traded path.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `424` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_adds_selection_and_path_context tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_windows_writes_csv tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report`: failed because the new selection/path stability fields did not exist.
+- Targeted GREEN:
+  - same command: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `187` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `425` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=308.72` observed).
+
+Next recommended action:
+
+- Keep direct alpha train gates strict.
+- Add a paper-only path-drift drilldown that decomposes active rebalance rows by:
+  - selected snapshot symbols,
+  - traded symbols,
+  - symbols missed from the snapshot,
+  - symbols traded outside the snapshot,
+  - rebalance cadence/first-trade delay,
+  - and per-symbol contribution to candidate-vs-benchmark excess.
+- Do not start strategy parameter changes until this path-drift drilldown identifies a specific failure mechanism.
+
+Previous loop:
 
 Added direct candidate stability-window diagnostics for the `walk_forward_003` and `walk_forward_004` train windows:
 
