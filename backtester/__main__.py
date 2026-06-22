@@ -688,6 +688,7 @@ def main() -> int:
     monthly_plan_parser.add_argument("--market-beta-symbol", default="069500")
     monthly_plan_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
     monthly_plan_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
+    monthly_plan_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_plan_parser.add_argument("--events", default=None, help="CSV with weighted news/SNS/disclosure event scores")
     monthly_plan_parser.add_argument("--event-lookback-days", type=int, default=5)
     monthly_plan_parser.add_argument("--min-entry-event-score", type=float, default=-0.2)
@@ -769,6 +770,7 @@ def main() -> int:
     monthly_backtest_parser.add_argument("--market-beta-symbol", default="069500")
     monthly_backtest_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
     monthly_backtest_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
+    monthly_backtest_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_backtest_parser.add_argument("--events", default=None, help="CSV with weighted news/SNS/disclosure event scores")
     monthly_backtest_parser.add_argument("--event-lookback-days", type=int, default=5)
     monthly_backtest_parser.add_argument("--min-entry-event-score", type=float, default=-0.2)
@@ -807,6 +809,7 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--max-position-weight", type=float, default=0.15)
     monthly_attribution_parser.add_argument("--candidate-pool-size", type=int, default=7)
     monthly_attribution_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
+    monthly_attribution_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_attribution_parser.add_argument("--drawdown-guard-trigger-pct", type=float, default=-15.0)
     monthly_attribution_parser.add_argument("--drawdown-guard-scale", type=float, default=0.75)
     monthly_attribution_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
@@ -901,6 +904,7 @@ def main() -> int:
     monthly_validate_parser.add_argument("--market-beta-symbol", default="069500")
     monthly_validate_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
     monthly_validate_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
+    monthly_validate_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_validate_parser.add_argument("--events", default=None, help="CSV with weighted news/SNS/disclosure event scores")
     monthly_validate_parser.add_argument("--event-lookback-days", type=int, default=5)
     monthly_validate_parser.add_argument("--min-entry-event-score", type=float, default=-0.2)
@@ -1151,6 +1155,7 @@ def main() -> int:
     monthly_train_decision_parser.add_argument("--market-beta-breadth-threshold", type=float, default=0.25)
     monthly_train_decision_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
     monthly_train_decision_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
+    monthly_train_decision_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_train_decision_parser.add_argument("--point-in-time-liquidity-top-n", type=int, default=100)
     monthly_train_decision_parser.add_argument("--point-in-time-liquidity-window-days", type=int, default=20)
     monthly_train_decision_parser.add_argument("--point-in-time-min-history-days", type=int, default=252)
@@ -1554,6 +1559,7 @@ def main() -> int:
             market_beta_breadth_threshold=args.market_beta_breadth_threshold,
             market_beta_proxy_size=args.market_beta_proxy_size,
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
+            market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
             point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
             point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
             point_in_time_min_history_days=args.point_in_time_min_history_days,
@@ -2254,6 +2260,7 @@ def main() -> int:
                 market_beta_symbol=args.market_beta_symbol,
                 market_beta_proxy_size=args.market_beta_proxy_size,
                 market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
+                market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
                 event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
                 event_lookback_days=args.event_lookback_days,
                 min_entry_event_score=args.min_entry_event_score,
@@ -2455,6 +2462,7 @@ def main() -> int:
                 market_beta_symbol=args.market_beta_symbol,
                 market_beta_proxy_size=args.market_beta_proxy_size,
                 market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
+                market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
                 event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
                 event_lookback_days=args.event_lookback_days,
                 min_entry_event_score=args.min_entry_event_score,
@@ -2543,6 +2551,7 @@ def main() -> int:
             point_in_time_min_history_days=args.point_in_time_min_history_days,
             point_in_time_universe=point_in_time_universe,
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
+            market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
         )
         result = run_monthly_rebalance_backtest(
             symbol_candles,
@@ -2686,6 +2695,7 @@ def main() -> int:
             market_beta_symbol=args.market_beta_symbol,
             market_beta_proxy_size=args.market_beta_proxy_size,
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
+            market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
             event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
             event_lookback_days=args.event_lookback_days,
             min_entry_event_score=args.min_entry_event_score,

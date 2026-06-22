@@ -196,6 +196,7 @@ class MonthlyRebalanceConfig:
     market_beta_symbol: str = "069500"
     market_beta_proxy_size: int = 12
     market_beta_proxy_max_exposure: float = 1.0
+    market_beta_proxy_neutral_breadth_max_exposure: float = 1.0
     event_scores: EventScoreStore | None = None
     event_lookback_days: int = 5
     min_entry_event_score: float = -0.2
@@ -304,6 +305,7 @@ VALIDATION_SWEEP_PLAN_COLUMNS = [
     "min_train_positive_ratio",
     "candidate_pool_size",
     "market_beta_proxy_max_exposure",
+    "market_beta_proxy_neutral_breadth_max_exposure",
     "max_position_weight",
     "drawdown_guard_scale",
     "market_volatility_min_scale",
@@ -940,6 +942,7 @@ def decide_monthly_allocation(
         liquidity_scale=liquidity_scale,
     )
     target_budget = max(0.0, 1.0 - cfg.cash_buffer_weight) * exposure_scale
+    proxy_max_exposure, proxy_cap_reason = _market_beta_proxy_effective_cap(cfg, prior_breadth)
     if selected is None:
         if prior_breadth is not None and prior_breadth >= cfg.market_beta_breadth_threshold:
             return _market_beta_or_cash_decision(
@@ -948,6 +951,8 @@ def decide_monthly_allocation(
                 signal_date=signal_date,
                 target_budget=target_budget,
                 config=cfg,
+                proxy_max_exposure=proxy_max_exposure,
+                proxy_cap_reason=proxy_cap_reason,
                 proxy_reason=("no_train_candidate_neutral_breadth_proxy" + reason_suffix)
                 if prior_breadth < cfg.fallback_breadth_threshold
                 else ("no_train_candidate_strong_breadth_proxy" + reason_suffix),
@@ -976,6 +981,8 @@ def decide_monthly_allocation(
                 signal_date=signal_date,
                 target_budget=target_budget,
                 config=cfg,
+                proxy_max_exposure=proxy_max_exposure,
+                proxy_cap_reason=proxy_cap_reason,
                 proxy_reason="weak_train_neutral_breadth_proxy" + reason_suffix,
                 direct_reason="weak_train_neutral_breadth" + reason_suffix,
                 empty_reason="weak_train_no_market_beta_proxy",
@@ -4220,8 +4227,18 @@ def build_monthly_validation_sweep_plan(
                     base_config=base_config,
                     market_beta_proxy_max_exposure=0.75,
                     expected_effect=(
-                        "Cap only fallback market-beta-proxy exposure so already scaled recovery months "
-                        "avoid additional broad cash drag."
+                        "Cap all fallback market-beta-proxy exposure to test broad beta de-risking."
+                    ),
+                ),
+                _sweep_plan_row(
+                    weak_row,
+                    experiment_id="neutral_breadth_proxy_cap_50",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    market_beta_proxy_neutral_breadth_max_exposure=0.50,
+                    expected_effect=(
+                        "Cap fallback proxy only when breadth is neutral, preserving strong-breadth "
+                        "proxy participation that prevented prior regressions."
                     ),
                 ),
             ]
@@ -5322,6 +5339,7 @@ def _sweep_plan_row(
     min_train_positive_ratio: float | None = None,
     candidate_pool_size: int | None = None,
     market_beta_proxy_max_exposure: float | None = None,
+    market_beta_proxy_neutral_breadth_max_exposure: float | None = None,
     max_position_weight: float | None = None,
     drawdown_guard_scale: float | None = None,
     market_volatility_min_scale: float | None = None,
@@ -5340,6 +5358,10 @@ def _sweep_plan_row(
         "market_beta_proxy_max_exposure": _sweep_value(
             market_beta_proxy_max_exposure,
             base_config.market_beta_proxy_max_exposure,
+        ),
+        "market_beta_proxy_neutral_breadth_max_exposure": _sweep_value(
+            market_beta_proxy_neutral_breadth_max_exposure,
+            base_config.market_beta_proxy_neutral_breadth_max_exposure,
         ),
         "max_position_weight": _sweep_value(max_position_weight, base_config.max_position_weight),
         "drawdown_guard_scale": _sweep_value(drawdown_guard_scale, base_config.drawdown_guard_scale),
@@ -5411,6 +5433,7 @@ def _apply_sweep_plan_config(
         "min_train_positive_ratio": float,
         "candidate_pool_size": int,
         "market_beta_proxy_max_exposure": float,
+        "market_beta_proxy_neutral_breadth_max_exposure": float,
         "max_position_weight": float,
         "drawdown_guard_scale": float,
         "market_volatility_min_scale": float,
@@ -5433,6 +5456,7 @@ def _sweep_config_changes(plan_row: dict[str, Any]) -> str:
         "min_train_positive_ratio",
         "candidate_pool_size",
         "market_beta_proxy_max_exposure",
+        "market_beta_proxy_neutral_breadth_max_exposure",
         "max_position_weight",
         "drawdown_guard_scale",
         "market_volatility_min_scale",
@@ -5471,6 +5495,7 @@ _SWEEP_CONFIG_CLI_FLAGS = {
     "min_train_positive_ratio": "--min-train-positive-ratio",
     "candidate_pool_size": "--candidate-pool-size",
     "market_beta_proxy_max_exposure": "--market-beta-proxy-max-exposure",
+    "market_beta_proxy_neutral_breadth_max_exposure": "--market-beta-proxy-neutral-breadth-max-exposure",
     "max_position_weight": "--max-position-weight",
     "drawdown_guard_scale": "--drawdown-guard-scale",
     "market_volatility_min_scale": "--market-volatility-min-scale",
@@ -5928,6 +5953,7 @@ def _market_beta_target_weights(
     signal_date: str,
     target_budget: float,
     config: MonthlyRebalanceConfig,
+    proxy_max_exposure: float | None = None,
 ) -> dict[str, float]:
     if target_budget <= 0:
         return {}
@@ -5935,7 +5961,8 @@ def _market_beta_target_weights(
         return {config.market_beta_symbol: target_budget}
     if config.market_beta_proxy_size <= 0:
         return {}
-    proxy_target_budget = min(target_budget, max(0.0, config.market_beta_proxy_max_exposure))
+    max_proxy_budget = config.market_beta_proxy_max_exposure if proxy_max_exposure is None else proxy_max_exposure
+    proxy_target_budget = min(target_budget, max(0.0, max_proxy_budget))
     if proxy_target_budget <= 0:
         return {}
     proxy_symbols = rank_symbols_by_average_trading_value(
@@ -5960,18 +5987,22 @@ def _market_beta_or_cash_decision(
     proxy_reason: str,
     direct_reason: str,
     empty_reason: str,
+    proxy_max_exposure: float | None = None,
+    proxy_cap_reason: str = "proxy_exposure_capped",
 ) -> MonthlyDecision:
     beta_weights = _market_beta_target_weights(
         symbol_candles,
         signal_date=signal_date,
         target_budget=target_budget,
         config=config,
+        proxy_max_exposure=proxy_max_exposure,
     )
     if beta_weights:
         is_proxy = config.market_beta_symbol not in beta_weights
+        max_proxy_budget = config.market_beta_proxy_max_exposure if proxy_max_exposure is None else proxy_max_exposure
         proxy_capped = (
             is_proxy
-            and max(0.0, config.market_beta_proxy_max_exposure) < target_budget - 1e-12
+            and max(0.0, max_proxy_budget) < target_budget - 1e-12
         )
         return MonthlyDecision(
             as_of_date=as_of_date,
@@ -5980,7 +6011,7 @@ def _market_beta_or_cash_decision(
             selected_preset="market_beta_proxy" if is_proxy else "market_beta",
             target_weights=beta_weights,
             reason=(
-                (proxy_reason + "_proxy_exposure_capped")
+                (proxy_reason + "_" + proxy_cap_reason)
                 if proxy_capped
                 else (proxy_reason if is_proxy else direct_reason)
             ),
@@ -5993,6 +6024,18 @@ def _market_beta_or_cash_decision(
         target_weights={},
         reason=empty_reason,
     )
+
+
+def _market_beta_proxy_effective_cap(
+    config: MonthlyRebalanceConfig,
+    prior_breadth: float | None,
+) -> tuple[float, str]:
+    broad_cap = max(0.0, config.market_beta_proxy_max_exposure)
+    if prior_breadth is not None and prior_breadth < config.fallback_breadth_threshold:
+        neutral_cap = max(0.0, config.market_beta_proxy_neutral_breadth_max_exposure)
+        if neutral_cap < broad_cap:
+            return neutral_cap, "proxy_neutral_breadth_capped"
+    return broad_cap, "proxy_exposure_capped"
 
 
 def select_point_in_time_universe(

@@ -597,6 +597,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--drawdown-guard-deep-scale", completed.stdout)
         self.assertIn("--position-trailing-stop-pct", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
+        self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure", completed.stdout)
 
     def test_monthly_attribution_help_includes_stress_and_output_options(self):
         completed = subprocess.run(
@@ -620,6 +621,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--decision-output", completed.stdout)
         self.assertIn("--summary-output", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
+        self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure", completed.stdout)
         self.assertIn("--proxy-output", completed.stdout)
 
     def test_monthly_attribution_cli_writes_recovery_summary_report(self):

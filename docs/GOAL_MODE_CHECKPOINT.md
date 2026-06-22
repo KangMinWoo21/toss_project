@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 17:43 KST
+Last updated: 2026-06-22 18:06 KST
 
 ## Objective
 
@@ -27,15 +27,125 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 406 tests.
+- `python -m unittest discover -s tests`: PASS, 408 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
-- Candidate follow-up state: all completed full-validation candidates remain rejected; latest `market_beta_proxy_cap_75` is also rejected.
+- Candidate follow-up state: all completed full-validation candidates remain rejected; latest `neutral_breadth_proxy_cap_50` is also rejected.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added and rejected a narrower paper-only conditional proxy candidate:
+
+- Added `market_beta_proxy_neutral_breadth_max_exposure` to `MonthlyRebalanceConfig`, defaulting to `1.0` so baseline behavior is unchanged.
+- Added CLI support for `--market-beta-proxy-neutral-breadth-max-exposure` in:
+  - `monthly-plan`
+  - `monthly-backtest`
+  - `monthly-attribution`
+  - `monthly-validate`
+  - `monthly-train-decision-diagnostics`
+- Added the sweep-plan experiment `neutral_breadth_proxy_cap_50`.
+- The candidate caps fallback `market_beta_proxy` only when breadth is neutral:
+  - `prior_breadth >= market_beta_breadth_threshold`
+  - `prior_breadth < fallback_breadth_threshold`
+- Strong-breadth proxy participation is preserved.
+- Direct `market_beta` allocation is not capped by this setting.
+- This is optional, paper-only, and disabled by default.
+
+Regenerated baseline validation reports:
+
+- `data/reports/monthly_validation_scenarios_pit_universe.csv`
+- `data/reports/monthly_validation_failures_pit_universe.csv`
+- `data/reports/monthly_validation_remediation.csv`
+- `data/reports/monthly_validation_sweep_plan.csv`
+- `data/reports/monthly_universe_price_coverage.csv`
+- `data/reports/monthly_performance_audit.csv`
+- `data/reports/monthly_performance_concentration.csv`
+- `data/reports/monthly_deployment_gate_pit_universe.csv`
+
+Generated full candidate validation and decision reports:
+
+- `data/reports/monthly_validation_candidate_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_validation_failures_candidate_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_validation_remediation_candidate_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_validation_sweep_plan_candidate_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_universe_price_coverage_candidate_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_performance_audit_candidate_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_performance_concentration_candidate_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_deployment_gate_candidate_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_validation_comparison_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_validation_comparison_deltas_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_validation_candidate_decision_neutral_breadth_proxy_cap_50.csv`
+- default comparison files were also updated to this candidate:
+  - `data/reports/monthly_validation_comparison.csv`
+  - `data/reports/monthly_validation_comparison_deltas.csv`
+  - `data/reports/monthly_validation_candidate_decision.csv`
+
+Candidate result:
+
+- Baseline failed required scenarios: `5`.
+- Candidate failed required scenarios: `6`.
+- Candidate decision: `REJECT`.
+- Resolved failures:
+  - `walk_forward_003`
+- New failures:
+  - `full_period`
+  - `stress_slippage_x3`
+- Unchanged failures:
+  - `regime_sideways`
+  - `stress_exclude_500pct_winners`
+  - `walk_forward_001`
+  - `walk_forward_005`
+- Useful signal:
+  - `walk_forward_003` passed under this candidate, so neutral-breadth proxy exposure affects recursive train stability enough to remove the train-window rejection.
+  - `regime_sideways` excess improved from `-7.1648%` to `-5.6018%`, but it still failed.
+  - `full_period` and `stress_slippage_x3` crossed the max-drawdown hard block, with candidate max drawdowns around `-25.13%` and `-25.05%`.
+- Interpretation:
+  - Neutral-breadth-only proxy capping is narrower than the blanket cap and avoids the known `walk_forward_002`/`walk_forward_004` regression pattern.
+  - It still creates unacceptable full-period/stress drawdown regressions.
+  - Do not adopt this candidate.
+
+Closed new evidence gaps introduced by the candidate's new failures:
+
+- Generated candidate attribution/proxy diagnostics for:
+  - `data/reports/full_period_monthly_attribution.csv`
+  - `data/reports/full_period_symbol_attribution.csv`
+  - `data/reports/full_period_decision_attribution.csv`
+  - `data/reports/full_period_recovery_attribution.csv`
+  - `data/reports/full_period_proxy_decision_diagnostics.csv`
+  - `data/reports/stress_slippage_x3_monthly_attribution.csv`
+  - `data/reports/stress_slippage_x3_symbol_attribution.csv`
+  - `data/reports/stress_slippage_x3_decision_attribution.csv`
+  - `data/reports/stress_slippage_x3_recovery_attribution.csv`
+  - `data/reports/stress_slippage_x3_proxy_decision_diagnostics.csv`
+- Regenerated:
+  - `data/reports/monthly_validation_failure_patterns.csv`
+  - `data/reports/monthly_validation_failure_drilldown.csv`
+- `validation_failure_drilldown`: PASS, evidence gaps `0`.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `406` tests.
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- RED check: new neutral-breadth proxy cap tests failed because the config field, conditional cap behavior, sweep-plan row, and CLI help option did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_monthly_config_defaults_to_five_candidate_slots tests.test_monthly_rebalance.MonthlyRebalanceTests.test_build_monthly_validation_sweep_plan_creates_weak_window_candidates tests.test_monthly_rebalance.MonthlyRebalanceTests.test_decide_monthly_allocation_caps_neutral_breadth_proxy_only tests.test_monthly_rebalance.MonthlyRebalanceTests.test_decide_monthly_allocation_keeps_strong_breadth_proxy_full_size_when_neutral_cap_set tests.test_cli.CliTests.test_monthly_backtest_help_includes_deep_drawdown_guard_options tests.test_cli.CliTests.test_monthly_attribution_help_includes_stress_and_output_options`: PASS.
+- Related regression scope: `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `170` tests.
+- Full verification: `python -m unittest discover -s tests`: PASS, `408` tests.
+- Full syntax check: `python -m compileall -q backtester`: PASS.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=305.30` observed).
+
+Next recommended action:
+
+- Do not adopt `neutral_breadth_proxy_cap_50`.
+- Compare baseline vs candidate month-level attribution for `full_period` and `stress_slippage_x3` to identify exactly which months pushed drawdown below `-25%`.
+- The next candidate should preserve the `walk_forward_003` train-stability benefit without lowering full-period/stress drawdown buffer below the hard gate.
+- Avoid additional broad exposure caps until the month-level regression source is isolated.
+
+Previous loop:
 
 Added paper-only proxy decision diagnostics to explain why fallback `market_beta_proxy` months help in some windows and hurt in others:
 
@@ -107,7 +217,7 @@ Next recommended action:
 - Do not lower fallback proxy exposure globally.
 - First candidate direction: reduce or block full-exposure fallback proxy only in high-exposure loss-prone contexts, while explicitly preserving rows tagged `proxy_gain_participation`, `scaled_proxy_recovery`, or `scaled_alpha_recovery`.
 
-Previous loop:
+Earlier loop:
 
 Added a narrow fallback proxy exposure-cap experiment and rejected it with full validation evidence:
 
