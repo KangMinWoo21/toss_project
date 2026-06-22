@@ -54,6 +54,7 @@ from .monthly_rebalance import (
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_performance_concentration,
+    analyze_monthly_recovery_attribution,
     analyze_monthly_train_decision_path,
     analyze_monthly_train_stability_windows,
     analyze_monthly_validation_failures,
@@ -102,6 +103,7 @@ from .monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
+    save_monthly_recovery_attribution,
     save_monthly_train_decision_path,
     save_monthly_train_stability_windows,
     save_monthly_performance_audit_rows,
@@ -796,6 +798,7 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--slippage-rate", type=float, default=0.0005)
     monthly_attribution_parser.add_argument("--min-trade-value", type=float, default=10_000)
     monthly_attribution_parser.add_argument("--presets", default="balanced")
+    monthly_attribution_parser.add_argument("--scenario-name", default="")
     monthly_attribution_parser.add_argument("--cash-buffer-weight", type=float, default=0.01)
     monthly_attribution_parser.add_argument("--max-position-weight", type=float, default=0.15)
     monthly_attribution_parser.add_argument("--candidate-pool-size", type=int, default=7)
@@ -828,6 +831,7 @@ def main() -> int:
         "--decision-output",
         default="data/reports/monthly_decision_attribution.csv",
     )
+    monthly_attribution_parser.add_argument("--summary-output", default=None)
 
     monthly_validate_parser = subparsers.add_parser(
         "monthly-validate",
@@ -2541,6 +2545,7 @@ def main() -> int:
         monthly_rows = analyze_monthly_drawdown_attribution(result)
         symbol_rows = analyze_symbol_realized_pnl_attribution(result)
         decision_rows = analyze_monthly_decision_attribution(result)
+        recovery_rows = analyze_monthly_recovery_attribution(result, scenario=args.scenario_name)
         save_monthly_attribution_rows(monthly_rows, args.monthly_output)
         save_monthly_attribution_rows(
             symbol_rows,
@@ -2548,6 +2553,8 @@ def main() -> int:
             columns=SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS,
         )
         save_monthly_decision_attribution(decision_rows, args.decision_output)
+        if args.summary_output:
+            save_monthly_recovery_attribution(recovery_rows, args.summary_output)
 
         def row_float(row: dict[str, str], key: str) -> float:
             try:
@@ -2580,6 +2587,9 @@ def main() -> int:
         print(f"monthly_attribution_report  {args.monthly_output}")
         print(f"symbol_attribution_report  {args.symbol_output}")
         print(f"decision_attribution_report  {args.decision_output}")
+        if args.summary_output:
+            print(f"recovery_rows  {len(recovery_rows)}")
+            print(f"recovery_attribution_report  {args.summary_output}")
         return 0
 
     if args.command == "monthly-validate":

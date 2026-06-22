@@ -617,6 +617,52 @@ class CliTests(unittest.TestCase):
         self.assertIn("--monthly-output", completed.stdout)
         self.assertIn("--symbol-output", completed.stdout)
         self.assertIn("--decision-output", completed.stdout)
+        self.assertIn("--summary-output", completed.stdout)
+
+    def test_monthly_attribution_cli_writes_recovery_summary_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data_dir = root / "prices"
+            for symbol, step, volume in [
+                ("AAA", 1.0, 10_000),
+                ("BBB", 0.8, 9_000),
+                ("CCC", 0.6, 8_000),
+                ("DDD", 0.4, 7_000),
+                ("EEE", 0.2, 6_000),
+                ("FFF", -0.1, 5_000),
+            ]:
+                self._write_trend_price_file(data_dir, symbol, close=100, step=step, volume=volume)
+            summary_output = root / "recovery_summary.csv"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-attribution",
+                    "--data-dir",
+                    str(data_dir),
+                    "--start",
+                    "2024-05-01",
+                    "--end",
+                    "2024-08-07",
+                    "--point-in-time-min-history-days",
+                    "20",
+                    "--scenario-name",
+                    "walk_forward_unit",
+                    "--summary-output",
+                    str(summary_output),
+                ],
+            )
+            if summary_output.exists():
+                with summary_output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("recovery_attribution_report", completed.stdout)
+        self.assertTrue(rows)
+        self.assertEqual(rows[0]["scenario"], "walk_forward_unit")
+        self.assertIn("diagnostic", rows[0])
 
     def test_monthly_validate_help_includes_failure_diagnostics_output(self):
         completed = subprocess.run(

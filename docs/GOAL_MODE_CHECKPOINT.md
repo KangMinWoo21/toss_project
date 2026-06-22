@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 16:43 KST
+Last updated: 2026-06-22 16:59 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 399 tests.
+- `python -m unittest discover -s tests`: PASS, 402 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,81 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added recovery attribution summaries for `insufficient_recovery` failures:
+
+- Extended `python -m backtester monthly-attribution` with:
+  - `--scenario-name`
+  - `--summary-output`
+- New paper-only summary reports:
+  - `data/reports/regime_sideways_recovery_attribution.csv`
+  - `data/reports/walk_forward_005_recovery_attribution.csv`
+  - `data/reports/walk_forward_003_recovery_attribution.csv` for contrast with the already explained direct-alpha-ineligible case.
+- Purpose: connect monthly drawdown attribution, decision exposure/cash attribution, symbol realized PnL attribution, and total-vs-benchmark performance in one row per scenario.
+- Added CSV fields for:
+  - scenario, period, total/buy-hold/excess return, max drawdown,
+  - loss/gain month counts and positive month ratio,
+  - average target exposure and cash weight,
+  - worst/best month return, exposure, cash weight, mode, and decision reason,
+  - post-worst recovery return,
+  - top loss symbols and loss/gain symbol counts,
+  - `failure_mode` and semicolon-delimited diagnostics.
+- Added deterministic tests for:
+  - exposure/cash/loss-symbol recovery summary generation,
+  - recovery summary CSV saving,
+  - `monthly-attribution --summary-output` CLI generation.
+
+Recovery attribution findings:
+
+- `regime_sideways`
+  - Total return `-9.2276%`, buy-hold `-2.0628%`, excess `-7.1648%`.
+  - Loss months `4`, gain months `3`, positive month ratio `0.4286`.
+  - Average target exposure `0.8486`, average cash weight `0.1514`.
+  - Worst month `2025-03`: return `-8.8337%`, target exposure `0.99`, cash `0.01`, mode `market_beta_proxy`, reason `no_train_candidate_strong_breadth_proxy`.
+  - Best month `2025-02`: return `3.4379%`, target exposure `0.99`, cash `0.01`.
+  - Post-worst recovery after the March loss was only `1.3031%`.
+  - Top loss symbols: `005490:-218620`, `051910:-216092.25`, `450080:-175280.4`.
+  - Failure mode: `absolute_loss_and_benchmark_drag`.
+  - Diagnostic: `negative_excess;high_exposure_worst_month;insufficient_post_worst_recovery;loss_month_pressure;symbol_loss_concentration`.
+- `walk_forward_005`
+  - Attribution CLI result: total return `8.6057%`, buy-hold `14.0817%`, excess `-5.476%`.
+  - Loss months `2`, gain months `2`, positive month ratio `0.5`.
+  - Average target exposure `0.9281`, average cash weight `0.0719`.
+  - Worst month `2026-03`: return `-19.2651%`, target exposure `0.99`, cash `0.01`, mode `market_beta_proxy`, reason `no_train_candidate_strong_breadth_proxy`.
+  - Best month `2026-04`: return `20.2536%`, target exposure `0.7425`, cash `0.2575`.
+  - Post-worst recovery was `20.2536%`, but the benchmark recovered more, so excess stayed negative.
+  - Top loss symbols: `009830:-218934.801`, `080220:-214073.55`, `066570:-177152.4`.
+  - Failure mode: `benchmark_outpaced_recovery`.
+  - Diagnostic: `benchmark_recovered_more;high_exposure_worst_month;cash_drag_best_month;loss_month_pressure;symbol_loss_concentration`.
+- Contrast case, `walk_forward_003`
+  - Total return `10.5419%`, buy-hold `1.7889%`, excess `8.753%`, max drawdown `-7.1592%`.
+  - Average target exposure `0.99`, average cash `0.01`.
+  - Worst month `2025-08`: return `-4.2304%`.
+  - Post-worst recovery `17.2902%`.
+  - This case is not an insufficient-recovery failure; it remains blocked because train window/direct alpha eligibility is rejected.
+- Interpretation:
+  - The two `insufficient_recovery` failures are not identical.
+  - `regime_sideways` is an absolute loss and post-worst recovery failure after high-exposure market-beta-proxy allocation in March 2025.
+  - `walk_forward_005` recovered strongly in April 2026 but still lagged an even stronger buy-hold benchmark; reducing March 2026 high-exposure loss or improving April participation would be more relevant than simply adding broad cash.
+  - Do not adopt broad weak-cash candidates blindly; previous candidates that helped some cases created regressions elsewhere.
+
+Verification in this loop:
+
+- Baseline before edits: `python -m compileall -q backtester`: PASS.
+- Baseline before edits: `python -m unittest discover -s tests`: PASS, `399` tests.
+- RED check: new recovery attribution tests failed because the functions and `--summary-output` CLI option did not exist.
+- Targeted GREEN: `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_recovery_attribution_summarizes_exposure_and_loss_symbols tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_recovery_attribution_writes_csv tests.test_cli.CliTests.test_monthly_attribution_help_includes_stress_and_output_options tests.test_cli.CliTests.test_monthly_attribution_cli_writes_recovery_summary_report`: PASS.
+- Related regression scope: `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `164` tests.
+- Full verification: `python -m unittest discover -s tests`: PASS, `402` tests.
+- Full syntax check: `python -m compileall -q backtester`: PASS.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, status remains blocked.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=304.15` observed).
+
+Next recommended action:
+
+- Use the recovery summaries to design a narrow candidate experiment that specifically caps high-exposure market-beta-proxy losses in the worst months (`2025-03` and `2026-03`) while preserving `walk_forward_003` recovery behavior and avoiding known regressions in `regime_bear`, `walk_forward_002`, and `walk_forward_004`.
+
+Previous loop:
 
 Added recursive train stability-window diagnostics:
 
@@ -558,11 +633,11 @@ Current loop additions:
 
 ```powershell
 python -m compileall -q backtester
-python -m backtester production-check --allow-blocked-exit-zero
-python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
 python -m unittest discover -s tests
-python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_breaks_positive_ratio_into_subwindows tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_windows_writes_csv tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report
-python -m backtester monthly-train-decision-diagnostics --data-dir data/krx_expanded --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --scenario walk_forward_003 --scenario walk_forward_004 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --output data/reports/monthly_train_decision_path_diagnostics.csv --stability-output data/reports/monthly_train_stability_window_diagnostics.csv
+python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_recovery_attribution_summarizes_exposure_and_loss_symbols tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_recovery_attribution_writes_csv tests.test_cli.CliTests.test_monthly_attribution_help_includes_stress_and_output_options tests.test_cli.CliTests.test_monthly_attribution_cli_writes_recovery_summary_report
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2024-10-14 --end 2025-04-17 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-name regime_sideways --monthly-output data/reports/regime_sideways_monthly_attribution.csv --symbol-output data/reports/regime_sideways_symbol_attribution.csv --decision-output data/reports/regime_sideways_decision_attribution.csv --summary-output data/reports/regime_sideways_recovery_attribution.csv
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2026-01-28 --end 2026-04-30 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-name walk_forward_005 --monthly-output data/reports/walk_forward_005_monthly_attribution.csv --symbol-output data/reports/walk_forward_005_symbol_attribution.csv --decision-output data/reports/walk_forward_005_decision_attribution.csv --summary-output data/reports/walk_forward_005_recovery_attribution.csv
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2025-07-23 --end 2025-10-27 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-name walk_forward_003 --monthly-output data/reports/walk_forward_003_monthly_attribution.csv --symbol-output data/reports/walk_forward_003_symbol_attribution.csv --decision-output data/reports/walk_forward_003_decision_attribution.csv --summary-output data/reports/walk_forward_003_recovery_attribution.csv
 python -m unittest tests.test_monthly_rebalance tests.test_cli
 python -m unittest discover -s tests
 python -m compileall -q backtester
@@ -637,27 +712,19 @@ python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
 
 ## Next Highest-Value Work
 
-1. Build a narrower attribution experiment around `PERSISTENT_BLOCK` scenarios only:
-   - `regime_sideways`
-   - `walk_forward_005`
-   - compare them against the now-explained `walk_forward_003` direct-alpha-ineligible case.
-2. Use the new attribution reports to avoid blind parameter sweeps:
-   - `regime_sideways` and `walk_forward_005` failed despite partial recovery and high exposure in weak months.
-   - `walk_forward_003` has negative train excess and should stay blocked unless independent validation improves.
-3. Specifically decompose `insufficient_recovery`:
-   - exposure and cash ratio over time,
-   - worst holding periods,
-   - symbol-level contribution,
-   - benchmark comparison,
-   - whether failures are recovery drag or selection/exposure regression.
-4. Separately preserve the behavior that fixed:
+1. Design one narrow candidate experiment from the recovery summaries:
+   - cap high-exposure `market_beta_proxy` losses in `2025-03` and `2026-03`,
+   - avoid broad cash drag that would weaken `walk_forward_003` and other recovery windows,
+   - preserve the existing train gate for direct-alpha-ineligible windows.
+2. Compare the candidate against baseline with full validation and delta reports before considering adoption.
+3. Separately preserve the behavior that fixed:
    - `stress_exclude_500pct_winners`
    - `walk_forward_001`
-5. Avoid candidate settings that introduce:
+4. Avoid candidate settings that introduce:
    - `walk_forward_002`
    - `regime_bear`
    - `walk_forward_004`
-6. Keep all changes paper-only.
+5. Keep all changes paper-only.
 
 ## Resume Procedure
 

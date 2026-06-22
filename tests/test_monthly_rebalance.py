@@ -23,6 +23,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
     analyze_monthly_direct_alpha_selection,
+    analyze_monthly_recovery_attribution,
     analyze_monthly_validation_failures,
     analyze_monthly_train_decision_path,
     analyze_monthly_train_stability_windows,
@@ -83,6 +84,7 @@ from backtester.monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_selection,
+    save_monthly_recovery_attribution,
     save_monthly_train_decision_path,
     save_monthly_train_stability_windows,
     save_order_plan,
@@ -1801,6 +1803,93 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("worst_drawdown_pct", text.splitlines()[0])
         self.assertIn("LOSS", text)
+
+    def test_analyze_monthly_recovery_attribution_summarizes_exposure_and_loss_symbols(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000,
+            final_equity=1_100,
+            total_return_pct=10.0,
+            buy_hold_return_pct=20.0,
+            excess_return_pct=-10.0,
+            max_drawdown_pct=-25.0,
+            trade_count=4,
+            decisions=[
+                MonthlyDecision(
+                    as_of_date="2026-01-31",
+                    signal_date="2026-01-30",
+                    mode="market_beta_proxy",
+                    selected_preset="market_beta_proxy",
+                    target_weights={"AAA": 0.5, "BBB": 0.49},
+                    reason="unit_high_exposure",
+                ),
+                MonthlyDecision(
+                    as_of_date="2026-02-28",
+                    signal_date="2026-02-27",
+                    mode="market_beta_proxy",
+                    selected_preset="market_beta_proxy",
+                    target_weights={"AAA": 0.25, "BBB": 0.25},
+                    reason="unit_cash_drag",
+                ),
+                MonthlyDecision(
+                    as_of_date="2026-03-31",
+                    signal_date="2026-03-30",
+                    mode="market_beta_proxy",
+                    selected_preset="market_beta_proxy",
+                    target_weights={"AAA": 0.6, "BBB": 0.35},
+                    reason="unit_worst_month",
+                ),
+                MonthlyDecision(
+                    as_of_date="2026-04-30",
+                    signal_date="2026-04-29",
+                    mode="alpha",
+                    selected_preset="balanced",
+                    target_weights={"CCC": 0.7},
+                    reason="unit_recovery",
+                ),
+            ],
+            trades=[
+                MonthlyBacktestTrade("2026-01-31", "AAA", "BUY", 100, 5, 500, "entry"),
+                MonthlyBacktestTrade("2026-03-31", "AAA", "SELL", 70, 5, 350, "exit"),
+                MonthlyBacktestTrade("2026-02-28", "BBB", "BUY", 100, 2, 150, "entry"),
+                MonthlyBacktestTrade("2026-04-30", "BBB", "SELL", 110, 2, 370, "exit"),
+            ],
+            dates=["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30"],
+            equity_curve=[1_000, 1_200, 900, 1_100],
+        )
+
+        rows = analyze_monthly_recovery_attribution(result, scenario="walk_forward_unit")
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "walk_forward_unit")
+        self.assertEqual(row["worst_month"], "2026-03")
+        self.assertEqual(row["best_month"], "2026-04")
+        self.assertEqual(row["worst_month_target_exposure"], "0.95")
+        self.assertEqual(row["best_month_cash_weight"], "0.3")
+        self.assertEqual(row["top_loss_symbol"], "AAA")
+        self.assertIn("AAA:-150", row["top_loss_symbols"])
+        self.assertIn("benchmark_recovered_more", row["diagnostic"])
+        self.assertIn("high_exposure_worst_month", row["diagnostic"])
+        self.assertIn("cash_drag_best_month", row["diagnostic"])
+
+    def test_save_monthly_recovery_attribution_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "recovery.csv"
+            saved = save_monthly_recovery_attribution(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "worst_month": "2026-03",
+                        "diagnostic": "high_exposure_worst_month",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,start,end", text.splitlines()[0])
+        self.assertIn("high_exposure_worst_month", text)
 
     def test_deployment_gate_rejects_universe_bias_warning(self):
         gate = build_deployment_gate(

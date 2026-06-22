@@ -690,6 +690,42 @@ MONTHLY_DECISION_ATTRIBUTION_COLUMNS = [
     "reason",
 ]
 
+MONTHLY_RECOVERY_ATTRIBUTION_COLUMNS = [
+    "scenario",
+    "start",
+    "end",
+    "total_return_pct",
+    "buy_hold_return_pct",
+    "excess_return_pct",
+    "max_drawdown_pct",
+    "month_count",
+    "loss_month_count",
+    "gain_month_count",
+    "positive_month_ratio",
+    "average_target_exposure",
+    "average_cash_weight",
+    "worst_month",
+    "worst_month_return_pct",
+    "worst_month_equity_change",
+    "worst_month_target_exposure",
+    "worst_month_cash_weight",
+    "worst_month_mode",
+    "worst_month_reason",
+    "best_month",
+    "best_month_return_pct",
+    "best_month_target_exposure",
+    "best_month_cash_weight",
+    "post_worst_month_count",
+    "post_worst_total_return_pct",
+    "top_loss_symbol",
+    "top_loss_symbol_realized_pnl",
+    "top_loss_symbols",
+    "loss_symbol_count",
+    "gain_symbol_count",
+    "failure_mode",
+    "diagnostic",
+]
+
 DEPLOYMENT_GATE_COLUMNS = [
     "deployable",
     "reason",
@@ -1835,8 +1871,141 @@ def analyze_monthly_decision_attribution(result: MonthlyBacktestResult) -> list[
     return rows
 
 
+def analyze_monthly_recovery_attribution(
+    result: MonthlyBacktestResult,
+    *,
+    scenario: str = "",
+) -> list[dict[str, str]]:
+    monthly_rows = analyze_monthly_drawdown_attribution(result)
+    if not monthly_rows:
+        return []
+    decision_rows = analyze_monthly_decision_attribution(result)
+    symbol_rows = analyze_symbol_realized_pnl_attribution(result)
+
+    worst_month = min(monthly_rows, key=lambda row: _float_or_none(row.get("return_pct")) or 0.0)
+    best_month = max(monthly_rows, key=lambda row: _float_or_none(row.get("return_pct")) or 0.0)
+    worst_decision = _decision_attribution_for_month(decision_rows, worst_month)
+    best_decision = _decision_attribution_for_month(decision_rows, best_month)
+    loss_symbols = [
+        row for row in symbol_rows
+        if (_float_or_none(row.get("realized_pnl")) or 0.0) < 0
+    ]
+    gain_symbols = [
+        row for row in symbol_rows
+        if (_float_or_none(row.get("realized_pnl")) or 0.0) > 0
+    ]
+    top_loss_rows = sorted(loss_symbols, key=lambda row: _float_or_none(row.get("realized_pnl")) or 0.0)[:3]
+    top_loss_symbol = top_loss_rows[0] if top_loss_rows else {}
+
+    exposures = [
+        value for value in (_float_or_none(row.get("target_exposure")) for row in decision_rows)
+        if value is not None
+    ]
+    cash_weights = [
+        value for value in (_float_or_none(row.get("cash_weight")) for row in decision_rows)
+        if value is not None
+    ]
+    loss_month_count = sum(1 for row in monthly_rows if str(row.get("status", "")) == "LOSS")
+    gain_month_count = sum(1 for row in monthly_rows if str(row.get("status", "")) == "GAIN")
+    positive_month_ratio = gain_month_count / len(monthly_rows) if monthly_rows else 0.0
+    worst_index = monthly_rows.index(worst_month)
+    post_worst_rows = monthly_rows[worst_index + 1 :]
+    post_worst_total_return = None
+    if post_worst_rows:
+        base_equity = _float_or_none(worst_month.get("end_equity"))
+        final_equity = _float_or_none(monthly_rows[-1].get("end_equity"))
+        if base_equity and final_equity is not None:
+            post_worst_total_return = (final_equity / base_equity - 1.0) * 100.0
+
+    worst_return = _float_or_none(worst_month.get("return_pct"))
+    best_cash = _float_or_none(best_decision.get("cash_weight"))
+    worst_exposure = _float_or_none(worst_decision.get("target_exposure"))
+    diagnostics: list[str] = []
+    if result.excess_return_pct < 0 and result.total_return_pct > 0:
+        diagnostics.append("benchmark_recovered_more")
+    elif result.excess_return_pct < 0:
+        diagnostics.append("negative_excess")
+    if worst_exposure is not None and worst_exposure >= 0.75 and (worst_return or 0.0) < 0:
+        diagnostics.append("high_exposure_worst_month")
+    if best_cash is not None and best_cash >= 0.25:
+        diagnostics.append("cash_drag_best_month")
+    if (
+        post_worst_total_return is not None
+        and worst_return is not None
+        and worst_return < 0
+        and post_worst_total_return < abs(worst_return)
+    ):
+        diagnostics.append("insufficient_post_worst_recovery")
+    if loss_month_count >= gain_month_count:
+        diagnostics.append("loss_month_pressure")
+    if top_loss_rows:
+        diagnostics.append("symbol_loss_concentration")
+
+    failure_mode = "benchmark_outpaced_recovery" if result.total_return_pct > 0 and result.excess_return_pct < 0 else ""
+    if not failure_mode and result.excess_return_pct < 0:
+        failure_mode = "absolute_loss_and_benchmark_drag" if result.total_return_pct < 0 else "negative_excess"
+
+    row = {
+        "scenario": scenario,
+        "start": result.dates[0] if result.dates else "",
+        "end": result.dates[-1] if result.dates else "",
+        "total_return_pct": _format_optional_float(result.total_return_pct),
+        "buy_hold_return_pct": _format_optional_float(result.buy_hold_return_pct),
+        "excess_return_pct": _format_optional_float(result.excess_return_pct),
+        "max_drawdown_pct": _format_optional_float(result.max_drawdown_pct),
+        "month_count": str(len(monthly_rows)),
+        "loss_month_count": str(loss_month_count),
+        "gain_month_count": str(gain_month_count),
+        "positive_month_ratio": _format_optional_float(positive_month_ratio),
+        "average_target_exposure": _format_optional_float(sum(exposures) / len(exposures) if exposures else 0.0),
+        "average_cash_weight": _format_optional_float(sum(cash_weights) / len(cash_weights) if cash_weights else 0.0),
+        "worst_month": str(worst_month.get("month", "")),
+        "worst_month_return_pct": str(worst_month.get("return_pct", "")),
+        "worst_month_equity_change": str(worst_month.get("equity_change", "")),
+        "worst_month_target_exposure": str(worst_decision.get("target_exposure", "")),
+        "worst_month_cash_weight": str(worst_decision.get("cash_weight", "")),
+        "worst_month_mode": str(worst_decision.get("mode", "")),
+        "worst_month_reason": str(worst_decision.get("reason", "")),
+        "best_month": str(best_month.get("month", "")),
+        "best_month_return_pct": str(best_month.get("return_pct", "")),
+        "best_month_target_exposure": str(best_decision.get("target_exposure", "")),
+        "best_month_cash_weight": str(best_decision.get("cash_weight", "")),
+        "post_worst_month_count": str(len(post_worst_rows)),
+        "post_worst_total_return_pct": _format_optional_float(post_worst_total_return),
+        "top_loss_symbol": str(top_loss_symbol.get("symbol", "")),
+        "top_loss_symbol_realized_pnl": str(top_loss_symbol.get("realized_pnl", "")),
+        "top_loss_symbols": ";".join(
+            f"{row.get('symbol', '')}:{row.get('realized_pnl', '')}" for row in top_loss_rows
+        ),
+        "loss_symbol_count": str(len(loss_symbols)),
+        "gain_symbol_count": str(len(gain_symbols)),
+        "failure_mode": failure_mode,
+        "diagnostic": ";".join(diagnostics) if diagnostics else "no_recovery_issue_detected",
+    }
+    return [row]
+
+
+def _decision_attribution_for_month(
+    decision_rows: list[dict[str, str]],
+    monthly_row: dict[str, str],
+) -> dict[str, str]:
+    month = str(monthly_row.get("month", ""))
+    end_date = str(monthly_row.get("end_date", ""))
+    same_month = [row for row in decision_rows if str(row.get("as_of_date", ""))[:7] == month]
+    if same_month:
+        return sorted(same_month, key=lambda row: str(row.get("as_of_date", "")))[-1]
+    prior = [row for row in decision_rows if str(row.get("as_of_date", "")) <= end_date]
+    if prior:
+        return sorted(prior, key=lambda row: str(row.get("as_of_date", "")))[-1]
+    return {}
+
+
 def save_monthly_decision_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_DECISION_ATTRIBUTION_COLUMNS)
+
+
+def save_monthly_recovery_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_RECOVERY_ATTRIBUTION_COLUMNS)
 
 
 def save_monthly_attribution_rows(

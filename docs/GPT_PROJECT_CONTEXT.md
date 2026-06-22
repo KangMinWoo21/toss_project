@@ -1,6 +1,6 @@
 # GPT Project Context: Toss Securities Paper-Operation Trading System
 
-Generated at: 2026-06-22 16:43 KST
+Generated at: 2026-06-22 16:59 KST
 
 This document is a compact project handoff for GPT. It summarizes the current repository state, safety rules, architecture, reports, validation results, and next work. It intentionally excludes secrets, `.env` values, private credentials, and raw downloaded market data.
 
@@ -46,31 +46,35 @@ Why:
 Recent commits:
 
 ```text
+dcdda11 Add train stability window diagnostics
 fc51fb3 Add train decision path diagnostics
 bb7d015 Add direct alpha holding path diagnostics
 958249b Add direct alpha selection diagnostics
 8cd4dcc Add direct alpha train diagnostics
-bd9b613 Classify direct alpha train failures
 ```
 
 Latest committed checkpoint before this loop:
 
-- `fc51fb3 Add train decision path diagnostics`
-- Added `monthly-train-decision-diagnostics`.
-- Added `data/reports/monthly_train_decision_path_diagnostics.csv`.
-- The report reconstructs recursive monthly train decisions inside walk-forward train windows and explains `alpha_ratio=0` with row-level decision mode, reason, `alpha_block_reason`, direct candidate scores/rejection reasons, prior breadth, target exposure, cash weight, and universe counts.
-- `python -m unittest discover -s tests`: PASS, 397 tests.
+- `dcdda11 Add train stability window diagnostics`
+- Extended `monthly-train-decision-diagnostics` with `--stability-output`.
+- Added `data/reports/monthly_train_stability_window_diagnostics.csv`.
+- The report decomposes candidate `train_positive_ratio` into stability subwindows with subwindow total/buy-hold/excess return, drawdown, trade count, positive flag, and rejection reasons.
+- `python -m unittest discover -s tests`: PASS, 399 tests.
 - `python -m compileall -q backtester`: PASS.
 
 Latest current loop work:
 
-- Extended `monthly-train-decision-diagnostics` with `--stability-output`.
-- Added `data/reports/monthly_train_stability_window_diagnostics.csv`.
-- The report decomposes candidate `train_positive_ratio` into stability subwindows with subwindow total/buy-hold/excess return, drawdown, trade count, positive flag, and rejection reasons.
-- `walk_forward_003`: 52 counted stability rows; 16 positive and 36 nonpositive/no-trade subwindows; candidate positive ratios are mainly `0.25` or `0.5`; worst subwindow is `train_stability_2024_2025` ending `2025-04-30`, excess `-55.0564`.
-- `walk_forward_004`: 52 counted stability rows; 17 positive and 35 nonpositive/no-trade subwindows; candidate positive ratios range `0.0` to `0.75`; worst subwindow is also `train_stability_2024_2025` ending `2025-04-30`, excess `-55.0564`.
-- Current full verification after this work: `python -m unittest discover -s tests` PASS with `399` tests; `python -m compileall -q backtester` PASS.
-- `production-check` remains `BLOCK` with `BLOCK=8`, `PASS=31`, `WARN=8`; `health-check` remains `WARN` because scalper data is stale (`age_hours=303.89` observed).
+- Extended `monthly-attribution` with `--scenario-name` and `--summary-output`.
+- Added recovery attribution summary reports:
+  - `data/reports/regime_sideways_recovery_attribution.csv`
+  - `data/reports/walk_forward_005_recovery_attribution.csv`
+  - `data/reports/walk_forward_003_recovery_attribution.csv`
+- These reports connect monthly drawdown attribution, decision exposure/cash, realized symbol PnL, and benchmark comparison in one row per scenario.
+- `regime_sideways`: absolute loss and benchmark drag. Worst month is `2025-03`, return `-8.8337%`, exposure `0.99`, cash `0.01`, post-worst recovery only `1.3031%`.
+- `walk_forward_005`: positive absolute return but benchmark recovered more. Worst month is `2026-03`, return `-19.2651%`, exposure `0.99`, cash `0.01`; best month `2026-04` returned `20.2536%` with cash `0.2575`.
+- `walk_forward_003`: contrast case, total `10.5419%`, buy-hold `1.7889%`, excess `8.753%`; not an insufficient-recovery failure.
+- Current full verification after this work: `python -m unittest discover -s tests` PASS with `402` tests; `python -m compileall -q backtester` PASS.
+- `production-check` remains `BLOCK`; `health-check` remains `WARN` because scalper data is stale (`age_hours=304.15` observed).
 
 ## Current Git Worktree Warning
 
@@ -124,7 +128,7 @@ Tests:
 
 - Standard library `unittest`.
 - Tests live under `tests/`.
-- Current full suite: 399 tests passing as of the latest checkpoint.
+- Current full suite: 402 tests passing as of the latest checkpoint.
 - Important files:
   - `tests/test_monthly_rebalance.py`
   - `tests/test_readiness.py`
@@ -212,6 +216,13 @@ Regenerate recursive train decision and stability diagnostics:
 python -m backtester monthly-train-decision-diagnostics --data-dir data/krx_expanded --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --scenario walk_forward_003 --scenario walk_forward_004 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --output data/reports/monthly_train_decision_path_diagnostics.csv --stability-output data/reports/monthly_train_stability_window_diagnostics.csv
 ```
 
+Regenerate recovery attribution summaries:
+
+```powershell
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2024-10-14 --end 2025-04-17 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-name regime_sideways --monthly-output data/reports/regime_sideways_monthly_attribution.csv --symbol-output data/reports/regime_sideways_symbol_attribution.csv --decision-output data/reports/regime_sideways_decision_attribution.csv --summary-output data/reports/regime_sideways_recovery_attribution.csv
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2026-01-28 --end 2026-04-30 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --scenario-name walk_forward_005 --monthly-output data/reports/walk_forward_005_monthly_attribution.csv --symbol-output data/reports/walk_forward_005_symbol_attribution.csv --decision-output data/reports/walk_forward_005_decision_attribution.csv --summary-output data/reports/walk_forward_005_recovery_attribution.csv
+```
+
 ## Current Readiness State
 
 Production readiness:
@@ -285,6 +296,47 @@ Scenario mapping:
 - `walk_forward_004`: `direct_alpha_ineligible`
 - `stress_exclude_500pct_winners`: `drawdown_pressure`
 - `walk_forward_001`: `candidate_fixed_failure`
+
+## Recovery Attribution Diagnostics
+
+Reports:
+
+```text
+data/reports/regime_sideways_recovery_attribution.csv
+data/reports/walk_forward_005_recovery_attribution.csv
+data/reports/walk_forward_003_recovery_attribution.csv
+```
+
+Purpose:
+
+- Explain `insufficient_recovery` failures by combining monthly equity attribution, decision exposure/cash, realized symbol PnL, and total-vs-benchmark performance.
+- Avoid treating `regime_sideways` and `walk_forward_005` as the same failure just because both have negative excess return.
+
+Findings:
+
+- `regime_sideways`
+  - Total return `-9.2276%`, buy-hold `-2.0628%`, excess `-7.1648%`.
+  - Worst month `2025-03`: return `-8.8337%`, target exposure `0.99`, cash `0.01`, mode `market_beta_proxy`.
+  - Post-worst recovery only `1.3031%`.
+  - Top loss symbols: `005490`, `051910`, `450080`.
+  - Failure mode: `absolute_loss_and_benchmark_drag`.
+  - Diagnostic: `negative_excess;high_exposure_worst_month;insufficient_post_worst_recovery;loss_month_pressure;symbol_loss_concentration`.
+- `walk_forward_005`
+  - Attribution total return `8.6057%`, buy-hold `14.0817%`, excess `-5.476%`.
+  - Worst month `2026-03`: return `-19.2651%`, target exposure `0.99`, cash `0.01`, mode `market_beta_proxy`.
+  - Best month `2026-04`: return `20.2536%`, target exposure `0.7425`, cash `0.2575`.
+  - Top loss symbols: `009830`, `080220`, `066570`.
+  - Failure mode: `benchmark_outpaced_recovery`.
+  - Diagnostic: `benchmark_recovered_more;high_exposure_worst_month;cash_drag_best_month;loss_month_pressure;symbol_loss_concentration`.
+- `walk_forward_003` contrast
+  - Total return `10.5419%`, buy-hold `1.7889%`, excess `8.753%`.
+  - Post-worst recovery `17.2902%`.
+  - This is not an insufficient-recovery case; it remains blocked because train window/direct alpha eligibility is rejected.
+
+Interpretation:
+
+- `regime_sideways` needs better weak-window loss control or exposure scaling after high-exposure market-beta losses.
+- `walk_forward_005` needs to cap March 2026 high-exposure loss and/or improve April participation relative to the benchmark; simply adding broad cash may worsen recovery.
 
 ## Direct Alpha Train Diagnostics
 
@@ -495,8 +547,8 @@ Operational safety required before any real order path:
 
 ## Suggested Next Highest-Value Work
 
-1. Build a narrow attribution drilldown for `regime_sideways` and `walk_forward_005`, the remaining `insufficient_recovery` failures.
-2. Compare exposure, cash ratio, worst holding periods, and symbol-level contribution against the now-explained `walk_forward_003` direct-alpha-ineligible case.
+1. Design one narrow candidate experiment from the recovery summaries: cap high-exposure `market_beta_proxy` losses in `2025-03` and `2026-03` without broad cash drag.
+2. Run full validation and comparison delta reports before considering adoption.
 3. Preserve the candidate behavior that fixed `stress_exclude_500pct_winners` and `walk_forward_001`, but isolate it so it does not create `regime_bear`, `walk_forward_002`, or `walk_forward_004` regressions.
 4. Continue working from failed scenario evidence, not from broad parameter sweeps.
 5. Keep all changes paper-only.
@@ -542,10 +594,10 @@ Absolute rules:
 Current state:
 - production-check is BLOCK.
 - health-check is WARN only because scalper data is stale.
-- Full unittest recently passed: 399 tests.
+- Full unittest recently passed: 402 tests.
 - compileall passed.
 - Required validation failures remain: stress_exclude_500pct_winners, regime_sideways, walk_forward_001, walk_forward_003, walk_forward_005.
-- Main current research issue: direct alpha train candidates are ineligible, especially walk_forward_003 and walk_forward_004. The latest diagnostics show the broad train regime is risk_on and coverage is not missing, direct alpha badly underperforms buy-hold after PIT/top-100 liquidity filtering, and `low_positive_ratio` is caused by concrete negative stability subwindows rather than missing data.
+- Main current research issue: remaining failures are now split into direct-alpha ineligibility and recovery/exposure problems. `regime_sideways` is absolute loss plus weak post-worst recovery; `walk_forward_005` recovered in absolute terms but lagged a stronger benchmark after a high-exposure March drawdown.
 
 Your next task should start from the current BLOCK causes, not from a new strategy idea.
 ```
