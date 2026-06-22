@@ -5419,12 +5419,28 @@ def build_monthly_validation_candidate_decision(
         reasons.append(f"failed_delta={failed_delta}")
     if unchanged_count:
         reasons.append(f"unchanged_failures={unchanged_count}")
+    drawdown_buffer_regression_count = sum(
+        diagnostics.get(name, 0)
+        for name in (
+            "equity_improved_but_drawdown_buffer_worse",
+            "drawdown_buffer_regression",
+            "candidate_introduced_drawdown_breach",
+        )
+    )
+    if drawdown_buffer_regression_count:
+        reasons.append(f"drawdown_buffer_regressions={drawdown_buffer_regression_count}")
 
     if comparison_status in {"REJECT", "REJECTED"} or new_count or failed_delta > 0:
         decision = "REJECT"
-        recommendation = (
-            "Do not adopt this candidate; inspect new failure diagnostics and run narrower paper-only experiments."
-        )
+        if drawdown_buffer_regression_count:
+            recommendation = (
+                "Do not adopt this candidate; it reduces hard-gate drawdown buffer. "
+                "Inspect path-level drawdown-buffer diagnostics and run narrower paper-only experiments."
+            )
+        else:
+            recommendation = (
+                "Do not adopt this candidate; inspect new failure diagnostics and run narrower paper-only experiments."
+            )
     elif failed_delta < 0 and not new_count:
         decision = "PAPER_REVIEW"
         recommendation = (
@@ -6214,6 +6230,12 @@ def _scenario_delta_diagnostic(
     if classification == "RESOLVED":
         return "candidate_fixed_required_failure"
     if classification == "NEW_FAILURE":
+        if candidate_reason == "max_drawdown_breach":
+            if drawdown_delta is not None and drawdown_delta < 0:
+                if excess_delta is not None and excess_delta >= 0:
+                    return "equity_improved_but_drawdown_buffer_worse"
+                return "drawdown_buffer_regression"
+            return "candidate_introduced_drawdown_breach"
         if candidate_reason == "train_window_rejected":
             return "train_gate_regression"
         if (

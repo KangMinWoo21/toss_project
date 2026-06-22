@@ -1564,6 +1564,41 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(by_name["regime_bear"]["diagnostic"], "selection_or_exposure_drag")
         self.assertEqual(by_name["walk_004"]["diagnostic"], "train_gate_regression")
 
+    def test_compare_monthly_validation_scenario_deltas_flags_drawdown_buffer_regression(self):
+        baseline_rows = [
+            {
+                "name": "full_period",
+                "required": True,
+                "deployable": True,
+                "reason": "passed",
+                "excess_return_pct": "60.70",
+                "max_drawdown_pct": "-24.04",
+                "trade_count": "80",
+            }
+        ]
+        candidate_rows = [
+            {
+                "name": "full_period",
+                "required": True,
+                "deployable": False,
+                "reason": "max_drawdown_breach",
+                "excess_return_pct": "61.20",
+                "max_drawdown_pct": "-25.13",
+                "trade_count": "80",
+            }
+        ]
+
+        rows = compare_monthly_validation_scenario_deltas(
+            baseline_rows,
+            candidate_rows,
+            candidate_label="neutral_breadth_proxy_cap_50",
+        )
+
+        self.assertEqual(rows[0]["classification"], "NEW_FAILURE")
+        self.assertEqual(rows[0]["excess_return_delta"], "0.5")
+        self.assertEqual(rows[0]["max_drawdown_delta"], "-1.09")
+        self.assertEqual(rows[0]["diagnostic"], "equity_improved_but_drawdown_buffer_worse")
+
     def test_save_monthly_validation_scenario_deltas_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "deltas.csv"
@@ -1650,6 +1685,34 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("regime_bear", decision[0]["new_failure_names"])
         self.assertIn("stress", decision[0]["resolved_failure_names"])
         self.assertIn("Do not adopt", decision[0]["recommendation"])
+
+    def test_build_monthly_validation_candidate_decision_rejects_drawdown_buffer_loss(self):
+        decision = build_monthly_validation_candidate_decision(
+            {
+                "candidate_label": "neutral_breadth_proxy_cap_50",
+                "status": "REJECT",
+                "baseline_failed_required": 5,
+                "candidate_failed_required": 6,
+                "failed_delta": 1,
+                "resolved_failures": "walk_forward_003",
+                "new_failures": "full_period",
+                "unchanged_failures": "regime_sideways; walk_forward_005",
+            },
+            [
+                {
+                    "classification": "NEW_FAILURE",
+                    "diagnostic": "equity_improved_but_drawdown_buffer_worse",
+                    "name": "full_period",
+                },
+                {"classification": "RESOLVED", "diagnostic": "candidate_fixed_required_failure", "name": "walk_forward_003"},
+            ],
+        )
+
+        row = decision[0]
+        self.assertEqual(row["decision"], "REJECT")
+        self.assertIn("drawdown_buffer_regressions=1", row["decision_reasons"])
+        self.assertIn("equity_improved_but_drawdown_buffer_worse=1", row["new_failure_diagnostics"])
+        self.assertIn("drawdown buffer", row["recommendation"])
 
     def test_save_monthly_validation_candidate_decision_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

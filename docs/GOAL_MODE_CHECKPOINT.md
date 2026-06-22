@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 19:05 KST
+Last updated: 2026-06-22 19:19 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 419 tests.
+- `python -m unittest discover -s tests`: PASS, 421 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,76 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only candidate acceptance diagnostic for candidates that improve return/equity evidence but lose hard drawdown-gate buffer:
+
+- Extended `compare_monthly_validation_scenario_deltas` so a new `max_drawdown_breach` failure is classified as:
+  - `equity_improved_but_drawdown_buffer_worse` when candidate excess return improves but max drawdown becomes worse enough to fail the gate,
+  - `drawdown_buffer_regression` when drawdown worsens without improved return,
+  - `candidate_introduced_drawdown_breach` when the new drawdown breach is not explained by a worse drawdown delta.
+- Extended `build_monthly_validation_candidate_decision` so these cases add:
+  - `drawdown_buffer_regressions=<n>` to `decision_reasons`,
+  - a recommendation to not adopt the candidate and inspect path-level drawdown-buffer diagnostics.
+- This is diagnostic-only and paper-only. It does not change strategy behavior, deployment gates, execution planning, or any Toss/API behavior.
+
+Regenerated candidate comparison/decision reports:
+
+- `data/reports/monthly_validation_comparison_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_validation_comparison_deltas_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_validation_candidate_decision_neutral_breadth_proxy_cap_50.csv`
+- `data/reports/monthly_validation_comparison.csv`
+- `data/reports/monthly_validation_comparison_deltas.csv`
+- `data/reports/monthly_validation_candidate_decision.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Candidate acceptance finding:
+
+- `neutral_breadth_proxy_cap_50` remains `REJECT`.
+- `full_period` is now a `NEW_FAILURE` with diagnostic `equity_improved_but_drawdown_buffer_worse`.
+  - `excess_return_delta=+0.0247`.
+  - `max_drawdown_delta=-1.0891`.
+- `stress_slippage_x3` is now a `NEW_FAILURE` with diagnostic `equity_improved_but_drawdown_buffer_worse`.
+  - `excess_return_delta=+0.3978`.
+  - `max_drawdown_delta=-1.0388`.
+- Candidate decision now reports:
+  - `drawdown_buffer_regressions=2`,
+  - `new_failure_diagnostics=equity_improved_but_drawdown_buffer_worse=2`.
+- `production_readiness_report.md` now surfaces this exact candidate rejection reason in both the readiness table and action list.
+
+Verification in this loop:
+
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_compare_monthly_validation_scenario_deltas_flags_drawdown_buffer_regression tests.test_monthly_rebalance.MonthlyRebalanceTests.test_build_monthly_validation_candidate_decision_rejects_drawdown_buffer_loss`: failed because drawdown-buffer regression was still reported as `candidate_introduced_failure` and candidate decision did not include `drawdown_buffer_regressions=1`.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_compare_monthly_validation_scenario_deltas_flags_drawdown_buffer_regression tests.test_monthly_rebalance.MonthlyRebalanceTests.test_build_monthly_validation_candidate_decision_rejects_drawdown_buffer_loss`: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `183` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `421` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, only because scalper data is stale (`age_hours=306.49` observed).
+
+Next recommended action:
+
+- Keep `neutral_breadth_proxy_cap_50` rejected.
+- Do not broaden exposure caps from this evidence.
+- Next, add a narrow candidate ranking/summary report that combines scenario deltas with path-comparison rows so rejected candidates can be ranked by:
+  - failures resolved,
+  - new failures introduced,
+  - drawdown buffer lost,
+  - equity improvement preserved,
+  - whether path-level symbol rotation or turnover caused the regression.
+- Continue focusing on persistent blockers:
+  - `regime_sideways`,
+  - `walk_forward_005`,
+  - `stress_exclude_500pct_winners`,
+  - direct-alpha train weakness around `walk_forward_003`.
+
+Previous loop:
 
 Added paper-only daily path attribution diagnostics to explain why `neutral_breadth_proxy_cap_50` worsened March-April 2025 drawdown even though same-month decisions and selected symbols were identical:
 
