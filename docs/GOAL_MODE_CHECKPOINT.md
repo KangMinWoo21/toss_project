@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 21:04 KST
+Last updated: 2026-06-22 21:23 KST
 
 ## Objective
 
@@ -36,6 +36,111 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added direct candidate stability-window diagnostics for the `walk_forward_003` and `walk_forward_004` train windows:
+
+- Extended the `monthly-train-decision-diagnostics --stability-output` report with direct candidate and subwindow fields:
+  - `train_decision_as_of`,
+  - `candidate_name`,
+  - `candidate_rank`,
+  - `candidate_positive_ratio`,
+  - `candidate_eligible`,
+  - `stability_window_index`,
+  - `stability_window_start`,
+  - `stability_window_end`,
+  - `stability_window_days`,
+  - `stability_total_return_pct`,
+  - `stability_buy_hold_return_pct`,
+  - `stability_excess_return_pct`,
+  - `stability_max_drawdown_pct`,
+  - `stability_trade_count`,
+  - `stability_positive`,
+  - `stability_failed_reason`.
+- Added market/filter context to the stability rows so low-positive-ratio failures can be read with regime evidence:
+  - `prior_breadth`,
+  - `fallback_breadth_threshold`,
+  - `market_beta_breadth_threshold`,
+  - `trend_scale`,
+  - `volatility_scale`,
+  - `liquidity_scale`,
+  - `exposure_scale`,
+  - `direct_candidate_count`,
+  - `eligible_direct_candidate_count`,
+  - `best_direct_preset`,
+  - `best_direct_excess_return_pct`,
+  - `best_direct_train_positive_ratio`.
+- Fixed the diagnostics path to use each walk-forward case's explicit `train_start` when reconstructing train-decision and stability evidence.
+  - This prevents the report from silently falling back to the default train window and misclassifying fixture/data warm-up as an empty train universe.
+- Existing strategy behavior, validation gates, deployment gates, execution planning, and Toss/API behavior are unchanged.
+- This is diagnostic-only and paper-only.
+
+Regenerated reports:
+
+- `data/reports/monthly_train_decision_path_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_stability_diagnostics.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Current stability-window findings:
+
+- `data/reports/monthly_direct_alpha_stability_diagnostics.csv` has `26` rows and all required stability fields are present.
+- `walk_forward_003`:
+  - Later candidate rows have `direct_candidate_count=1`, `eligible_direct_candidate_count=0`, and `candidate_positive_ratio=0.0`.
+  - Candidate excess returns by decision date:
+    - `2025-02-03`: `-16.0825`, `0` trades, `nonpositive_excess;insufficient_trades;low_positive_ratio`.
+    - `2025-03-04`: `-11.8310`, `0` trades, `nonpositive_excess;insufficient_trades;low_positive_ratio`.
+    - `2025-04-01`: `-15.4871`, `0` trades, `nonpositive_excess;insufficient_trades;low_positive_ratio`.
+    - `2025-05-02`: `-49.4609`, `10` trades, `nonpositive_excess;low_positive_ratio`.
+    - `2025-06-02`: `-53.3186`, `10` trades, `nonpositive_excess;low_positive_ratio`.
+    - `2025-07-01`: `-44.1714`, `10` trades, `nonpositive_excess;low_positive_ratio`.
+  - Subwindow failures are `nonpositive_excess;no_trades` for the zero-trade rows and `nonpositive_excess` once trades occur.
+  - Prior breadth ranges from `0.55` to `0.83`, so the rejection is not simply a weak-breadth-only artifact.
+- `walk_forward_004`:
+  - Later candidate rows also have `direct_candidate_count=1`, `eligible_direct_candidate_count=0`, and `candidate_positive_ratio=0.0`.
+  - Candidate excess returns by decision date:
+    - `2025-05-02`: `-33.0667`, `0` trades, `nonpositive_excess;insufficient_trades;low_positive_ratio`.
+    - `2025-06-02`: `-33.8408`, `0` trades, `nonpositive_excess;insufficient_trades;low_positive_ratio`.
+    - `2025-07-01`: `-40.8331`, `0` trades, `nonpositive_excess;insufficient_trades;low_positive_ratio`.
+    - `2025-08-01`: `-38.7782`, `10` trades, `nonpositive_excess;low_positive_ratio`.
+    - `2025-09-01`: `-50.1078`, `10` trades, `nonpositive_excess;low_positive_ratio`.
+    - `2025-10-01`: `-58.2765`, `18` trades, `nonpositive_excess;low_positive_ratio`.
+  - Subwindow failures are `nonpositive_excess;no_trades` for the zero-trade rows and `nonpositive_excess` once trades occur.
+  - Prior breadth ranges from `0.72` to `0.94`, so the candidate remains negative even in broadly constructive market breadth.
+- Early rows in both scenarios remain warm-up/filter rows with `symbol_candles_cannot_be_empty` before a direct candidate can be evaluated.
+
+Interpretation:
+
+- The direct-alpha train rejection is now traceable at the dated stability-window level.
+- For the inspected rows, low positive ratio is not hiding a strong headline candidate; the candidate subwindow excess is repeatedly negative.
+- The failures are not explained by liquidity scale or trend scale in these rows, both of which remain `1`.
+- Do not loosen `min_train_positive_ratio`.
+- Do not adopt these rejected direct candidates.
+- Next useful work is to inspect why the selected direct candidate creates negative excess versus the top-liquid benchmark during those dated stability windows, especially symbol selection and benchmark strength.
+
+Verification in this loop:
+
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_breaks_positive_ratio_into_subwindows tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_windows_writes_csv tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_validation_sweep_results_emits_deep_guard_args tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report`: failed because the new stability fields were missing/misplaced and `candidate_rank` was numeric.
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_breaks_positive_ratio_into_subwindows tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_windows_writes_csv`: failed because market context fields were not yet emitted in stability rows.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_breaks_positive_ratio_into_subwindows tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_windows_writes_csv tests.test_monthly_rebalance.MonthlyRebalanceTests.test_run_monthly_validation_sweep_results_emits_deep_guard_args tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report`: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `186` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `424` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=308.55` observed).
+
+Next recommended action:
+
+- Use the new stability report together with `monthly_direct_alpha_selection_diagnostics.csv` and `monthly_direct_alpha_path_diagnostics.csv` to explain why the single direct candidate underperforms the PIT/top-liquid benchmark in the dated negative stability windows.
+- Keep train gates strict until symbol-selection/path evidence shows a robust candidate that survives walk-forward validation without new failures.
+- Continue to treat production-check `BLOCK` and health-check `WARN` as hard operational warnings; the system remains paper-operation only.
+
+Previous loop:
 
 Added a path-aware candidate acceptance rule to the validation candidate summary report:
 

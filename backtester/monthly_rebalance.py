@@ -308,6 +308,8 @@ VALIDATION_SWEEP_PLAN_COLUMNS = [
     "market_beta_proxy_neutral_breadth_max_exposure",
     "max_position_weight",
     "drawdown_guard_scale",
+    "drawdown_guard_deep_trigger_pct",
+    "drawdown_guard_deep_scale",
     "market_volatility_min_scale",
     "position_trailing_stop_pct",
     "expected_effect",
@@ -633,11 +635,32 @@ MONTHLY_TRAIN_STABILITY_WINDOW_COLUMNS = [
     "decision_selected_preset",
     "decision_reason",
     "alpha_block_reason",
+    "prior_breadth",
+    "fallback_breadth_threshold",
+    "market_beta_breadth_threshold",
+    "trend_scale",
+    "volatility_scale",
+    "liquidity_scale",
+    "exposure_scale",
+    "direct_candidate_count",
+    "eligible_direct_candidate_count",
+    "best_direct_preset",
+    "best_direct_excess_return_pct",
+    "best_direct_train_positive_ratio",
+    "train_decision_as_of",
     "inner_train_start",
     "inner_train_end",
+    "candidate_name",
+    "candidate_rank",
+    "candidate_positive_ratio",
+    "candidate_eligible",
     "stability_window",
+    "stability_window_index",
     "stability_start",
     "stability_end",
+    "stability_window_start",
+    "stability_window_end",
+    "stability_window_days",
     "preset",
     "subwindow_counted_flag",
     "subwindow_symbol_count",
@@ -648,6 +671,13 @@ MONTHLY_TRAIN_STABILITY_WINDOW_COLUMNS = [
     "subwindow_trade_count",
     "subwindow_positive_flag",
     "subwindow_rejection_reasons",
+    "stability_total_return_pct",
+    "stability_buy_hold_return_pct",
+    "stability_excess_return_pct",
+    "stability_max_drawdown_pct",
+    "stability_trade_count",
+    "stability_positive",
+    "stability_failed_reason",
     "candidate_total_return_pct",
     "candidate_buy_hold_return_pct",
     "candidate_excess_return_pct",
@@ -3908,7 +3938,7 @@ def _monthly_train_decision_path_for_case(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for preset in config.presets:
-        preset_config = replace(config, presets=(preset,))
+        preset_config = replace(config, presets=(preset,), train_start=case.train_start)
         result = run_monthly_rebalance_backtest(
             symbol_candles,
             start=case.train_start,
@@ -3977,7 +4007,7 @@ def _monthly_train_stability_windows_for_case(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for preset in config.presets:
-        preset_config = replace(config, presets=(preset,))
+        preset_config = replace(config, presets=(preset,), train_start=case.train_start)
         result = run_monthly_rebalance_backtest(
             symbol_candles,
             start=case.train_start,
@@ -4011,6 +4041,21 @@ def _monthly_train_stability_windows_for_case(
                         "decision_selected_preset": decision.selected_preset,
                         "decision_reason": decision.reason,
                         "alpha_block_reason": _monthly_alpha_block_reason(decision, decision_evidence),
+                        "prior_breadth": decision_evidence.get("prior_breadth", ""),
+                        "fallback_breadth_threshold": decision_evidence.get("fallback_breadth_threshold", ""),
+                        "market_beta_breadth_threshold": decision_evidence.get("market_beta_breadth_threshold", ""),
+                        "trend_scale": decision_evidence.get("trend_scale", ""),
+                        "volatility_scale": decision_evidence.get("volatility_scale", ""),
+                        "liquidity_scale": decision_evidence.get("liquidity_scale", ""),
+                        "exposure_scale": decision_evidence.get("exposure_scale", ""),
+                        "direct_candidate_count": decision_evidence.get("direct_candidate_count", ""),
+                        "eligible_direct_candidate_count": decision_evidence.get("eligible_direct_candidate_count", ""),
+                        "best_direct_preset": decision_evidence.get("best_direct_preset", ""),
+                        "best_direct_excess_return_pct": decision_evidence.get("best_direct_excess_return_pct", ""),
+                        "best_direct_train_positive_ratio": decision_evidence.get(
+                            "best_direct_train_positive_ratio",
+                            "",
+                        ),
                         **stability,
                     }
                 )
@@ -4085,14 +4130,18 @@ def _monthly_train_stability_window_evidence(
             "filter_error": "",
         }
         rows: list[dict[str, Any]] = []
-        for candidate in candidate_rows:
+        for candidate_rank, candidate in enumerate(candidate_rows, start=1):
             preset = str(candidate.get("preset", ""))
             preset_config = preset_configs[preset]
             candidate_reasons = _monthly_train_candidate_rejection_reasons(candidate, config)
+            candidate_positive_ratio = candidate.get("train_positive_ratio", "")
             candidate_summary = {
                 "inner_train_start": inner_train_start,
                 "inner_train_end": signal_date,
                 "preset": preset,
+                "train_decision_as_of": as_of_date,
+                "candidate_name": preset,
+                "candidate_rank": str(candidate_rank),
                 "candidate_total_return_pct": candidate.get("total_return_pct", ""),
                 "candidate_buy_hold_return_pct": candidate.get("buy_hold_return_pct", ""),
                 "candidate_excess_return_pct": candidate.get("excess_return_pct", ""),
@@ -4100,16 +4149,19 @@ def _monthly_train_stability_window_evidence(
                 "candidate_trade_count": candidate.get("trades", ""),
                 "candidate_train_subwindows": candidate.get("train_subwindows", ""),
                 "candidate_train_positive_subwindows": candidate.get("train_positive_subwindows", ""),
-                "candidate_train_positive_ratio": candidate.get("train_positive_ratio", ""),
+                "candidate_train_positive_ratio": candidate_positive_ratio,
+                "candidate_positive_ratio": candidate_positive_ratio,
                 "candidate_train_avg_subwindow_excess_pct": candidate.get("train_avg_subwindow_excess_pct", ""),
                 "candidate_train_worst_subwindow_excess_pct": candidate.get("train_worst_subwindow_excess_pct", ""),
                 "candidate_rejection_reasons": ";".join(candidate_reasons) if candidate_reasons else "eligible",
+                "candidate_eligible": "false" if candidate_reasons else "true",
             }
-            for window in generate_train_stability_windows(
+            stability_windows = list(generate_train_stability_windows(
                 inner_train_start,
                 signal_date,
                 stability_years=config.train_stability_years,
-            ):
+            ))
+            for window_index, window in enumerate(stability_windows, start=1):
                 sub_candles = slice_asof_symbol_candles(
                     decision_candles,
                     start=window.train_start,
@@ -4122,6 +4174,10 @@ def _monthly_train_stability_window_evidence(
                     "stability_window": window.name,
                     "stability_start": window.train_start,
                     "stability_end": window.train_end,
+                    "stability_window_index": window_index,
+                    "stability_window_start": window.train_start,
+                    "stability_window_end": window.train_end,
+                    "stability_window_days": _date_span_days(window.train_start, window.train_end),
                     **counts,
                 }
                 if not sub_candles:
@@ -4137,6 +4193,13 @@ def _monthly_train_stability_window_evidence(
                             "subwindow_trade_count": "",
                             "subwindow_positive_flag": "false",
                             "subwindow_rejection_reasons": "no_subwindow_symbols",
+                            "stability_total_return_pct": "",
+                            "stability_buy_hold_return_pct": "",
+                            "stability_excess_return_pct": "",
+                            "stability_max_drawdown_pct": "",
+                            "stability_trade_count": "",
+                            "stability_positive": "false",
+                            "stability_failed_reason": "no_subwindow_symbols",
                         }
                     )
                     continue
@@ -4147,18 +4210,30 @@ def _monthly_train_stability_window_evidence(
                 if sub_result.trade_count <= 0:
                     sub_reasons.append("no_trades")
                 positive = sub_result.excess_return_pct > 0 and sub_result.trade_count > 0
+                subwindow_total_return = round(sub_result.total_return_pct, 4)
+                subwindow_buy_hold_return = round(sub_result.buy_hold_return_pct, 4)
+                subwindow_excess_return = round(sub_result.excess_return_pct, 4)
+                subwindow_max_drawdown = round(sub_result.max_drawdown_pct, 4)
+                failed_reason = ";".join(sub_reasons) if sub_reasons else ""
                 rows.append(
                     {
                         **row,
                         "subwindow_counted_flag": "true",
                         "subwindow_symbol_count": len(sub_candles),
-                        "subwindow_total_return_pct": round(sub_result.total_return_pct, 4),
-                        "subwindow_buy_hold_return_pct": round(sub_result.buy_hold_return_pct, 4),
-                        "subwindow_excess_return_pct": round(sub_result.excess_return_pct, 4),
-                        "subwindow_max_drawdown_pct": round(sub_result.max_drawdown_pct, 4),
+                        "subwindow_total_return_pct": subwindow_total_return,
+                        "subwindow_buy_hold_return_pct": subwindow_buy_hold_return,
+                        "subwindow_excess_return_pct": subwindow_excess_return,
+                        "subwindow_max_drawdown_pct": subwindow_max_drawdown,
                         "subwindow_trade_count": sub_result.trade_count,
                         "subwindow_positive_flag": "true" if positive else "false",
-                        "subwindow_rejection_reasons": ";".join(sub_reasons) if sub_reasons else "",
+                        "subwindow_rejection_reasons": failed_reason,
+                        "stability_total_return_pct": subwindow_total_return,
+                        "stability_buy_hold_return_pct": subwindow_buy_hold_return,
+                        "stability_excess_return_pct": subwindow_excess_return,
+                        "stability_max_drawdown_pct": subwindow_max_drawdown,
+                        "stability_trade_count": sub_result.trade_count,
+                        "stability_positive": "true" if positive else "false",
+                        "stability_failed_reason": failed_reason,
                     }
                 )
         return rows
@@ -4201,6 +4276,22 @@ def _monthly_train_stability_window_evidence(
                 "liquidity_removed": "",
                 "train_coverage_removed": "",
                 "filter_error": _diagnostic_token(str(exc)),
+                "train_decision_as_of": as_of_date,
+                "candidate_name": "",
+                "candidate_rank": "",
+                "candidate_positive_ratio": "",
+                "candidate_eligible": "false",
+                "stability_window_index": "",
+                "stability_window_start": "",
+                "stability_window_end": "",
+                "stability_window_days": "",
+                "stability_total_return_pct": "",
+                "stability_buy_hold_return_pct": "",
+                "stability_excess_return_pct": "",
+                "stability_max_drawdown_pct": "",
+                "stability_trade_count": "",
+                "stability_positive": "false",
+                "stability_failed_reason": _diagnostic_token(str(exc)),
             }
         ]
 
@@ -4896,6 +4987,19 @@ def build_monthly_validation_sweep_plan(
                     expected_effect=(
                         "Cap fallback proxy only when breadth is neutral, preserving strong-breadth "
                         "proxy participation that prevented prior regressions."
+                    ),
+                ),
+                _sweep_plan_row(
+                    weak_row,
+                    experiment_id="neutral_proxy_deep_guard_35",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    market_beta_proxy_neutral_breadth_max_exposure=0.50,
+                    drawdown_guard_deep_trigger_pct=-20.0,
+                    drawdown_guard_deep_scale=0.35,
+                    expected_effect=(
+                        "Retest the neutral-breadth proxy cap with an explicit deep drawdown guard "
+                        "to preserve March-April drawdown buffer before full validation."
                     ),
                 ),
             ]
@@ -6197,6 +6301,8 @@ def _sweep_plan_row(
     market_beta_proxy_neutral_breadth_max_exposure: float | None = None,
     max_position_weight: float | None = None,
     drawdown_guard_scale: float | None = None,
+    drawdown_guard_deep_trigger_pct: float | None = None,
+    drawdown_guard_deep_scale: float | None = None,
     market_volatility_min_scale: float | None = None,
     position_trailing_stop_pct: float | None = None,
     expected_effect: str,
@@ -6220,6 +6326,14 @@ def _sweep_plan_row(
         ),
         "max_position_weight": _sweep_value(max_position_weight, base_config.max_position_weight),
         "drawdown_guard_scale": _sweep_value(drawdown_guard_scale, base_config.drawdown_guard_scale),
+        "drawdown_guard_deep_trigger_pct": _sweep_value(
+            drawdown_guard_deep_trigger_pct,
+            base_config.drawdown_guard_deep_trigger_pct,
+        ),
+        "drawdown_guard_deep_scale": _sweep_value(
+            drawdown_guard_deep_scale,
+            base_config.drawdown_guard_deep_scale,
+        ),
         "market_volatility_min_scale": _sweep_value(
             market_volatility_min_scale,
             base_config.market_volatility_min_scale,
@@ -6291,6 +6405,8 @@ def _apply_sweep_plan_config(
         "market_beta_proxy_neutral_breadth_max_exposure": float,
         "max_position_weight": float,
         "drawdown_guard_scale": float,
+        "drawdown_guard_deep_trigger_pct": float,
+        "drawdown_guard_deep_scale": float,
         "market_volatility_min_scale": float,
         "position_trailing_stop_pct": float,
     }.items():
@@ -6314,6 +6430,8 @@ def _sweep_config_changes(plan_row: dict[str, Any]) -> str:
         "market_beta_proxy_neutral_breadth_max_exposure",
         "max_position_weight",
         "drawdown_guard_scale",
+        "drawdown_guard_deep_trigger_pct",
+        "drawdown_guard_deep_scale",
         "market_volatility_min_scale",
         "position_trailing_stop_pct",
     ):
@@ -6353,6 +6471,8 @@ _SWEEP_CONFIG_CLI_FLAGS = {
     "market_beta_proxy_neutral_breadth_max_exposure": "--market-beta-proxy-neutral-breadth-max-exposure",
     "max_position_weight": "--max-position-weight",
     "drawdown_guard_scale": "--drawdown-guard-scale",
+    "drawdown_guard_deep_trigger_pct": "--drawdown-guard-deep-trigger-pct",
+    "drawdown_guard_deep_scale": "--drawdown-guard-deep-scale",
     "market_volatility_min_scale": "--market-volatility-min-scale",
     "position_trailing_stop_pct": "--position-trailing-stop-pct",
 }
@@ -6383,6 +6503,13 @@ def _format_cli_command(argv: list[str]) -> str:
 
 def _split_semicolon_values(value: str) -> list[str]:
     return [part.strip() for part in value.split(";") if part.strip()]
+
+
+def _date_span_days(start: str, end: str) -> int:
+    try:
+        return (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
+    except ValueError:
+        return 0
 
 
 def _candidate_summary_labels(

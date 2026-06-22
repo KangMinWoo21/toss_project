@@ -856,6 +856,11 @@ class MonthlyRebalanceTests(unittest.TestCase):
             by_id["neutral_breadth_proxy_cap_50"]["market_beta_proxy_neutral_breadth_max_exposure"],
             "0.5",
         )
+        self.assertIn("neutral_proxy_deep_guard_35", by_id)
+        neutral_guard = by_id["neutral_proxy_deep_guard_35"]
+        self.assertEqual(neutral_guard["market_beta_proxy_neutral_breadth_max_exposure"], "0.5")
+        self.assertEqual(neutral_guard["drawdown_guard_deep_trigger_pct"], "-20")
+        self.assertEqual(neutral_guard["drawdown_guard_deep_scale"], "0.35")
         self.assertIn("drawdown_guard_stronger", by_id)
         self.assertEqual(by_id["drawdown_guard_stronger"]["max_position_weight"], "0.1")
         self.assertEqual(by_id["drawdown_guard_stronger"]["market_volatility_min_scale"], "0.5")
@@ -986,6 +991,58 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("--candidate-pool-size 5", rows[0]["candidate_validation_args"])
         self.assertEqual(calls[0].cash_buffer_weight, 0.05)
         self.assertEqual(calls[0].candidate_pool_size, 5)
+
+    def test_run_monthly_validation_sweep_results_emits_deep_guard_args(self):
+        cases = [
+            MonthlyValidationCase(
+                name="regime_sideways",
+                category="regime",
+                start="2024-01-01",
+                end="2024-03-31",
+            )
+        ]
+        baseline_rows = [
+            {
+                "name": "regime_sideways",
+                "required": True,
+                "deployable": False,
+                "reason": "negative_excess_return",
+            }
+        ]
+        plan_rows = [
+            {
+                "priority": "P1",
+                "suggested_action": "IMPROVE_WEAK_WINDOW_DEFENSE",
+                "experiment_id": "neutral_proxy_deep_guard_35",
+                "target_scenarios": "regime_sideways",
+                "market_beta_proxy_neutral_breadth_max_exposure": "0.5",
+                "drawdown_guard_deep_trigger_pct": "-20",
+                "drawdown_guard_deep_scale": "0.35",
+                "risk_note": "Re-run validation before adopting.",
+            }
+        ]
+        calls = []
+
+        def runner(symbol_candles, *, start, end, config, **kwargs):
+            calls.append(config)
+            return _monthly_result(excess_return_pct=1.2, max_drawdown_pct=-8.0)
+
+        rows = run_monthly_validation_sweep_results(
+            {"005930": [_candle("2024-01-02", 100), _candle("2024-03-29", 110)]},
+            cases=cases,
+            sweep_plan_rows=plan_rows,
+            base_config=MonthlyRebalanceConfig(),
+            baseline_rows=baseline_rows,
+            backtest_runner=runner,
+        )
+
+        args = rows[0]["candidate_validation_args"]
+        self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure 0.5", args)
+        self.assertIn("--drawdown-guard-deep-trigger-pct -20", args)
+        self.assertIn("--drawdown-guard-deep-scale 0.35", args)
+        self.assertEqual(calls[0].market_beta_proxy_neutral_breadth_max_exposure, 0.5)
+        self.assertEqual(calls[0].drawdown_guard_deep_trigger_pct, -20.0)
+        self.assertEqual(calls[0].drawdown_guard_deep_scale, 0.35)
 
     def test_save_monthly_validation_sweep_results_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
@@ -3049,6 +3106,21 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("low_positive_ratio", row["candidate_rejection_reasons"])
         self.assertIn("candidate_excess_return_pct", row)
         self.assertGreaterEqual(int(float(row["candidate_train_subwindows"])), 1)
+        self.assertEqual(row["train_decision_as_of"], row["as_of_date"])
+        self.assertEqual(row["candidate_name"], "balanced")
+        self.assertEqual(row["candidate_rank"], "1")
+        self.assertEqual(row["candidate_eligible"], "false")
+        self.assertEqual(row["candidate_positive_ratio"], row["candidate_train_positive_ratio"])
+        self.assertIn("prior_breadth", row)
+        self.assertIn("trend_scale", row)
+        self.assertIn("liquidity_scale", row)
+        self.assertIn("direct_candidate_count", row)
+        self.assertGreaterEqual(int(float(row["stability_window_index"])), 1)
+        self.assertGreater(int(float(row["stability_window_days"])), 0)
+        self.assertEqual(row["stability_excess_return_pct"], row["subwindow_excess_return_pct"])
+        self.assertEqual(row["stability_positive"], row["subwindow_positive_flag"])
+        if row["stability_positive"] == "false":
+            self.assertTrue(row["stability_failed_reason"])
 
     def test_save_monthly_train_stability_windows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
@@ -3070,6 +3142,9 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(saved, 1)
         self.assertIn("scenario,walk_forward_preset,as_of_date", text.splitlines()[0])
+        self.assertIn("candidate_eligible", text.splitlines()[0])
+        self.assertIn("stability_failed_reason", text.splitlines()[0])
+        self.assertIn("prior_breadth", text.splitlines()[0])
         self.assertIn("low_positive_ratio", text)
 
     def test_generate_monthly_validation_cases_includes_duration_regime_and_stress(self):
