@@ -635,6 +635,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--train-start", completed.stdout)
         self.assertIn("--proxy-output", completed.stdout)
         self.assertIn("--stress-drawdown-output", completed.stdout)
+        self.assertIn("--execution-gap-output", completed.stdout)
 
     def test_monthly_attribution_cli_writes_recovery_summary_report(self):
         with TemporaryDirectory() as temp_dir:

@@ -1279,6 +1279,27 @@ MONTHLY_PATH_ATTRIBUTION_COLUMNS = [
     "daily_return_pct",
 ]
 
+MONTHLY_EXECUTION_GAP_COLUMNS = [
+    "scenario",
+    "as_of_date",
+    "signal_date",
+    "mode",
+    "selected_preset",
+    "reason",
+    "symbol",
+    "target_weight",
+    "target_value",
+    "reference_price",
+    "min_trade_value",
+    "actual_quantity",
+    "actual_market_value",
+    "actual_weight",
+    "execution_gap",
+    "diagnostic",
+    "paper_only",
+    "risk_note",
+]
+
 MONTHLY_PATH_ATTRIBUTION_COMPARISON_COLUMNS = [
     "scenario",
     "candidate_label",
@@ -2668,6 +2689,179 @@ def analyze_monthly_path_attribution(
     return rows
 
 
+def analyze_monthly_execution_gap(
+    result: MonthlyBacktestResult,
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    scenario: str = "",
+    min_trade_value: float = 10_000.0,
+    gap_tolerance: float = 0.001,
+) -> list[dict[str, str]]:
+    candles_by_symbol_date = {
+        symbol: {candle.date: candle for candle in candles}
+        for symbol, candles in symbol_candles.items()
+    }
+    decisions_by_date: dict[str, list[MonthlyDecision]] = {}
+    for decision in result.decisions:
+        decisions_by_date.setdefault(decision.as_of_date, []).append(decision)
+    trades_by_date: dict[str, list[MonthlyBacktestTrade]] = {}
+    for trade in result.trades:
+        trades_by_date.setdefault(trade.date, []).append(trade)
+
+    cash = float(result.initial_cash)
+    positions: dict[str, int] = {}
+    last_prices: dict[str, float] = {}
+    rows: list[dict[str, str]] = []
+
+    for day in result.dates:
+        day_candles = {
+            symbol: by_date[day]
+            for symbol, by_date in candles_by_symbol_date.items()
+            if day in by_date
+        }
+        day_trades = trades_by_date.get(day, [])
+        day_decisions = decisions_by_date.get(day, [])
+        if day_decisions:
+            decision = day_decisions[-1]
+            for trade in day_trades:
+                if trade.reason != decision.reason:
+                    cash = _apply_monthly_trade_to_positions(cash, positions, trade)
+            valuation_prices = _decision_valuation_prices(day_candles, last_prices)
+            portfolio_value = _portfolio_value(cash, positions, valuation_prices)
+            for trade in day_trades:
+                if trade.reason == decision.reason:
+                    cash = _apply_monthly_trade_to_positions(cash, positions, trade)
+            rows.extend(
+                _monthly_execution_gap_rows_for_decision(
+                    decision,
+                    positions=positions,
+                    valuation_prices=valuation_prices,
+                    portfolio_value=portfolio_value,
+                    scenario=scenario,
+                    min_trade_value=min_trade_value,
+                    gap_tolerance=gap_tolerance,
+                )
+            )
+        else:
+            for trade in day_trades:
+                cash = _apply_monthly_trade_to_positions(cash, positions, trade)
+
+        for symbol, candle in day_candles.items():
+            if candle.close > 0:
+                last_prices[symbol] = candle.close
+    return rows
+
+
+def _apply_monthly_trade_to_positions(
+    cash: float,
+    positions: dict[str, int],
+    trade: MonthlyBacktestTrade,
+) -> float:
+    quantity = int(trade.quantity)
+    if trade.action.upper() == "BUY":
+        positions[trade.symbol] = positions.get(trade.symbol, 0) + quantity
+    elif trade.action.upper() == "SELL":
+        remaining = positions.get(trade.symbol, 0) - quantity
+        if remaining > 0:
+            positions[trade.symbol] = remaining
+        else:
+            positions.pop(trade.symbol, None)
+    return float(trade.cash_after)
+
+
+def _decision_valuation_prices(
+    day_candles: dict[str, Candle],
+    last_prices: dict[str, float],
+) -> dict[str, float]:
+    valuation_prices = {
+        symbol: candle.open
+        for symbol, candle in day_candles.items()
+        if candle.open > 0
+    }
+    for symbol, price in last_prices.items():
+        valuation_prices.setdefault(symbol, price)
+    return valuation_prices
+
+
+def _monthly_execution_gap_rows_for_decision(
+    decision: MonthlyDecision,
+    *,
+    positions: dict[str, int],
+    valuation_prices: dict[str, float],
+    portfolio_value: float,
+    scenario: str,
+    min_trade_value: float,
+    gap_tolerance: float,
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    if portfolio_value <= 0:
+        return rows
+    for symbol, raw_weight in decision.target_weights.items():
+        target_weight = float(raw_weight)
+        if target_weight <= 0:
+            continue
+        reference_price = valuation_prices.get(symbol, 0.0)
+        target_value = portfolio_value * target_weight
+        actual_quantity = int(positions.get(symbol, 0))
+        actual_market_value = actual_quantity * reference_price if reference_price > 0 else 0.0
+        actual_weight = actual_market_value / portfolio_value if portfolio_value > 0 else 0.0
+        if actual_quantity > 0 and actual_weight + gap_tolerance >= target_weight:
+            continue
+        execution_gap = "missed_target_symbol" if actual_quantity <= 0 else "underfilled_target_symbol"
+        rows.append(
+            {
+                "scenario": scenario,
+                "as_of_date": decision.as_of_date,
+                "signal_date": decision.signal_date,
+                "mode": decision.mode,
+                "selected_preset": decision.selected_preset,
+                "reason": decision.reason,
+                "symbol": symbol,
+                "target_weight": _format_optional_float(target_weight),
+                "target_value": _format_optional_float(target_value),
+                "reference_price": _format_optional_float(reference_price),
+                "min_trade_value": _format_optional_float(min_trade_value),
+                "actual_quantity": str(actual_quantity),
+                "actual_market_value": _format_optional_float(actual_market_value),
+                "actual_weight": _format_optional_float(actual_weight),
+                "execution_gap": execution_gap,
+                "diagnostic": _monthly_execution_gap_diagnostic(
+                    target_value=target_value,
+                    reference_price=reference_price,
+                    actual_quantity=actual_quantity,
+                    actual_weight=actual_weight,
+                    target_weight=target_weight,
+                    min_trade_value=min_trade_value,
+                ),
+                "paper_only": "true",
+                "risk_note": "Diagnostic only; do not create or transmit live orders from this report.",
+            }
+        )
+    return rows
+
+
+def _monthly_execution_gap_diagnostic(
+    *,
+    target_value: float,
+    reference_price: float,
+    actual_quantity: int,
+    actual_weight: float,
+    target_weight: float,
+    min_trade_value: float,
+) -> str:
+    if reference_price <= 0:
+        return "missing_reference_price"
+    if target_value < min_trade_value:
+        return "target_value_below_min_trade"
+    if target_value < reference_price:
+        return "target_value_below_one_share"
+    if actual_quantity <= 0:
+        return "no_post_rebalance_position"
+    if actual_weight < target_weight:
+        return "target_underfilled_after_rebalance"
+    return "target_aligned"
+
+
 def compare_monthly_path_attribution_reports(
     baseline_rows: list[dict[str, Any]],
     candidate_rows: list[dict[str, Any]],
@@ -3658,6 +3852,10 @@ def save_monthly_decision_attribution_comparison(rows: list[dict[str, Any]], out
 
 def save_monthly_path_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PATH_ATTRIBUTION_COLUMNS)
+
+
+def save_monthly_execution_gap(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_EXECUTION_GAP_COLUMNS)
 
 
 def save_monthly_path_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:

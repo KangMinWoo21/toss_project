@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 regime sideways combo diagnostics loop
+Last updated: 2026-06-24 execution-gap diagnostics loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -42,42 +42,41 @@ appending long command logs or full report lists here.
 - Latest strategy commit: `2c77fad Add proxy guard recovery exit candidate`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `459` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `461` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=337.22` observed).
+  (`age_hours=337.90` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Focused on `regime_sideways` because `walk_forward_003` remains a train-gate
-issue that should not be overridden without stronger stability evidence.
+Added report-only execution-gap diagnostics to `monthly-attribution`.
 
-Focused attribution for `proxy_guard_exit_short_minus5`:
+Changed behavior:
 
-- Reproduced `regime_sideways`: total `-7.2966%`, excess `-5.2338%`,
-  max DD `-21.7254%`.
-- Guard outcomes: `missed_high_exposure_loss=3` (`2024-10`, `2024-11`,
-  `2024-12`), `loss_cap_aligned=1` (`2025-03`), `gain_preserved=3`.
-- Versus baseline: `2025-03` return delta `+2.6350%`; `2025-04` return drag
-  `-0.7512%`; early high-exposure neutral-breadth losses were unchanged.
+- New pure analyzer/writer: `analyze_monthly_execution_gap`,
+  `save_monthly_execution_gap`.
+- New opt-in CLI output: `--execution-gap-output`.
+- No order execution behavior changed; report is paper-only.
 
-Tested paper-only combo:
-`proxy_guard_exit_short_minus5_neutral_breadth_cap75`.
+TDD:
 
-- Main validation rows completed, but the CLI timed out before writing the
-  deployment-gate CSV. Treat as diagnostic only.
-- Required failures improved from `2` to `1`; `walk_forward_003` resolved.
-- Remaining failure: `regime_sideways`, worsened to excess `-5.8965%`,
-  max DD `-21.8429%`.
-- Decision report: `PAPER_REVIEW`, not adopt/promote.
-- Regime path comparison versus `proxy_guard_exit_short_minus5` showed
-  `107` equity-regression days, `47` drawdown-regression days, `35`
-  symbol-rotation days, worst equity delta `-657162.0359` on `2024-10-29`.
-- Root cause evidence: lower neutral-breadth target weights dropped `010130`
-  from actual held positions in early months; broad cap is not a clean
-  exposure-only fix.
+- RED: new monthly rebalance tests failed on missing functions; CLI help test
+  failed on missing `--execution-gap-output`.
+- GREEN: targeted tests PASS, `3` tests.
+
+Key `regime_sideways` evidence:
+
+- `proxy_guard_exit_short_minus5_execution_gap.csv`: rows `55`;
+  `target_underfilled_after_rebalance=51`, `target_value_below_one_share=4`.
+- `proxy_guard_exit_short_minus5_neutral_breadth_cap75_execution_gap.csv`:
+  rows `57`; `target_underfilled_after_rebalance=51`,
+  `target_value_below_one_share=6`.
+- The rejected neutral-cap combo adds `010130` one-share misses on
+  `2024-10-14` and `2024-11-01`; `207940` remains below one share.
+- This confirms broad neutral-breadth caps can change actual holdings through
+  lot-size/price constraints, not just reduce exposure.
 
 ## Current Best Candidate
 
@@ -144,7 +143,9 @@ Pick one narrow loop:
 
 - `regime_sideways`: inspect actual path/position drift in `2024-10`,
   `2024-11`, `2024-12`, especially why lower target weights drop expensive
-  symbols such as `010130`; avoid broad neutral-breadth caps as-is.
+  symbols such as `010130`; use `--execution-gap-output` before testing any
+  buyability-aware proxy/weighting candidate. Avoid broad neutral-breadth caps
+  as-is.
 - `walk_forward_003`: continue from the new stability summary; inspect the
   negative subwindow symbol/path-drift rows before changing gates.
 

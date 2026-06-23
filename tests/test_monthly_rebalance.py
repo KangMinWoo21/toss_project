@@ -27,6 +27,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_direct_alpha_timing,
     analyze_monthly_path_attribution,
+    analyze_monthly_execution_gap,
     analyze_monthly_proxy_guard_recovery_exits,
     analyze_monthly_proxy_guard_outcomes,
     analyze_monthly_proxy_decision_diagnostics,
@@ -108,6 +109,7 @@ from backtester.monthly_rebalance import (
     save_monthly_direct_alpha_timing,
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
+    save_monthly_execution_gap,
     save_monthly_proxy_guard_outcomes,
     save_monthly_proxy_guard_recovery_exits,
     save_monthly_proxy_decision_diagnostics,
@@ -3227,6 +3229,76 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("rolling_peak", path_text.splitlines()[0])
         self.assertIn("estimated_trade_cost_delta", compare_text.splitlines()[0])
         self.assertIn("equity_regression", compare_text)
+
+    def test_analyze_monthly_execution_gap_flags_target_below_one_share(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000_000,
+            final_equity=1_000_000,
+            total_return_pct=0.0,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=0.0,
+            max_drawdown_pct=0.0,
+            trade_count=1,
+            decisions=[
+                MonthlyDecision(
+                    as_of_date="2026-01-02",
+                    signal_date="2026-01-01",
+                    mode="market_beta_proxy",
+                    selected_preset="market_beta_proxy",
+                    target_weights={"AAA": 0.5, "BIG": 0.4},
+                    reason="unit_proxy",
+                )
+            ],
+            trades=[
+                MonthlyBacktestTrade("2026-01-02", "AAA", "BUY", 100, 5_000, 499_500, "unit_proxy"),
+            ],
+            dates=["2026-01-02"],
+            equity_curve=[1_000_000],
+        )
+
+        rows = analyze_monthly_execution_gap(
+            result,
+            {
+                "AAA": [Candle("2026-01-02", 100, 100, 100, 100, 10_000)],
+                "BIG": [Candle("2026-01-02", 600_000, 600_000, 600_000, 600_000, 10_000)],
+            },
+            scenario="regime_unit",
+            min_trade_value=10_000,
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "regime_unit")
+        self.assertEqual(row["as_of_date"], "2026-01-02")
+        self.assertEqual(row["symbol"], "BIG")
+        self.assertEqual(row["target_weight"], "0.4")
+        self.assertEqual(row["target_value"], "400000")
+        self.assertEqual(row["reference_price"], "600000")
+        self.assertEqual(row["actual_quantity"], "0")
+        self.assertEqual(row["execution_gap"], "missed_target_symbol")
+        self.assertEqual(row["diagnostic"], "target_value_below_one_share")
+        self.assertEqual(row["paper_only"], "true")
+
+    def test_save_monthly_execution_gap_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "execution_gap.csv"
+            saved = save_monthly_execution_gap(
+                [
+                    {
+                        "scenario": "regime_unit",
+                        "as_of_date": "2026-01-02",
+                        "symbol": "BIG",
+                        "execution_gap": "missed_target_symbol",
+                        "diagnostic": "target_value_below_one_share",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("execution_gap", text.splitlines()[0])
+        self.assertIn("target_value_below_one_share", text)
 
     def test_analyze_monthly_recovery_attribution_summarizes_exposure_and_loss_symbols(self):
         result = MonthlyBacktestResult(

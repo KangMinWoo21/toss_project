@@ -56,6 +56,7 @@ from .monthly_rebalance import (
     analyze_monthly_direct_alpha_rank_drift,
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_direct_alpha_timing,
+    analyze_monthly_execution_gap,
     analyze_monthly_path_attribution,
     analyze_monthly_performance_concentration,
     analyze_monthly_proxy_decision_diagnostics,
@@ -123,6 +124,7 @@ from .monthly_rebalance import (
     save_monthly_direct_alpha_rank_drift,
     save_monthly_direct_alpha_selection,
     save_monthly_direct_alpha_timing,
+    save_monthly_execution_gap,
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
     save_monthly_proxy_decision_diagnostics,
@@ -876,6 +878,7 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--summary-output", default=None)
     monthly_attribution_parser.add_argument("--proxy-output", default=None)
     monthly_attribution_parser.add_argument("--path-output", default=None)
+    monthly_attribution_parser.add_argument("--execution-gap-output", default=None)
     monthly_attribution_parser.add_argument("--stress-drawdown-output", default=None)
 
     monthly_proxy_guard_parser = subparsers.add_parser(
@@ -3018,6 +3021,16 @@ def main() -> int:
             if args.path_output or args.stress_drawdown_output
             else []
         )
+        execution_gap_rows = (
+            analyze_monthly_execution_gap(
+                result,
+                symbol_candles,
+                scenario=args.scenario_name,
+                min_trade_value=args.min_trade_value,
+            )
+            if args.execution_gap_output
+            else []
+        )
         recovery_rows = analyze_monthly_recovery_attribution(result, scenario=args.scenario_name)
         proxy_rows = (
             analyze_monthly_proxy_decision_diagnostics(
@@ -3050,6 +3063,8 @@ def main() -> int:
         save_monthly_decision_attribution(decision_rows, args.decision_output)
         if args.path_output:
             save_monthly_path_attribution(path_rows, args.path_output)
+        if args.execution_gap_output:
+            save_monthly_execution_gap(execution_gap_rows, args.execution_gap_output)
         if args.summary_output:
             save_monthly_recovery_attribution(recovery_rows, args.summary_output)
         if args.proxy_output:
@@ -3097,6 +3112,9 @@ def main() -> int:
         if args.proxy_output:
             print(f"proxy_rows  {len(proxy_rows)}")
             print(f"proxy_decision_diagnostics_report  {args.proxy_output}")
+        if args.execution_gap_output:
+            print(f"execution_gap_rows  {len(execution_gap_rows)}")
+            print(f"execution_gap_report  {args.execution_gap_output}")
         if args.stress_drawdown_output:
             print(f"stress_drawdown_pressure_rows  {len(stress_drawdown_rows)}")
             print(f"stress_drawdown_pressure_report  {args.stress_drawdown_output}")
