@@ -870,6 +870,32 @@ MONTHLY_TRAIN_STABILITY_WINDOW_COLUMNS = [
     "filter_error",
 ]
 
+MONTHLY_TRAIN_STABILITY_SUMMARY_COLUMNS = [
+    "scenario",
+    "walk_forward_preset",
+    "category",
+    "candidate_name",
+    "candidate_rank",
+    "train_decision_count",
+    "eligible_decision_count",
+    "low_positive_ratio_decision_count",
+    "counted_subwindow_count",
+    "positive_subwindow_count",
+    "negative_subwindow_count",
+    "negative_subwindow_ratio",
+    "candidate_positive_ratio_min",
+    "candidate_positive_ratio_max",
+    "candidate_positive_ratio_median",
+    "avg_stability_excess_return_pct",
+    "worst_stability_excess_return_pct",
+    "dominant_failed_reason",
+    "failed_reason_counts",
+    "underperformance_driver_counts",
+    "negative_stability_windows",
+    "diagnostic",
+    "next_action",
+]
+
 MONTHLY_TRAIN_STABILITY_SYMBOL_ATTRIBUTION_COLUMNS = [
     "scenario",
     "walk_forward_preset",
@@ -4813,6 +4839,152 @@ def save_monthly_train_stability_windows(rows: list[dict[str, Any]], output_path
     return len(rows)
 
 
+def analyze_monthly_train_stability_summary(stability_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = {}
+    for row in stability_rows:
+        candidate_name = str(row.get("candidate_name", "") or row.get("preset", "")).strip()
+        if not candidate_name:
+            candidate_name = "no_direct_candidate"
+        key = (
+            str(row.get("scenario", "")).strip(),
+            str(row.get("walk_forward_preset", "")).strip(),
+            str(row.get("category", "")).strip(),
+            candidate_name,
+            str(row.get("candidate_rank", "")).strip(),
+        )
+        if key[0]:
+            groups.setdefault(key, []).append(row)
+
+    summary_rows: list[dict[str, Any]] = []
+    for key in sorted(groups):
+        scenario, walk_forward_preset, category, candidate_name, candidate_rank = key
+        rows = groups[key]
+        decision_dates = {
+            str(row.get("as_of_date", "")).strip()
+            for row in rows
+            if str(row.get("as_of_date", "")).strip()
+        }
+        eligible_decisions = {
+            str(row.get("as_of_date", "")).strip()
+            for row in rows
+            if str(row.get("as_of_date", "")).strip()
+            and str(row.get("candidate_eligible", "")).strip().lower() == "true"
+        }
+        low_positive_ratio_decisions = {
+            str(row.get("as_of_date", "")).strip()
+            for row in rows
+            if str(row.get("as_of_date", "")).strip()
+            and "low_positive_ratio" in _split_semicolon_values(str(row.get("candidate_rejection_reasons", "")))
+        }
+        counted_rows = [
+            row
+            for row in rows
+            if str(row.get("subwindow_counted_flag", "")).strip().lower() == "true"
+        ]
+        positive_rows = [
+            row
+            for row in counted_rows
+            if str(row.get("stability_positive", row.get("subwindow_positive_flag", ""))).strip().lower()
+            == "true"
+        ]
+        negative_rows = [row for row in counted_rows if row not in positive_rows]
+        excess_values = [
+            value
+            for value in (_float_or_none(row.get("stability_excess_return_pct")) for row in counted_rows)
+            if value is not None
+        ]
+        positive_ratios = [
+            value
+            for value in (_float_or_none(row.get("candidate_positive_ratio")) for row in rows)
+            if value is not None
+        ]
+        failed_reason_counts: Counter[str] = Counter()
+        driver_counts: Counter[str] = Counter()
+        negative_window_tokens: list[str] = []
+        counter_source_rows = negative_rows if counted_rows else rows
+        for row in counter_source_rows:
+            failed_reasons = _split_semicolon_values(str(row.get("stability_failed_reason", "")))
+            if not failed_reasons and counted_rows:
+                failed_reasons = ["negative_or_unclassified"]
+            failed_reason_counts.update(failed_reasons)
+            driver = str(row.get("stability_underperformance_driver", "")).strip()
+            if driver:
+                driver_counts.update(_split_semicolon_values(driver))
+            if row not in negative_rows:
+                continue
+            as_of_date = str(row.get("as_of_date", "")).strip()
+            window_name = str(row.get("stability_window", "")).strip()
+            window_start = str(row.get("stability_window_start", "")).strip()
+            window_end = str(row.get("stability_window_end", "")).strip()
+            window_token = ":".join(value for value in [as_of_date, window_name] if value)
+            if window_start or window_end:
+                window_token = f"{window_token}({window_start}..{window_end})"
+            if window_token:
+                negative_window_tokens.append(window_token)
+
+        counted_count = len(counted_rows)
+        negative_count = len(negative_rows)
+        negative_ratio = negative_count / counted_count if counted_count else None
+        dominant_failed_reason = failed_reason_counts.most_common(1)[0][0] if failed_reason_counts else ""
+        if counted_count == 0:
+            diagnostic = "no_counted_stability_windows"
+            next_action = "Regenerate stability diagnostics with enough train history before changing gates."
+        elif low_positive_ratio_decisions and negative_count > 0:
+            diagnostic = "low_positive_ratio_due_to_negative_stability_windows"
+            next_action = (
+                "Inspect negative stability windows and symbol/path-drift reports before loosening gates."
+            )
+        elif low_positive_ratio_decisions:
+            diagnostic = "low_positive_ratio_without_negative_window_evidence"
+            next_action = "Check candidate scoring inputs and train-decision path diagnostics."
+        elif len(eligible_decisions) == len(decision_dates) and decision_dates:
+            diagnostic = "eligible_direct_alpha_candidate"
+            next_action = "Preserve gate behavior; no direct-alpha ineligibility action needed."
+        else:
+            diagnostic = "direct_alpha_stability_summary"
+            next_action = "Review rejection and stability counters before candidate design."
+
+        summary_rows.append(
+            {
+                "scenario": scenario,
+                "walk_forward_preset": walk_forward_preset,
+                "category": category,
+                "candidate_name": candidate_name,
+                "candidate_rank": candidate_rank,
+                "train_decision_count": str(len(decision_dates)),
+                "eligible_decision_count": str(len(eligible_decisions)),
+                "low_positive_ratio_decision_count": str(len(low_positive_ratio_decisions)),
+                "counted_subwindow_count": str(counted_count),
+                "positive_subwindow_count": str(len(positive_rows)),
+                "negative_subwindow_count": str(negative_count),
+                "negative_subwindow_ratio": _format_optional_float(negative_ratio),
+                "candidate_positive_ratio_min": _format_optional_float(min(positive_ratios) if positive_ratios else None),
+                "candidate_positive_ratio_max": _format_optional_float(max(positive_ratios) if positive_ratios else None),
+                "candidate_positive_ratio_median": _format_optional_float(median(positive_ratios) if positive_ratios else None),
+                "avg_stability_excess_return_pct": _format_optional_float(mean(excess_values) if excess_values else None),
+                "worst_stability_excess_return_pct": _format_optional_float(min(excess_values) if excess_values else None),
+                "dominant_failed_reason": dominant_failed_reason,
+                "failed_reason_counts": _format_counter_counts(failed_reason_counts),
+                "underperformance_driver_counts": _format_counter_counts(driver_counts),
+                "negative_stability_windows": ";".join(negative_window_tokens),
+                "diagnostic": diagnostic,
+                "next_action": next_action,
+            }
+        )
+    return summary_rows
+
+
+def save_monthly_train_stability_summary(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MONTHLY_TRAIN_STABILITY_SUMMARY_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in MONTHLY_TRAIN_STABILITY_SUMMARY_COLUMNS})
+    return len(rows)
+
+
 def analyze_monthly_train_stability_symbol_attribution(
     stability_rows: list[dict[str, Any]],
     symbol_candles: dict[str, list[Candle]],
@@ -8660,6 +8832,14 @@ def _candidate_summary_diagnostic_summary(rows: list[dict[str, Any]], classifica
 
 def _count_diagnostics(values: list[str], token: str) -> int:
     return sum(1 for value in values if token in value)
+
+
+def _format_counter_counts(counter: Counter[str]) -> str:
+    return ";".join(
+        f"{name}={count}"
+        for name, count in sorted(counter.items(), key=lambda item: (-item[1], item[0]))
+        if name
+    )
 
 
 def _count_failed_required(rows: list[dict[str, Any]]) -> int:

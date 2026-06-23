@@ -1481,6 +1481,7 @@ class CliTests(unittest.TestCase):
             )
             output = root / "train_decisions.csv"
             stability_output = root / "train_stability.csv"
+            stability_summary_output = root / "train_stability_summary.csv"
             stability_symbol_output = root / "train_stability_symbols.csv"
             path_drift_experiment_output = root / "path_drift_experiments.csv"
 
@@ -1516,6 +1517,8 @@ class CliTests(unittest.TestCase):
                     str(output),
                     "--stability-output",
                     str(stability_output),
+                    "--stability-summary-output",
+                    str(stability_summary_output),
                     "--stability-symbol-output",
                     str(stability_symbol_output),
                     "--path-drift-experiment-output",
@@ -1532,6 +1535,11 @@ class CliTests(unittest.TestCase):
                     stability_rows = list(csv.DictReader(f))
             else:
                 stability_rows = []
+            if stability_summary_output.exists():
+                with stability_summary_output.open(encoding="utf-8") as f:
+                    stability_summary_rows = list(csv.DictReader(f))
+            else:
+                stability_summary_rows = []
             if stability_symbol_output.exists():
                 with stability_symbol_output.open(encoding="utf-8") as f:
                     stability_symbol_rows = list(csv.DictReader(f))
@@ -1546,6 +1554,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("train_decision_path_report", completed.stdout)
         self.assertIn("train_stability_report", completed.stdout)
+        self.assertIn("train_stability_summary_report", completed.stdout)
         self.assertIn("train_stability_symbol_report", completed.stdout)
         self.assertIn("train_path_drift_experiment_report", completed.stdout)
         self.assertTrue(rows)
@@ -1556,6 +1565,9 @@ class CliTests(unittest.TestCase):
         self.assertTrue(any("stability_failed_reason" in row for row in stability_rows))
         self.assertTrue(any("stability_underperformance_driver" in row for row in stability_rows))
         self.assertTrue(any(row["candidate_rejection_reasons"] for row in stability_rows))
+        self.assertTrue(stability_summary_rows)
+        self.assertTrue(any("negative_subwindow_ratio" in row for row in stability_summary_rows))
+        self.assertTrue(any(row["diagnostic"] for row in stability_summary_rows))
         self.assertTrue(stability_symbol_rows)
         self.assertTrue(any("stability_symbol_role" in row for row in stability_symbol_rows))
         self.assertTrue(any("symbol_return_pct" in row for row in stability_symbol_rows))

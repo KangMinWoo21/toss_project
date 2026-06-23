@@ -34,6 +34,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_stress_drawdown_pressure,
     analyze_monthly_validation_failures,
     analyze_monthly_train_decision_path,
+    analyze_monthly_train_stability_summary,
     analyze_monthly_train_stability_path_drift_experiments,
     analyze_monthly_train_stability_symbol_attribution,
     analyze_monthly_train_stability_windows,
@@ -113,6 +114,7 @@ from backtester.monthly_rebalance import (
     save_monthly_recovery_attribution,
     save_monthly_stress_drawdown_pressure,
     save_monthly_train_decision_path,
+    save_monthly_train_stability_summary,
     save_monthly_train_stability_path_drift_experiments,
     save_monthly_train_stability_symbol_attribution,
     save_monthly_train_stability_windows,
@@ -4307,6 +4309,160 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("scenario,walk_forward_preset,as_of_date", text.splitlines()[0])
         self.assertIn("stability_symbol_role", text.splitlines()[0])
         self.assertIn("walk_forward_unit", text)
+
+    def test_analyze_monthly_train_stability_summary_aggregates_low_positive_ratio_drivers(self):
+        stability_rows = [
+            {
+                "scenario": "walk_forward_003",
+                "walk_forward_preset": "balanced",
+                "category": "walk_forward",
+                "as_of_date": "2025-07-23",
+                "candidate_name": "balanced",
+                "candidate_rank": "1",
+                "candidate_eligible": "false",
+                "candidate_rejection_reasons": "low_positive_ratio",
+                "candidate_positive_ratio": "0.25",
+                "subwindow_counted_flag": "true",
+                "stability_window": "train_stability_1",
+                "stability_window_start": "2024-07-01",
+                "stability_window_end": "2025-01-01",
+                "stability_excess_return_pct": "-4.0",
+                "stability_positive": "false",
+                "stability_failed_reason": "nonpositive_excess",
+                "stability_underperformance_driver": "selected_underperformed_benchmark",
+            },
+            {
+                "scenario": "walk_forward_003",
+                "walk_forward_preset": "balanced",
+                "category": "walk_forward",
+                "as_of_date": "2025-07-23",
+                "candidate_name": "balanced",
+                "candidate_rank": "1",
+                "candidate_eligible": "false",
+                "candidate_rejection_reasons": "low_positive_ratio",
+                "candidate_positive_ratio": "0.25",
+                "subwindow_counted_flag": "true",
+                "stability_window": "train_stability_2",
+                "stability_window_start": "2025-01-02",
+                "stability_window_end": "2025-07-22",
+                "stability_excess_return_pct": "3.0",
+                "stability_positive": "true",
+                "stability_failed_reason": "",
+                "stability_underperformance_driver": "selected_outperformed_benchmark",
+            },
+            {
+                "scenario": "walk_forward_003",
+                "walk_forward_preset": "balanced",
+                "category": "walk_forward",
+                "as_of_date": "2025-08-22",
+                "candidate_name": "balanced",
+                "candidate_rank": "1",
+                "candidate_eligible": "false",
+                "candidate_rejection_reasons": "low_positive_ratio;nonpositive_excess",
+                "candidate_positive_ratio": "0.0",
+                "subwindow_counted_flag": "true",
+                "stability_window": "train_stability_1",
+                "stability_window_start": "2024-08-01",
+                "stability_window_end": "2025-02-01",
+                "stability_excess_return_pct": "-2.0",
+                "stability_positive": "false",
+                "stability_failed_reason": "nonpositive_excess",
+                "stability_underperformance_driver": "holding_path_differs_from_selection_snapshot",
+            },
+            {
+                "scenario": "walk_forward_003",
+                "walk_forward_preset": "balanced",
+                "category": "walk_forward",
+                "as_of_date": "2025-08-22",
+                "candidate_name": "balanced",
+                "candidate_rank": "1",
+                "candidate_eligible": "false",
+                "candidate_rejection_reasons": "low_positive_ratio;nonpositive_excess",
+                "candidate_positive_ratio": "0.0",
+                "subwindow_counted_flag": "true",
+                "stability_window": "train_stability_2",
+                "stability_window_start": "2025-02-02",
+                "stability_window_end": "2025-08-21",
+                "stability_excess_return_pct": "-1.0",
+                "stability_positive": "false",
+                "stability_failed_reason": "no_trades",
+                "stability_underperformance_driver": "no_trades;benchmark_positive_selection_nonpositive",
+            },
+        ]
+
+        rows = analyze_monthly_train_stability_summary(stability_rows)
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "walk_forward_003")
+        self.assertEqual(row["walk_forward_preset"], "balanced")
+        self.assertEqual(row["candidate_name"], "balanced")
+        self.assertEqual(row["train_decision_count"], "2")
+        self.assertEqual(row["low_positive_ratio_decision_count"], "2")
+        self.assertEqual(row["eligible_decision_count"], "0")
+        self.assertEqual(row["counted_subwindow_count"], "4")
+        self.assertEqual(row["positive_subwindow_count"], "1")
+        self.assertEqual(row["negative_subwindow_count"], "3")
+        self.assertEqual(row["negative_subwindow_ratio"], "0.75")
+        self.assertEqual(row["candidate_positive_ratio_min"], "0")
+        self.assertEqual(row["candidate_positive_ratio_max"], "0.25")
+        self.assertEqual(row["avg_stability_excess_return_pct"], "-1")
+        self.assertEqual(row["worst_stability_excess_return_pct"], "-4")
+        self.assertEqual(row["dominant_failed_reason"], "nonpositive_excess")
+        self.assertIn("nonpositive_excess=2", row["failed_reason_counts"])
+        self.assertIn("no_trades=1", row["failed_reason_counts"])
+        self.assertIn("holding_path_differs_from_selection_snapshot=1", row["underperformance_driver_counts"])
+        self.assertIn("benchmark_positive_selection_nonpositive=1", row["underperformance_driver_counts"])
+        self.assertIn("no_trades=1", row["underperformance_driver_counts"])
+        self.assertIn("2025-07-23:train_stability_1", row["negative_stability_windows"])
+        self.assertEqual(row["diagnostic"], "low_positive_ratio_due_to_negative_stability_windows")
+        self.assertIn("Inspect negative stability windows", row["next_action"])
+
+    def test_save_monthly_train_stability_summary_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "train_stability_summary.csv"
+            saved = save_monthly_train_stability_summary(
+                [
+                    {
+                        "scenario": "walk_forward_003",
+                        "walk_forward_preset": "balanced",
+                        "candidate_name": "balanced",
+                        "train_decision_count": "1",
+                        "diagnostic": "low_positive_ratio_due_to_negative_stability_windows",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,walk_forward_preset", text.splitlines()[0])
+        self.assertIn("low_positive_ratio_due_to_negative_stability_windows", text)
+
+    def test_analyze_monthly_train_stability_summary_keeps_no_candidate_windows(self):
+        rows = analyze_monthly_train_stability_summary(
+            [
+                {
+                    "scenario": "walk_forward_003",
+                    "walk_forward_preset": "balanced",
+                    "category": "walk_forward",
+                    "as_of_date": "2025-04-01",
+                    "candidate_name": "",
+                    "preset": "",
+                    "subwindow_counted_flag": "false",
+                    "stability_failed_reason": "no_train_symbols",
+                    "stability_underperformance_driver": "no_train_symbols",
+                }
+            ]
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["candidate_name"], "no_direct_candidate")
+        self.assertEqual(rows[0]["train_decision_count"], "1")
+        self.assertEqual(rows[0]["counted_subwindow_count"], "0")
+        self.assertEqual(rows[0]["diagnostic"], "no_counted_stability_windows")
+        self.assertIn("no_train_symbols=1", rows[0]["failed_reason_counts"])
+        self.assertIn("no_train_symbols=1", rows[0]["underperformance_driver_counts"])
 
     def test_analyze_monthly_train_stability_path_drift_experiments_summarizes_paper_only_candidates(self):
         stability_rows = [

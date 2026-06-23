@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 ultra-compact checkpoint loop
+Last updated: 2026-06-24 train stability summary diagnostics loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -37,17 +37,64 @@ appending long command logs or full report lists here.
 
 ## Current State
 
-- Previous pushed checkpoint commit before this loop: `3ea3123 Trim goal mode checkpoint context`.
+- Previous pushed checkpoint/context commit before this loop:
+  `9a96e5c Compact goal mode prompt context`.
 - Latest strategy commit: `2c77fad Add proxy guard recovery exit candidate`.
-- Current checkpoint size: `110` lines, about `4.0KB`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `456` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `459` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=336.88` observed).
+  (`age_hours=337.22` observed).
 - Production remains not live-ready.
+
+## Latest Loop
+
+Added paper-only train stability summary diagnostics to
+`monthly-train-decision-diagnostics`.
+
+Changed behavior:
+
+- New pure report builder: `analyze_monthly_train_stability_summary`.
+- New CSV writer: `save_monthly_train_stability_summary`.
+- New CLI option: `--stability-summary-output`.
+- No trading behavior changed; this is report-only.
+
+TDD:
+
+- RED: new summary tests failed on missing functions; CLI test failed on
+  unknown `--stability-summary-output`.
+- GREEN: targeted tests PASS, `3` tests.
+- Extra RED/GREEN: split semicolon-composed underperformance drivers into
+  separate `token=count` values.
+
+Generated reports:
+
+- `data/reports/walk_forward_003_train_decision_proxy_guard_exit_short_minus5.csv`
+- `data/reports/walk_forward_003_train_stability_proxy_guard_exit_short_minus5.csv`
+- `data/reports/walk_forward_003_train_stability_summary_proxy_guard_exit_short_minus5.csv`
+- `data/reports/walk_forward_003_train_stability_symbol_proxy_guard_exit_short_minus5.csv`
+- `data/reports/walk_forward_003_train_path_drift_experiment_proxy_guard_exit_short_minus5.csv`
+
+Key `walk_forward_003` finding:
+
+- Summary rows: `2`.
+- Direct candidate row: `balanced`.
+- Direct candidate train decisions summarized: `6`.
+- Direct candidate low-positive-ratio decisions: `6`.
+- Counted stability subwindows: `6`; positive `0`, negative `6`.
+- Negative subwindow ratio: `1.0`.
+- Average stability excess: `-31.7252%`; worst: `-53.3186%`.
+- Dominant failed reason: `nonpositive_excess`.
+- Driver counts:
+  `benchmark_positive_selection_nonpositive=3`,
+  `holding_path_differs_from_selection_snapshot=3`, `no_trades=3`.
+- Diagnostic:
+  `low_positive_ratio_due_to_negative_stability_windows`.
+- No-direct-candidate row: `7` decisions, all `no_train_symbols`.
+- Path-drift experiment rows suggest only paper-review candidates:
+  `test_stricter_target_persistence`, not adopted.
 
 ## Current Best Candidate
 
@@ -104,8 +151,8 @@ Pick one narrow loop:
 
 - `regime_sideways`: inspect high-exposure loss months `2024-10`,
   `2024-11`, `2024-12`; avoid broad sweeps.
-- `walk_forward_003`: decompose direct-alpha train ineligibility/stability
-  before changing gates.
+- `walk_forward_003`: continue from the new stability summary; inspect the
+  negative subwindow symbol/path-drift rows before changing gates.
 
 For code changes, use test-first work and finish with focused tests, full
 `unittest`, `compileall`, production-check, health-check, checkpoint update,

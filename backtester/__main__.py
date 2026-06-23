@@ -64,6 +64,7 @@ from .monthly_rebalance import (
     analyze_monthly_recovery_attribution,
     analyze_monthly_stress_drawdown_pressure,
     analyze_monthly_train_decision_path,
+    analyze_monthly_train_stability_summary,
     analyze_monthly_train_stability_path_drift_experiments,
     analyze_monthly_train_stability_symbol_attribution,
     analyze_monthly_train_stability_windows,
@@ -130,6 +131,7 @@ from .monthly_rebalance import (
     save_monthly_recovery_attribution,
     save_monthly_stress_drawdown_pressure,
     save_monthly_train_decision_path,
+    save_monthly_train_stability_summary,
     save_monthly_train_stability_path_drift_experiments,
     save_monthly_train_stability_symbol_attribution,
     save_monthly_train_stability_windows,
@@ -1328,6 +1330,11 @@ def main() -> int:
         default="data/reports/monthly_train_stability_window_diagnostics.csv",
     )
     monthly_train_decision_parser.add_argument(
+        "--stability-summary-output",
+        default="data/reports/monthly_train_stability_summary_diagnostics.csv",
+        help="Write paper-only aggregate direct-alpha train stability summary diagnostics.",
+    )
+    monthly_train_decision_parser.add_argument(
         "--stability-symbol-output",
         default="data/reports/monthly_direct_alpha_stability_symbol_diagnostics.csv",
         help="Write paper-only symbol attribution for stability selected/traded path differences.",
@@ -1959,6 +1966,7 @@ def main() -> int:
             cases=cases,
             config=diagnostic_config,
         )
+        stability_summary_rows = analyze_monthly_train_stability_summary(stability_rows)
         stability_symbol_rows = analyze_monthly_train_stability_symbol_attribution(
             stability_rows,
             symbol_candles,
@@ -1969,6 +1977,10 @@ def main() -> int:
         )
         saved = save_monthly_train_decision_path(rows, args.output)
         stability_saved = save_monthly_train_stability_windows(stability_rows, args.stability_output)
+        stability_summary_saved = save_monthly_train_stability_summary(
+            stability_summary_rows,
+            args.stability_summary_output,
+        )
         stability_symbol_saved = save_monthly_train_stability_symbol_attribution(
             stability_symbol_rows,
             args.stability_symbol_output,
@@ -1984,6 +1996,8 @@ def main() -> int:
         print(f"train_decision_path_report  {args.output}")
         print(f"train_stability_rows  {stability_saved}")
         print(f"train_stability_report  {args.stability_output}")
+        print(f"train_stability_summary_rows  {stability_summary_saved}")
+        print(f"train_stability_summary_report  {args.stability_summary_output}")
         print(f"train_stability_symbol_rows  {stability_symbol_saved}")
         print(f"train_stability_symbol_report  {args.stability_symbol_output}")
         print(f"train_path_drift_experiment_rows  {path_drift_experiment_saved}")
