@@ -844,6 +844,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--sweep-experiment-id", completed.stdout)
         self.assertIn("--sweep-limit", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
+        self.assertIn("--direct-alpha-target-persistence-signals", completed.stdout)
 
     def test_monthly_compare_validation_help_includes_delta_output(self):
         completed = subprocess.run(

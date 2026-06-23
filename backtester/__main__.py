@@ -905,6 +905,7 @@ def main() -> int:
     monthly_validate_parser.add_argument("--candidate-pool-size", type=int, default=7)
     monthly_validate_parser.add_argument("--min-target-value", type=float, default=10_000)
     monthly_validate_parser.add_argument("--max-candidate-lookback-return-pct", type=float, default=90.0)
+    monthly_validate_parser.add_argument("--direct-alpha-target-persistence-signals", type=int, default=1)
     monthly_validate_parser.add_argument("--point-in-time-liquidity-top-n", type=int, default=100)
     monthly_validate_parser.add_argument("--point-in-time-liquidity-window-days", type=int, default=20)
     monthly_validate_parser.add_argument("--liquidity-risk-reference-top-n", type=int, default=100)
@@ -2998,6 +2999,7 @@ def main() -> int:
             candidate_pool_size=args.candidate_pool_size,
             min_target_value=args.min_target_value,
             max_candidate_lookback_return_pct=args.max_candidate_lookback_return_pct,
+            direct_alpha_target_persistence_signals=args.direct_alpha_target_persistence_signals,
             point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
             point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
             liquidity_risk_reference_top_n=args.liquidity_risk_reference_top_n,

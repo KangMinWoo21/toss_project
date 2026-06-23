@@ -62,6 +62,7 @@ class MomentumRotationTests(unittest.TestCase):
         self.assertEqual(config.bull_breadth_threshold, 0.5)
         self.assertEqual(config.bull_top_n, 5)
         self.assertEqual(config.bull_trend_filter_days, 60)
+        self.assertEqual(config.target_persistence_signals, 1)
 
     def test_aggressive_preset_uses_faster_trend_profile(self):
         config = momentum_rotation_config_for_preset("aggressive")
@@ -381,6 +382,42 @@ class MomentumRotationTests(unittest.TestCase):
         )
 
         self.assertEqual(targets, ["STEADY"])
+
+    def test_rank_momentum_targets_requires_consecutive_signal_persistence(self):
+        symbol_candles = {
+            "AAA": _candles([100, 100, 110, 120, 125, 130]),
+            "BBB": _candles([100, 100, 100, 105, 150, 160]),
+            "CCC": _candles([100, 100, 105, 115, 100, 100]),
+        }
+
+        default_targets = rank_momentum_targets(
+            symbol_candles,
+            signal_date="2024-01-06",
+            config=MomentumRotationConfig(
+                lookback_days=2,
+                rebalance_days=2,
+                top_n=2,
+                trend_filter_days=0,
+                market_trend_filter_days=0,
+                market_breadth_threshold=0,
+            ),
+        )
+        persistent_targets = rank_momentum_targets(
+            symbol_candles,
+            signal_date="2024-01-06",
+            config=MomentumRotationConfig(
+                lookback_days=2,
+                rebalance_days=2,
+                top_n=2,
+                trend_filter_days=0,
+                market_trend_filter_days=0,
+                market_breadth_threshold=0,
+                target_persistence_signals=2,
+            ),
+        )
+
+        self.assertEqual(default_targets, ["BBB", "AAA"])
+        self.assertEqual(persistent_targets, ["AAA"])
 
     def test_cli_momentum_rotation_prints_summary(self):
         with TemporaryDirectory() as temp_dir:

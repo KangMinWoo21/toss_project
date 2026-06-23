@@ -183,6 +183,7 @@ class MonthlyRebalanceConfig:
     candidate_pool_size: int = 7
     min_target_value: float = 10_000.0
     max_candidate_lookback_return_pct: float = 90.0
+    direct_alpha_target_persistence_signals: int = 1
     point_in_time_liquidity_top_n: int = 100
     point_in_time_liquidity_window_days: int = 20
     liquidity_risk_reference_top_n: int = 100
@@ -1282,9 +1283,7 @@ def decide_monthly_allocation(
     reference_prices: dict[str, float] | None = None,
 ) -> MonthlyDecision:
     cfg = config or MonthlyRebalanceConfig()
-    selected_configs = preset_configs or {
-        preset: momentum_rotation_config_for_preset(preset) for preset in cfg.presets
-    }
+    selected_configs = preset_configs or _monthly_preset_configs(cfg)
     signal_date = latest_signal_date(symbol_candles, as_of_date=as_of_date)
     universe_candles = filter_symbol_candles_by_universe(
         symbol_candles,
@@ -3630,10 +3629,7 @@ def _monthly_walk_forward_direct_train_rows(
         return []
     if not train_candles:
         return []
-    preset_configs = {
-        preset: momentum_rotation_config_for_preset(preset)
-        for preset in config.presets
-    }
+    preset_configs = _monthly_preset_configs(config)
     return _train_candidate_rows(
         decision_candles,
         train_candles=train_candles,
@@ -4662,10 +4658,7 @@ def _monthly_train_stability_window_evidence(
                     counts=counts,
                 )
             ]
-        preset_configs = {
-            preset: momentum_rotation_config_for_preset(preset)
-            for preset in config.presets
-        }
+        preset_configs = _monthly_preset_configs(config)
         candidate_rows = _train_candidate_rows(
             decision_candles,
             train_candles=train_candles,
@@ -5096,10 +5089,7 @@ def _monthly_train_decision_evidence(
             min_rows=config.min_rows_per_window,
             start_grace_days=config.start_grace_days,
         )
-        preset_configs = {
-            preset: momentum_rotation_config_for_preset(preset)
-            for preset in config.presets
-        }
+        preset_configs = _monthly_preset_configs(config)
         direct_rows = _train_candidate_rows(
             decision_candles,
             train_candles=train_candles,
@@ -5329,7 +5319,7 @@ def _monthly_direct_alpha_selection_for_case(
 
     rows: list[dict[str, Any]] = []
     for preset in config.presets:
-        preset_config = momentum_rotation_config_for_preset(preset)
+        preset_config = _monthly_preset_config_for_name(config, preset)
         candidate_result = run_momentum_rotation_backtest(train_candles, preset_config)
         candidate_buy_count = sum(1 for trade in candidate_result.trades if trade.action == "BUY")
         candidate_sell_count = sum(1 for trade in candidate_result.trades if trade.action == "SELL")
@@ -5439,7 +5429,7 @@ def _monthly_direct_alpha_holding_path_for_case(
 
     rows: list[dict[str, Any]] = []
     for preset in config.presets:
-        preset_config = momentum_rotation_config_for_preset(preset)
+        preset_config = _monthly_preset_config_for_name(config, preset)
         candidate_result = run_momentum_rotation_backtest(train_candles, preset_config)
         candidate_buy_count = sum(1 for trade in candidate_result.trades if trade.action == "BUY")
         candidate_sell_count = sum(1 for trade in candidate_result.trades if trade.action == "SELL")
@@ -5582,7 +5572,7 @@ def _monthly_direct_alpha_path_drift_for_case(
 
     rows: list[dict[str, Any]] = []
     for preset in config.presets:
-        preset_config = momentum_rotation_config_for_preset(preset)
+        preset_config = _monthly_preset_config_for_name(config, preset)
         candidate_result = run_momentum_rotation_backtest(train_candles, preset_config)
         train_end_selected = rank_momentum_targets(train_candles, signal_date=case.train_end, config=preset_config)
         train_end_selected_set = set(train_end_selected)
@@ -5767,7 +5757,7 @@ def _monthly_direct_alpha_timing_for_case(
     date_index = {value: index for index, value in enumerate(all_dates)}
     rows: list[dict[str, Any]] = []
     for preset in config.presets:
-        preset_config = momentum_rotation_config_for_preset(preset)
+        preset_config = _monthly_preset_config_for_name(config, preset)
         candidate_result = run_momentum_rotation_backtest(train_candles, preset_config)
         train_end_selected = rank_momentum_targets(train_candles, signal_date=case.train_end, config=preset_config)
         train_end_selected_set = set(train_end_selected)
@@ -5958,7 +5948,7 @@ def _monthly_direct_alpha_rank_drift_for_case(
     all_dates = sorted({candle.date for candles in train_candles.values() for candle in candles})
     rows: list[dict[str, Any]] = []
     for preset in config.presets:
-        preset_config = momentum_rotation_config_for_preset(preset)
+        preset_config = _monthly_preset_config_for_name(config, preset)
         candidate_result = run_momentum_rotation_backtest(train_candles, preset_config)
         train_end_selected = rank_momentum_targets(train_candles, signal_date=case.train_end, config=preset_config)
         train_end_selected_set = set(train_end_selected)
@@ -8463,6 +8453,23 @@ def _risk_scale_reason_suffix(*, trend_scale: float, volatility_scale: float, li
     if reasons:
         return "_" + "_".join(reasons) + "_scaled"
     return ""
+
+
+def _monthly_preset_configs(config: MonthlyRebalanceConfig) -> dict[str, MomentumRotationConfig]:
+    return {
+        preset: _monthly_preset_config_for_name(config, preset)
+        for preset in config.presets
+    }
+
+
+def _monthly_preset_config_for_name(config: MonthlyRebalanceConfig, preset: str) -> MomentumRotationConfig:
+    preset_config = momentum_rotation_config_for_preset(preset)
+    if config.direct_alpha_target_persistence_signals == preset_config.target_persistence_signals:
+        return preset_config
+    return replace(
+        preset_config,
+        target_persistence_signals=config.direct_alpha_target_persistence_signals,
+    )
 
 
 def select_buyable_targets(

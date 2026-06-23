@@ -23,6 +23,7 @@ class MomentumRotationConfig:
     min_average_trading_value: float = 0.0
     max_trade_participation_rate: float = 0.0
     max_lookback_return_pct: float = 0.0
+    target_persistence_signals: int = 1
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,8 @@ def run_momentum_rotation_backtest(
         raise ValueError("max_trade_participation_rate cannot be negative")
     if cfg.max_lookback_return_pct < 0:
         raise ValueError("max_lookback_return_pct cannot be negative")
+    if cfg.target_persistence_signals <= 0:
+        raise ValueError("target_persistence_signals must be positive")
 
     candles_by_symbol = {
         symbol: sorted(candles, key=lambda candle: candle.date) for symbol, candles in symbol_candles.items()
@@ -163,6 +166,14 @@ def run_momentum_rotation_backtest(
                 )
                 if _market_breadth_allows_entry(market_breadth, cfg)
                 else []
+            )
+            target_symbols = _filter_persistent_targets(
+                target_symbols,
+                candles_by_symbol,
+                index_by_symbol_date=index_by_symbol_date,
+                dates=dates,
+                signal_date=signal_date,
+                cfg=cfg,
             )
             cash, sold = _sell_non_targets(trade_date, target_symbols, positions, by_date, cash, cfg)
             trades.extend(sold)
@@ -227,13 +238,21 @@ def rank_momentum_targets(
     if not _market_breadth_allows_entry(market_breadth, cfg):
         return []
     ranking_top_n, ranking_trend_days = _ranking_profile(cfg, market_breadth)
-    return _rank_momentum_symbols_on_signal_date(
+    targets = _rank_momentum_symbols_on_signal_date(
         candles_by_symbol,
         index_by_symbol_date=index_by_symbol_date,
         signal_date=signal_date,
         cfg=cfg,
         top_n=ranking_top_n,
         trend_filter_days=ranking_trend_days,
+    )
+    return _filter_persistent_targets(
+        targets,
+        candles_by_symbol,
+        index_by_symbol_date=index_by_symbol_date,
+        dates=_all_dates(candles_by_symbol),
+        signal_date=signal_date,
+        cfg=cfg,
     )
 
 
@@ -323,6 +342,52 @@ def _rank_momentum_symbols_on_signal_date(
         rows.append((symbol, momentum))
     rows.sort(key=lambda row: row[1], reverse=True)
     return [symbol for symbol, _ in rows[:top_n]]
+
+
+def _filter_persistent_targets(
+    target_symbols: list[str],
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    index_by_symbol_date: dict[str, dict[str, int]],
+    dates: list[str],
+    signal_date: str,
+    cfg: MomentumRotationConfig,
+) -> list[str]:
+    if cfg.target_persistence_signals <= 1 or not target_symbols:
+        return target_symbols
+    try:
+        signal_index = dates.index(signal_date)
+    except ValueError:
+        return []
+    persistent = list(target_symbols)
+    for offset in range(1, cfg.target_persistence_signals):
+        prior_index = signal_index - (cfg.rebalance_days * offset)
+        if prior_index < 0:
+            return []
+        prior_signal_date = dates[prior_index]
+        prior_breadth = _market_breadth_value(
+            symbol_candles,
+            index_by_symbol_date=index_by_symbol_date,
+            signal_date=prior_signal_date,
+            trend_days=cfg.market_trend_filter_days,
+        )
+        if not _market_breadth_allows_entry(prior_breadth, cfg):
+            return []
+        prior_top_n, prior_trend_days = _ranking_profile(cfg, prior_breadth)
+        prior_targets = set(
+            _rank_momentum_symbols_on_signal_date(
+                symbol_candles,
+                index_by_symbol_date=index_by_symbol_date,
+                signal_date=prior_signal_date,
+                cfg=cfg,
+                top_n=prior_top_n,
+                trend_filter_days=prior_trend_days,
+            )
+        )
+        persistent = [symbol for symbol in persistent if symbol in prior_targets]
+        if not persistent:
+            return []
+    return persistent
 
 
 def _market_breadth_value(

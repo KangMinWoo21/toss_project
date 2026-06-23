@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-23 21:25 KST
+Last updated: 2026-06-23 21:46 KST
 
 ## Objective
 
@@ -27,15 +27,135 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 436 tests.
+- `python -m unittest discover -s tests`: PASS, 437 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
-- Candidate follow-up state: all completed full-validation candidates remain rejected; latest target-only `neutral_proxy_deep_guard_35` is `UNCHANGED`.
+- Candidate follow-up state: all completed full-validation candidates remain rejected or held; latest `target_persistence_2` is `HOLD` / `UNCHANGED`.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added and validated an isolated target-persistence candidate:
+
+- Added `MomentumRotationConfig.target_persistence_signals`.
+  - Default is `1`, preserving existing behavior.
+  - `2` requires a target to appear in the current signal and the previous scheduled signal.
+  - The filter is point-in-time safe and does not use future train-end snapshots.
+- Added `MonthlyRebalanceConfig.direct_alpha_target_persistence_signals`.
+  - Default is `1`, preserving existing behavior.
+  - Monthly direct-alpha train rows, diagnostics, and validation now pass the override into preset momentum configs.
+- Extended `python -m backtester monthly-validate` with:
+  - `--direct-alpha-target-persistence-signals`
+- This is still research/backtest/paper-operation logic only.
+- No real order execution, Toss API test call, production gate bypass, or live default change was added.
+
+Candidate tested:
+
+- Candidate label: `target_persistence_2`.
+- Candidate option: `--direct-alpha-target-persistence-signals 2`.
+- Full validation output:
+  - `data/reports/monthly_validation_candidate_target_persistence_2.csv`
+  - `data/reports/monthly_deployment_gate_candidate_target_persistence_2.csv`
+  - `data/reports/monthly_validation_failures_candidate_target_persistence_2.csv`
+  - `data/reports/monthly_validation_comparison_target_persistence_2.csv`
+  - `data/reports/monthly_validation_comparison_deltas_target_persistence_2.csv`
+  - `data/reports/monthly_validation_candidate_decision_target_persistence_2.csv`
+
+Candidate result:
+
+- `monthly-compare-validation`: `UNCHANGED`.
+- Candidate decision: `HOLD`.
+- `baseline_failed_required=5`.
+- `candidate_failed_required=5`.
+- `failed_delta=0`.
+- `resolved_count=0`.
+- `new_failure_count=0`.
+- `unchanged_failure_count=5`.
+- Unchanged failures:
+  - `regime_sideways`
+  - `stress_exclude_500pct_winners`
+  - `walk_forward_001`
+  - `walk_forward_003`
+  - `walk_forward_005`
+
+Important deltas:
+
+- `duration_1y`: excess delta `+6.8329`, still pass.
+- `duration_2y`: excess delta `+6.5329`, still pass.
+- `full_period`: excess delta `+4.6367`, still pass.
+- `duration_3m`: excess delta `-5.0477`, still pass but worsened.
+- `stress_exclude_500pct_winners`: excess delta `+3.5531`, but drawdown delta `-2.0075`; the max-drawdown breach persists.
+- `regime_sideways`, `walk_forward_001`, `walk_forward_003`, and `walk_forward_005`: effectively unchanged on the required-failure classification.
+
+Interpretation:
+
+- The point-in-time target-persistence candidate did not resolve any required blocker.
+- It also did not create a new required failure.
+- Because the decision report is `HOLD` and failed required scenarios remain unchanged, do not adopt this as a default.
+- The path-drift diagnostic was useful as a hypothesis generator, but the first isolated full-validation candidate is insufficient.
+- Keep direct-alpha train gates strict.
+- Do not loosen `min_train_positive_ratio`.
+
+Regenerated reports:
+
+- `data/reports/monthly_validation_candidate_target_persistence_2.csv`
+- `data/reports/monthly_validation_data_quality_candidate_target_persistence_2.csv`
+- `data/reports/monthly_universe_price_coverage_candidate_target_persistence_2.csv`
+- `data/reports/monthly_performance_audit_candidate_target_persistence_2.csv`
+- `data/reports/monthly_performance_concentration_candidate_target_persistence_2.csv`
+- `data/reports/monthly_validation_failures_candidate_target_persistence_2.csv`
+- `data/reports/monthly_validation_remediation_candidate_target_persistence_2.csv`
+- `data/reports/monthly_validation_sweep_plan_candidate_target_persistence_2.csv`
+- `data/reports/monthly_validation_sweep_results_candidate_target_persistence_2.csv`
+- `data/reports/universe_filter_report_candidate_target_persistence_2.csv`
+- `data/reports/monthly_deployment_gate_candidate_target_persistence_2.csv`
+- `data/reports/monthly_validation_comparison_target_persistence_2.csv`
+- `data/reports/monthly_validation_comparison_deltas_target_persistence_2.csv`
+- `data/reports/monthly_validation_candidate_decision_target_persistence_2.csv`
+- `data/reports/monthly_validation_failure_patterns.csv`
+- `data/reports/monthly_validation_failure_drilldown.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `436` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - `python -m unittest tests.test_momentum_rotation.MomentumRotationTests.test_default_config_uses_validated_diversified_breadth_profile tests.test_momentum_rotation.MomentumRotationTests.test_rank_momentum_targets_requires_consecutive_signal_persistence tests.test_cli.CliTests.test_monthly_validate_help_includes_failure_diagnostics_output`: failed because `target_persistence_signals` and `--direct-alpha-target-persistence-signals` did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_momentum_rotation.MomentumRotationTests.test_default_config_uses_validated_diversified_breadth_profile tests.test_momentum_rotation.MomentumRotationTests.test_rank_momentum_targets_requires_consecutive_signal_persistence tests.test_monthly_rebalance.MonthlyRebalanceTests.test_monthly_config_defaults_to_five_candidate_slots tests.test_cli.CliTests.test_monthly_validate_help_includes_failure_diagnostics_output`: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_momentum_rotation tests.test_monthly_rebalance tests.test_cli`: PASS, `216` tests.
+- Candidate validation:
+  - Initial 180-second run timed out before scenario output was written.
+  - Re-ran with a 600-second timeout: PASS, generated candidate reports; `failed_required=5`.
+  - `python -m backtester monthly-compare-validation ... target_persistence_2`: `UNCHANGED`, `failed_delta=0`.
+  - `python -m backtester monthly-failure-patterns ...`: PASS, rows `10`, delta reports `6`.
+  - `python -m backtester monthly-failure-drilldown ...`: PASS, rows `10`, attribution reports `20`.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `437` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=332.93` observed).
+
+Next recommended action:
+
+- Do not adopt `target_persistence_2`.
+- Move back to the persistent blocker evidence:
+  - `regime_sideways` and `walk_forward_005` remain insufficient-recovery / weak-window problems.
+  - `stress_exclude_500pct_winners` remains a drawdown-pressure problem.
+- The next isolated candidate should focus on high-exposure `market_beta_proxy` loss control in the weak months, without broad cash drag:
+  - start from neutral-breadth proxy exposure control,
+  - require no new `regime_bear`, `walk_forward_002`, or `walk_forward_004` failures,
+  - keep all production/risk gates as hard stops.
+
+Previous loop:
 
 Added a paper-only path-drift experiment candidate diagnostic:
 

@@ -258,6 +258,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_size, 12)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_max_exposure, 1.0)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_neutral_breadth_max_exposure, 1.0)
+        self.assertEqual(MonthlyRebalanceConfig().direct_alpha_target_persistence_signals, 1)
         self.assertEqual(RiskLimits().max_total_target_weight, 1.0)
         self.assertEqual(RiskLimits().max_total_buy_value, 10_000_000.0)
         self.assertEqual(RiskLimits().max_order_count, 15)
