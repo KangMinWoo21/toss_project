@@ -76,6 +76,7 @@ from .monthly_rebalance import (
     analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
     analyze_monthly_validation_remediation,
+    analyze_monthly_benchmark_excess,
     analyze_symbol_realized_pnl_attribution,
     build_monthly_validation_sweep_plan,
     build_monthly_validation_candidate_decision,
@@ -121,6 +122,7 @@ from .monthly_rebalance import (
     save_monthly_decision,
     save_monthly_attribution_rows,
     save_monthly_attribution_comparison,
+    save_monthly_benchmark_excess,
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
@@ -893,6 +895,7 @@ def main() -> int:
         default="data/reports/monthly_decision_attribution.csv",
     )
     monthly_attribution_parser.add_argument("--summary-output", default=None)
+    monthly_attribution_parser.add_argument("--benchmark-output", default=None)
     monthly_attribution_parser.add_argument("--proxy-output", default=None)
     monthly_attribution_parser.add_argument("--path-output", default=None)
     monthly_attribution_parser.add_argument("--execution-gap-output", default=None)
@@ -3229,6 +3232,19 @@ def main() -> int:
             if args.execution_gap_output
             else []
         )
+        benchmark_rows = (
+            analyze_monthly_benchmark_excess(
+                monthly_rows,
+                symbol_candles,
+                scenario=args.scenario_name,
+                initial_cash=args.initial_cash,
+                fee_rate=args.fee_rate,
+                tax_rate=args.tax_rate,
+                slippage_rate=args.slippage_rate,
+            )
+            if args.benchmark_output
+            else []
+        )
         recovery_rows = analyze_monthly_recovery_attribution(result, scenario=args.scenario_name)
         proxy_rows = (
             analyze_monthly_proxy_decision_diagnostics(
@@ -3263,6 +3279,8 @@ def main() -> int:
             save_monthly_path_attribution(path_rows, args.path_output)
         if args.execution_gap_output:
             save_monthly_execution_gap(execution_gap_rows, args.execution_gap_output)
+        if args.benchmark_output:
+            save_monthly_benchmark_excess(benchmark_rows, args.benchmark_output)
         if args.summary_output:
             save_monthly_recovery_attribution(recovery_rows, args.summary_output)
         if args.proxy_output:
@@ -3313,6 +3331,9 @@ def main() -> int:
         if args.execution_gap_output:
             print(f"execution_gap_rows  {len(execution_gap_rows)}")
             print(f"execution_gap_report  {args.execution_gap_output}")
+        if args.benchmark_output:
+            print(f"benchmark_excess_rows  {len(benchmark_rows)}")
+            print(f"benchmark_excess_report  {args.benchmark_output}")
         if args.stress_drawdown_output:
             print(f"stress_drawdown_pressure_rows  {len(stress_drawdown_rows)}")
             print(f"stress_drawdown_pressure_report  {args.stress_drawdown_output}")

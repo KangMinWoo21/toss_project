@@ -1015,6 +1015,20 @@ MONTHLY_DRAWDOWN_ATTRIBUTION_COLUMNS = [
     "status",
 ]
 
+MONTHLY_BENCHMARK_EXCESS_COLUMNS = [
+    "scenario",
+    "month",
+    "start_date",
+    "end_date",
+    "strategy_return_pct",
+    "benchmark_return_pct",
+    "monthly_excess_return_pct",
+    "strategy_equity_change",
+    "strategy_worst_drawdown_pct",
+    "excess_status",
+    "diagnostic",
+]
+
 SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "symbol",
     "realized_pnl",
@@ -2502,6 +2516,60 @@ def analyze_monthly_drawdown_attribution(result: MonthlyBacktestResult) -> list[
         current["worst_drawdown_pct"] = min(float(current["worst_drawdown_pct"]), drawdown_pct)
         last_equity = equity
     finish(current)
+    return rows
+
+
+def analyze_monthly_benchmark_excess(
+    monthly_rows: list[dict[str, Any]],
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    scenario: str = "",
+    initial_cash: float = 10_000_000.0,
+    fee_rate: float = 0.00015,
+    tax_rate: float = 0.0018,
+    slippage_rate: float = 0.0005,
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for monthly_row in monthly_rows:
+        start_date = str(monthly_row.get("start_date", "")).strip()
+        end_date = str(monthly_row.get("end_date", "")).strip()
+        strategy_return = _float_or_none(monthly_row.get("return_pct"))
+        if not start_date or not end_date or strategy_return is None:
+            continue
+        benchmark_return = equal_weight_buy_hold_period_return(
+            symbol_candles,
+            start=start_date,
+            end=end_date,
+            initial_cash=initial_cash,
+            fee_rate=fee_rate,
+            tax_rate=tax_rate,
+            slippage_rate=slippage_rate,
+        )
+        monthly_excess = strategy_return - benchmark_return
+        diagnostics: list[str] = []
+        if monthly_excess < 0:
+            diagnostics.append("benchmark_outperformed")
+        if strategy_return < 0:
+            diagnostics.append("strategy_loss")
+        if benchmark_return > 0:
+            diagnostics.append("benchmark_gain")
+        if not diagnostics:
+            diagnostics.append("strategy_matched_or_outperformed")
+        rows.append(
+            {
+                "scenario": scenario,
+                "month": str(monthly_row.get("month", "")),
+                "start_date": start_date,
+                "end_date": end_date,
+                "strategy_return_pct": _format_optional_float(strategy_return),
+                "benchmark_return_pct": _format_optional_float(benchmark_return),
+                "monthly_excess_return_pct": _format_optional_float(monthly_excess),
+                "strategy_equity_change": str(monthly_row.get("equity_change", "")),
+                "strategy_worst_drawdown_pct": str(monthly_row.get("worst_drawdown_pct", "")),
+                "excess_status": "NEGATIVE_EXCESS" if monthly_excess < 0 else "POSITIVE_EXCESS",
+                "diagnostic": ";".join(diagnostics),
+            }
+        )
     return rows
 
 
@@ -4483,6 +4551,10 @@ def save_monthly_stress_drawdown_pressure(rows: list[dict[str, Any]], output_pat
 
 def save_monthly_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_ATTRIBUTION_COMPARISON_COLUMNS)
+
+
+def save_monthly_benchmark_excess(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_BENCHMARK_EXCESS_COLUMNS)
 
 
 def save_monthly_decision_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:

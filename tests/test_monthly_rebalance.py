@@ -19,6 +19,7 @@ from backtester.monthly_rebalance import (
     audit_monthly_validation_data,
     audit_point_in_time_price_coverage,
     analyze_monthly_performance_concentration,
+    analyze_monthly_benchmark_excess,
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
@@ -91,6 +92,7 @@ from backtester.monthly_rebalance import (
     save_rebalance_state,
     save_monthly_performance_audit_rows,
     save_monthly_performance_concentration,
+    save_monthly_benchmark_excess,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
     save_monthly_validation_remediation,
@@ -3388,6 +3390,78 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("recovery_exit_outcome", text.splitlines()[0])
         self.assertIn("recovery_drag_after_loss_cap", text)
+
+    def test_analyze_monthly_benchmark_excess_flags_negative_excess_month(self):
+        rows = analyze_monthly_benchmark_excess(
+            [
+                {
+                    "month": "2025-03",
+                    "start_date": "2025-03-03",
+                    "end_date": "2025-03-31",
+                    "return_pct": "-6.0",
+                    "equity_change": "-600",
+                    "worst_drawdown_pct": "-12",
+                },
+                {
+                    "month": "2025-04",
+                    "start_date": "2025-04-01",
+                    "end_date": "2025-04-30",
+                    "return_pct": "3.0",
+                    "equity_change": "300",
+                    "worst_drawdown_pct": "-4",
+                },
+            ],
+            {
+                "AAA": [
+                    _candle("2025-03-03", 100, 100),
+                    _candle("2025-03-31", 110, 110),
+                    _candle("2025-04-01", 110, 110),
+                    _candle("2025-04-30", 112, 112),
+                ],
+                "BBB": [
+                    _candle("2025-03-03", 100, 100),
+                    _candle("2025-03-31", 100, 100),
+                    _candle("2025-04-01", 100, 100),
+                    _candle("2025-04-30", 98, 98),
+                ],
+            },
+            scenario="regime_sideways",
+            initial_cash=1_000,
+            fee_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
+        )
+
+        march = rows[0]
+        april = rows[1]
+        self.assertEqual(march["scenario"], "regime_sideways")
+        self.assertEqual(march["month"], "2025-03")
+        self.assertEqual(march["strategy_return_pct"], "-6")
+        self.assertEqual(march["benchmark_return_pct"], "5")
+        self.assertEqual(march["monthly_excess_return_pct"], "-11")
+        self.assertEqual(march["excess_status"], "NEGATIVE_EXCESS")
+        self.assertIn("benchmark_outperformed", march["diagnostic"])
+        self.assertEqual(april["excess_status"], "POSITIVE_EXCESS")
+
+    def test_save_monthly_benchmark_excess_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "benchmark_excess.csv"
+            saved = save_monthly_benchmark_excess(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "month": "2025-03",
+                        "monthly_excess_return_pct": "-11",
+                        "excess_status": "NEGATIVE_EXCESS",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("monthly_excess_return_pct", text.splitlines()[0])
+        self.assertIn("NEGATIVE_EXCESS", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

@@ -628,6 +628,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--symbol-output", completed.stdout)
         self.assertIn("--decision-output", completed.stdout)
         self.assertIn("--summary-output", completed.stdout)
+        self.assertIn("--benchmark-output", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-neutral-loss-guard-max-exposure", completed.stdout)

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 refreshed best-candidate comparison
+Last updated: 2026-06-24 monthly benchmark-excess diagnostic
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,48 +40,51 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `78aedd2 Add scoped guarded loss stop filter`.
+  `30fbb87 Refresh best candidate comparison evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `482` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `484` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=343.08` observed).
+  (`age_hours=343.27` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Refreshed the full validation and comparison for the current best candidate
-against the restored canonical baseline.
+Added a report-only monthly benchmark-excess diagnostic for the remaining
+`regime_sideways` negative-excess blocker.
 
 Changed behavior:
 
-- No source behavior changed in this loop.
-- Wrote separate candidate report paths with `_current` suffix so canonical
-  baseline reports were not overwritten.
-- Data remained fixed to `2024-01-01..2026-06-18`.
+- New `monthly-attribution --benchmark-output` writes per-month strategy return,
+  equal-weight buy-hold return, and monthly excess.
+- No strategy default, validation gate, order, live behavior, Toss API, or
+  baseline behavior changed.
+- Generated the best-candidate `regime_sideways` benchmark-excess report under
+  separate `_current` output paths.
 
 Verification:
 
-- Candidate validation PASS as a command run but deployment gate BLOCK:
-  `failed_required=1`, only `regime_sideways`.
-- Comparison to current canonical baseline:
-  baseline `4` required failures -> candidate `1`, failed delta `-3`.
-- Candidate decision: `IMPROVED` / `PAPER_REVIEW`; no new failures.
-- Final verification: full `unittest` PASS (`482` tests), compile PASS,
+- RED: analyzer/saver imports failed; CLI help lacked `--benchmark-output`.
+- GREEN: targeted benchmark-excess tests PASS, monthly module PASS (`194`
+  tests), CLI module PASS (`51` tests).
+- Final verification: full `unittest` PASS (`484` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Resolved current baseline blockers: `walk_forward_001`, `walk_forward_003`,
-  `walk_forward_005`.
-- Remaining candidate blocker: `regime_sideways`, excess `-4.0548%`, max DD
-  `-21.7902%`, trades `70`.
-- Current baseline failures remain: `regime_sideways`, `walk_forward_001`,
-  `walk_forward_003`, `walk_forward_005`.
-- Keep candidate paper-only; production target scale remains `0`.
+- Best-candidate `regime_sideways` benchmark-excess rows: `7`.
+- Negative-excess months: `4`; positive-excess months: `3`.
+- Largest monthly excess drag is `2025-04`: strategy `+0.5697%` versus
+  benchmark `+5.5069%`, monthly excess `-4.9372%`, worst drawdown `-21.7902%`.
+- Other negative-excess months: `2025-01` (`-1.6436%`), `2024-12`
+  (`-1.2740%`), `2025-03` (`-0.9108%`).
+- Interpretation: March remains the largest absolute strategy loss, but April
+  is the main residual benchmark gap. Next work should investigate missed
+  recovery participation after the March drawdown, not broaden the March loss
+  cap or reuse stopped-out candidates.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -202,9 +205,10 @@ Diagnostic combo remaining failure:
 Pick one narrow loop:
 
 - `regime_sideways`: the neutral loss guard reduced but did not solve the
-  remaining excess gap. Next paper-only work should explain the residual
-  `2025-03`/path drawdown pressure without broadening the cap into
-  strong-breadth recovery months.
+  remaining excess gap. New benchmark-excess evidence points to missed
+  `2025-04` recovery participation after the `2025-03` drawdown. Next paper-only
+  work should inspect April holdings/benchmark contribution before broadening
+  any March loss cap.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate
   discipline; do not loosen rejected train windows.
 
