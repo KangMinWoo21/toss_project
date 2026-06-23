@@ -59,6 +59,7 @@ from .monthly_rebalance import (
     analyze_monthly_path_attribution,
     analyze_monthly_performance_concentration,
     analyze_monthly_proxy_decision_diagnostics,
+    analyze_monthly_proxy_guard_outcomes,
     analyze_monthly_recovery_attribution,
     analyze_monthly_stress_drawdown_pressure,
     analyze_monthly_train_decision_path,
@@ -123,6 +124,7 @@ from .monthly_rebalance import (
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
     save_monthly_proxy_decision_diagnostics,
+    save_monthly_proxy_guard_outcomes,
     save_monthly_recovery_attribution,
     save_monthly_stress_drawdown_pressure,
     save_monthly_train_decision_path,
@@ -869,6 +871,20 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--path-output", default=None)
     monthly_attribution_parser.add_argument("--stress-drawdown-output", default=None)
 
+    monthly_proxy_guard_parser = subparsers.add_parser(
+        "monthly-proxy-guard-diagnostics",
+        help="Classify paper-only proxy reversal guard outcomes from proxy diagnostics CSV",
+    )
+    monthly_proxy_guard_parser.add_argument(
+        "--proxy-input",
+        default="data/reports/monthly_proxy_decision_diagnostics.csv",
+        help="CSV written by monthly-attribution --proxy-output",
+    )
+    monthly_proxy_guard_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_proxy_guard_outcome_diagnostics.csv",
+    )
+
     monthly_validate_parser = subparsers.add_parser(
         "monthly-validate",
         help="Run duration, regime, and stress validation scenarios for monthly rebalance deployment",
@@ -1478,6 +1494,24 @@ def main() -> int:
             saved = save_data_quality_diagnostics(diagnoses, args.diagnose_output)
             print(f"diagnose_output  {args.diagnose_output} rows={saved}")
         return 2 if result.status == "BLOCK" else 0
+
+    if args.command == "monthly-proxy-guard-diagnostics":
+        proxy_rows = _read_csv_dicts(Path(args.proxy_input))
+        rows = analyze_monthly_proxy_guard_outcomes(proxy_rows)
+        saved = save_monthly_proxy_guard_outcomes(rows, args.output)
+        triggered_rows = [row for row in rows if str(row.get("guard_triggered", "")) == "true"]
+        continuation_caps = [
+            row for row in rows if str(row.get("guard_outcome", "")) == "profitable_continuation_capped"
+        ]
+        missed_losses = [
+            row for row in rows if str(row.get("guard_outcome", "")) == "missed_high_exposure_loss"
+        ]
+        print(f"proxy_guard_outcomes_report  {args.output}")
+        print(f"proxy_guard_outcome_rows  {saved}")
+        print(f"guard_triggered_rows  {len(triggered_rows)}")
+        print(f"profitable_continuation_caps  {len(continuation_caps)}")
+        print(f"missed_high_exposure_losses  {len(missed_losses)}")
+        return 0
 
     if args.command == "monthly-compare-validation":
         baseline_rows = _read_csv_dicts(Path(args.baseline))

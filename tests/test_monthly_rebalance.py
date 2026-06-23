@@ -27,6 +27,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_direct_alpha_timing,
     analyze_monthly_path_attribution,
+    analyze_monthly_proxy_guard_outcomes,
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
     analyze_monthly_stress_drawdown_pressure,
@@ -105,6 +106,7 @@ from backtester.monthly_rebalance import (
     save_monthly_direct_alpha_timing,
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
+    save_monthly_proxy_guard_outcomes,
     save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
     save_monthly_stress_drawdown_pressure,
@@ -2625,6 +2627,85 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("recommended_next_action", text.splitlines()[0])
         self.assertIn("high_exposure_proxy_loss", text)
+
+    def test_analyze_monthly_proxy_guard_outcomes_flags_profitable_continuation_caps(self):
+        rows = analyze_monthly_proxy_guard_outcomes(
+            [
+                {
+                    "scenario": "candidate_guard",
+                    "as_of_date": "2025-06-02",
+                    "signal_date": "2025-05-30",
+                    "month": "2025-06",
+                    "month_return_pct": "7.4531",
+                    "month_status": "GAIN",
+                    "mode": "market_beta_proxy",
+                    "reason": "no_train_candidate_strong_breadth_proxy_proxy_reversal_guard_capped",
+                    "target_exposure": "0.55",
+                    "cash_weight": "0.45",
+                    "proxy_reversal_guard_triggered": "true",
+                    "proxy_reversal_guard_cap": "0.55",
+                    "proxy_reversal_guard_medium_return_pct": "38.5407",
+                    "proxy_reversal_guard_short_return_pct": "8.6214",
+                    "proxy_reversal_guard_reason": "proxy_reversal_guard_capped",
+                    "diagnostic": "market_beta_proxy;proxy_gain_participation;strong_breadth",
+                    "recommended_next_action": "preserve_train_gate_and_improve_alpha_candidates",
+                }
+            ]
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["guard_outcome"], "profitable_continuation_capped")
+        self.assertEqual(rows[0]["guard_triggered"], "true")
+        self.assertEqual(rows[0]["candidate_design_hint"], "add_continuation_discriminator_before_capping")
+        self.assertEqual(rows[0]["paper_only"], "true")
+
+    def test_analyze_monthly_proxy_guard_outcomes_flags_missed_high_exposure_losses(self):
+        rows = analyze_monthly_proxy_guard_outcomes(
+            [
+                {
+                    "scenario": "candidate_guard",
+                    "as_of_date": "2026-06-01",
+                    "signal_date": "2026-05-29",
+                    "month": "2026-06",
+                    "month_return_pct": "-9.3983",
+                    "month_status": "LOSS",
+                    "mode": "market_beta_proxy",
+                    "reason": "no_train_candidate_strong_breadth_proxy",
+                    "target_exposure": "0.99",
+                    "cash_weight": "0.01",
+                    "proxy_reversal_guard_triggered": "false",
+                    "proxy_reversal_guard_cap": "1",
+                    "proxy_reversal_guard_medium_return_pct": "62",
+                    "proxy_reversal_guard_short_return_pct": "41",
+                    "proxy_reversal_guard_reason": "proxy_exposure_capped",
+                    "diagnostic": "market_beta_proxy;high_exposure_proxy;high_exposure_proxy_loss",
+                    "recommended_next_action": "test_conditional_proxy_entry_guard",
+                }
+            ]
+        )
+
+        self.assertEqual(rows[0]["guard_outcome"], "missed_high_exposure_loss")
+        self.assertEqual(rows[0]["candidate_design_hint"], "tighten_loss_discriminator_without_broad_cash_drag")
+        self.assertEqual(rows[0]["loss_month"], "true")
+
+    def test_save_monthly_proxy_guard_outcomes_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "proxy_guard_outcomes.csv"
+            saved = save_monthly_proxy_guard_outcomes(
+                [
+                    {
+                        "scenario": "candidate_guard",
+                        "month": "2025-06",
+                        "guard_outcome": "profitable_continuation_capped",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("guard_outcome", text)
+        self.assertIn("candidate_design_hint", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-23 23:27 KST
+Last updated: 2026-06-23 23:47 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 445 tests.
+- `python -m unittest discover -s tests`: PASS, 449 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,107 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only proxy guard outcome diagnostic so rejected proxy guard candidates can be decomposed before another full validation run:
+
+- Added pure report builder:
+  - `analyze_monthly_proxy_guard_outcomes`
+- Added CSV writer:
+  - `save_monthly_proxy_guard_outcomes`
+- Added CLI:
+  - `python -m backtester monthly-proxy-guard-diagnostics`
+- Input is an existing `monthly-attribution --proxy-output` CSV.
+- Output classifies only `market_beta_proxy` rows; alpha/cash decisions are ignored.
+- This is diagnostics/reporting only.
+- No strategy behavior was changed.
+- No production defaults were changed.
+- No real order execution, Toss API test call, production gate bypass, or live default change was added.
+
+New outcome labels:
+
+- `loss_cap_aligned`: guard triggered in a loss month.
+- `profitable_continuation_capped`: guard triggered in a gain month.
+- `missed_high_exposure_loss`: guard did not trigger on a high-exposure proxy loss month.
+- `gain_preserved`: guard stayed off during a proxy gain month.
+- `uncapped_loss`: proxy loss month without high-exposure diagnostic.
+- `review_proxy_context`: neutral review bucket.
+
+Regenerated reports:
+
+- `data/reports/stress_proxy_chase_guard_55_med35_short30_proxy_guard_outcomes.csv`
+- `data/reports/walk_forward_002_proxy_chase_guard_55_med35_short30_proxy_guard_outcomes.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Proxy guard outcome findings:
+
+- Stress candidate report:
+  - outcome rows: `26`
+  - guard triggered rows: `3`
+  - profitable continuation caps: `0`
+  - missed high-exposure losses: `8`
+  - outcome counts:
+    - `loss_cap_aligned=3`
+    - `gain_preserved=14`
+    - `missed_high_exposure_loss=8`
+    - `uncapped_loss=1`
+- `walk_forward_002` candidate report:
+  - outcome rows: `4`
+  - guard triggered rows: `1`
+  - profitable continuation caps: `1`
+  - missed high-exposure losses: `2`
+  - outcome counts:
+    - `profitable_continuation_capped=1`
+    - `gain_preserved=1`
+    - `missed_high_exposure_loss=2`
+
+Key diagnostic finding:
+
+- The rejected `proxy_chase_guard_55_med35_short30` candidate was directionally useful in the stress scenario:
+  - `2025-03`, `2026-03`, and `2026-05` were classified as `loss_cap_aligned`.
+- The same rule created the `walk_forward_002` regression:
+  - `2025-06` was classified as `profitable_continuation_capped`.
+  - medium return `38.5407`
+  - short return `8.6214`
+  - target exposure `0.55`
+  - month return `7.4531%`
+- This confirms the next candidate needs a continuation discriminator before capping; simply lowering medium/short thresholds is likely to keep the `walk_forward_002` regression.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `445` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, scalper data stale.
+- RED checks:
+  - New monthly rebalance tests failed because `analyze_monthly_proxy_guard_outcomes` and `save_monthly_proxy_guard_outcomes` did not exist.
+  - New CLI test failed because `monthly-proxy-guard-diagnostics` did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_guard_outcomes_flags_profitable_continuation_caps tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_guard_outcomes_flags_missed_high_exposure_losses tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_proxy_guard_outcomes_writes_csv`: PASS, `3` tests.
+  - `python -m unittest tests.test_cli.CliTests.test_monthly_proxy_guard_diagnostics_cli_writes_outcome_report`: PASS, `1` test.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `210` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `449` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`; report regenerated.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with scalper data stale (`age_hours=334.97` observed).
+
+Next recommended action:
+
+- Do not adopt `proxy_chase_guard_55_med35_short30`.
+- Compare `loss_cap_aligned` months against `profitable_continuation_capped` months and add one narrow paper-only discriminator that keeps:
+  - stress `2025-03`
+  - stress `2026-03`
+  - stress `2026-05`
+- while avoiding the `walk_forward_002` `2025-06` profitable continuation cap.
+- Start with a candidate design that requires extra deterioration evidence beyond medium-return overheat plus low short return.
+- Run attribution-level proxy guard outcome reports before any full validation run.
+
+## Previous Loop: Proxy Guard Candidate Rejection
 
 Tested a narrow paper-only conditional proxy chase guard candidate and improved proxy decision diagnostics:
 

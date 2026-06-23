@@ -1040,6 +1040,34 @@ MONTHLY_PROXY_DECISION_DIAGNOSTIC_COLUMNS = [
     "recommended_next_action",
 ]
 
+MONTHLY_PROXY_GUARD_OUTCOME_COLUMNS = [
+    "scenario",
+    "as_of_date",
+    "signal_date",
+    "month",
+    "mode",
+    "reason",
+    "target_exposure",
+    "cash_weight",
+    "month_return_pct",
+    "month_status",
+    "guard_triggered",
+    "guard_cap",
+    "guard_medium_return_pct",
+    "guard_short_return_pct",
+    "guard_reason",
+    "loss_month",
+    "gain_month",
+    "high_exposure_proxy_loss",
+    "proxy_gain_participation",
+    "guard_outcome",
+    "candidate_design_hint",
+    "original_diagnostic",
+    "original_recommended_next_action",
+    "paper_only",
+    "risk_note",
+]
+
 MONTHLY_RECOVERY_ATTRIBUTION_COLUMNS = [
     "scenario",
     "start",
@@ -3220,6 +3248,82 @@ def save_monthly_decision_attribution(rows: list[dict[str, Any]], output_path: P
 
 def save_monthly_proxy_decision_diagnostics(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PROXY_DECISION_DIAGNOSTIC_COLUMNS)
+
+
+def analyze_monthly_proxy_guard_outcomes(proxy_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for proxy in proxy_rows:
+        if str(proxy.get("mode", "")).strip() != "market_beta_proxy":
+            continue
+        diagnostic = str(proxy.get("diagnostic", ""))
+        month_return = _float_or_none(proxy.get("month_return_pct"))
+        guard_triggered = _parse_bool(proxy.get("proxy_reversal_guard_triggered", False))
+        loss_month = month_return is not None and month_return < 0
+        gain_month = month_return is not None and month_return > 0
+        high_exposure_loss = "high_exposure_proxy_loss" in diagnostic
+        gain_participation = "proxy_gain_participation" in diagnostic
+        guard_outcome, design_hint = _monthly_proxy_guard_outcome_label(
+            guard_triggered=guard_triggered,
+            loss_month=loss_month,
+            gain_month=gain_month,
+            high_exposure_loss=high_exposure_loss,
+            gain_participation=gain_participation,
+        )
+        rows.append(
+            {
+                "scenario": proxy.get("scenario", ""),
+                "as_of_date": proxy.get("as_of_date", ""),
+                "signal_date": proxy.get("signal_date", ""),
+                "month": proxy.get("month", ""),
+                "mode": proxy.get("mode", ""),
+                "reason": proxy.get("reason", ""),
+                "target_exposure": proxy.get("target_exposure", ""),
+                "cash_weight": proxy.get("cash_weight", ""),
+                "month_return_pct": proxy.get("month_return_pct", ""),
+                "month_status": proxy.get("month_status", ""),
+                "guard_triggered": str(guard_triggered).lower(),
+                "guard_cap": proxy.get("proxy_reversal_guard_cap", ""),
+                "guard_medium_return_pct": proxy.get("proxy_reversal_guard_medium_return_pct", ""),
+                "guard_short_return_pct": proxy.get("proxy_reversal_guard_short_return_pct", ""),
+                "guard_reason": proxy.get("proxy_reversal_guard_reason", ""),
+                "loss_month": str(loss_month).lower(),
+                "gain_month": str(gain_month).lower(),
+                "high_exposure_proxy_loss": str(high_exposure_loss).lower(),
+                "proxy_gain_participation": str(gain_participation).lower(),
+                "guard_outcome": guard_outcome,
+                "candidate_design_hint": design_hint,
+                "original_diagnostic": diagnostic,
+                "original_recommended_next_action": proxy.get("recommended_next_action", ""),
+                "paper_only": "true",
+                "risk_note": "Diagnostic only; use for paper candidate design and never for live order transmission.",
+            }
+        )
+    return rows
+
+
+def _monthly_proxy_guard_outcome_label(
+    *,
+    guard_triggered: bool,
+    loss_month: bool,
+    gain_month: bool,
+    high_exposure_loss: bool,
+    gain_participation: bool,
+) -> tuple[str, str]:
+    if guard_triggered and gain_month:
+        return "profitable_continuation_capped", "add_continuation_discriminator_before_capping"
+    if guard_triggered and loss_month:
+        return "loss_cap_aligned", "preserve_loss_cap_condition"
+    if not guard_triggered and high_exposure_loss:
+        return "missed_high_exposure_loss", "tighten_loss_discriminator_without_broad_cash_drag"
+    if not guard_triggered and gain_participation:
+        return "gain_preserved", "preserve_uncapped_gain_months"
+    if loss_month:
+        return "uncapped_loss", "inspect_loss_context_before_tuning_guard"
+    return "review_proxy_context", "review_before_candidate_change"
+
+
+def save_monthly_proxy_guard_outcomes(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PROXY_GUARD_OUTCOME_COLUMNS)
 
 
 def save_monthly_recovery_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:

@@ -698,6 +698,45 @@ class CliTests(unittest.TestCase):
         self.assertIn("recommended_candidate_focus", stress_drawdown_rows[0])
         self.assertIn("diagnostic", rows[0])
 
+    def test_monthly_proxy_guard_diagnostics_cli_writes_outcome_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            proxy_input = root / "proxy_diagnostics.csv"
+            output = root / "proxy_guard_outcomes.csv"
+            proxy_input.write_text(
+                "scenario,as_of_date,signal_date,month,month_return_pct,month_status,mode,reason,"
+                "target_exposure,cash_weight,proxy_reversal_guard_triggered,proxy_reversal_guard_cap,"
+                "proxy_reversal_guard_medium_return_pct,proxy_reversal_guard_short_return_pct,"
+                "proxy_reversal_guard_reason,diagnostic,recommended_next_action\n"
+                "candidate_guard,2025-06-02,2025-05-30,2025-06,7.4531,GAIN,market_beta_proxy,"
+                "no_train_candidate_strong_breadth_proxy_proxy_reversal_guard_capped,0.55,0.45,true,"
+                "0.55,38.5407,8.6214,proxy_reversal_guard_capped,"
+                "market_beta_proxy;proxy_gain_participation;strong_breadth,"
+                "preserve_train_gate_and_improve_alpha_candidates\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-proxy-guard-diagnostics",
+                    "--proxy-input",
+                    str(proxy_input),
+                    "--output",
+                    str(output),
+                ],
+            )
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("proxy_guard_outcomes_report", completed.stdout)
+        self.assertEqual(rows[0]["guard_outcome"], "profitable_continuation_capped")
+        self.assertEqual(rows[0]["paper_only"], "true")
+
     def test_monthly_compare_attribution_cli_writes_monthly_delta_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
