@@ -29,6 +29,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_path_attribution,
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
+    analyze_monthly_stress_drawdown_pressure,
     analyze_monthly_validation_failures,
     analyze_monthly_train_decision_path,
     analyze_monthly_train_stability_path_drift_experiments,
@@ -106,6 +107,7 @@ from backtester.monthly_rebalance import (
     save_monthly_path_attribution_comparison,
     save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
+    save_monthly_stress_drawdown_pressure,
     save_monthly_train_decision_path,
     save_monthly_train_stability_path_drift_experiments,
     save_monthly_train_stability_symbol_attribution,
@@ -2099,6 +2101,110 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(by_month["2024-02"]["equity_change"], "-80")
         self.assertEqual(by_month["2024-02"]["status"], "LOSS")
         self.assertEqual(by_month["2024-02"]["worst_drawdown_pct"], "-12.381")
+
+    def test_analyze_monthly_stress_drawdown_pressure_links_breach_days_to_loss_symbols(self):
+        rows = analyze_monthly_stress_drawdown_pressure(
+            scenario="stress_unit",
+            monthly_rows=[
+                {
+                    "month": "2024-01",
+                    "equity_change": "-500",
+                    "return_pct": "-5",
+                    "worst_drawdown_pct": "-12",
+                },
+                {
+                    "month": "2024-02",
+                    "equity_change": "-900",
+                    "return_pct": "-9",
+                    "worst_drawdown_pct": "-27",
+                },
+            ],
+            symbol_rows=[
+                {"symbol": "AAA", "realized_pnl": "-600"},
+                {"symbol": "BBB", "realized_pnl": "-300"},
+                {"symbol": "CCC", "realized_pnl": "200"},
+            ],
+            decision_rows=[
+                {
+                    "as_of_date": "2024-02-01",
+                    "month": "2024-02",
+                    "mode": "market_beta_proxy",
+                    "reason": "no_train_candidate_strong_breadth_proxy",
+                    "target_exposure": "0.99",
+                    "cash_weight": "0.01",
+                    "selected_symbols": "AAA;DDD",
+                    "diagnostic": "market_beta_proxy;high_exposure_proxy;high_exposure_proxy_loss",
+                }
+            ],
+            path_rows=[
+                {
+                    "date": "2024-02-15",
+                    "equity": "730",
+                    "cash": "10",
+                    "exposure": "0.99",
+                    "drawdown_pct": "-27",
+                    "daily_return_pct": "-4",
+                    "position_symbols": "AAA;DDD",
+                },
+                {
+                    "date": "2024-02-16",
+                    "equity": "760",
+                    "cash": "20",
+                    "exposure": "0.97",
+                    "drawdown_pct": "-24",
+                    "daily_return_pct": "3",
+                    "position_symbols": "BBB;EEE",
+                },
+            ],
+            recovery_rows=[
+                {
+                    "worst_month": "2024-02",
+                    "worst_month_mode": "market_beta_proxy",
+                    "worst_month_target_exposure": "0.99",
+                    "top_loss_symbol": "AAA",
+                    "top_loss_symbols": "AAA:-600;BBB:-300",
+                    "diagnostic": "high_exposure_worst_month;symbol_loss_concentration",
+                }
+            ],
+            drawdown_threshold_pct=-25.0,
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "stress_unit")
+        self.assertEqual(row["worst_loss_month"], "2024-02")
+        self.assertEqual(row["worst_drawdown_date"], "2024-02-15")
+        self.assertEqual(row["breach_day_count"], "1")
+        self.assertEqual(row["breach_months"], "2024-02")
+        self.assertEqual(row["top_loss_symbol"], "AAA")
+        self.assertEqual(row["top_loss_symbols_in_breach_positions"], "AAA")
+        self.assertEqual(row["top_loss_symbol_overlap_count"], "1")
+        self.assertEqual(row["worst_month_mode"], "market_beta_proxy")
+        self.assertEqual(row["high_exposure_loss_month_count"], "1")
+        self.assertIn("loss_symbols_active_during_breach", row["diagnostic"])
+        self.assertEqual(row["recommended_candidate_focus"], "test_conditional_proxy_or_position_loss_guard")
+
+    def test_save_monthly_stress_drawdown_pressure_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "stress_drawdown.csv"
+            saved = save_monthly_stress_drawdown_pressure(
+                [
+                    {
+                        "scenario": "stress_unit",
+                        "worst_drawdown_date": "2024-02-15",
+                        "breach_day_count": "1",
+                        "top_loss_symbol": "AAA",
+                        "recommended_candidate_focus": "test_conditional_proxy_or_position_loss_guard",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,worst_drawdown_date", text.splitlines()[0])
+        self.assertIn("recommended_candidate_focus", text.splitlines()[0])
+        self.assertIn("stress_unit", text)
 
     def test_analyze_symbol_realized_pnl_attribution_uses_fifo(self):
         result = MonthlyBacktestResult(

@@ -60,6 +60,7 @@ from .monthly_rebalance import (
     analyze_monthly_performance_concentration,
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
+    analyze_monthly_stress_drawdown_pressure,
     analyze_monthly_train_decision_path,
     analyze_monthly_train_stability_path_drift_experiments,
     analyze_monthly_train_stability_symbol_attribution,
@@ -123,6 +124,7 @@ from .monthly_rebalance import (
     save_monthly_path_attribution_comparison,
     save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
+    save_monthly_stress_drawdown_pressure,
     save_monthly_train_decision_path,
     save_monthly_train_stability_path_drift_experiments,
     save_monthly_train_stability_symbol_attribution,
@@ -865,6 +867,7 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--summary-output", default=None)
     monthly_attribution_parser.add_argument("--proxy-output", default=None)
     monthly_attribution_parser.add_argument("--path-output", default=None)
+    monthly_attribution_parser.add_argument("--stress-drawdown-output", default=None)
 
     monthly_validate_parser = subparsers.add_parser(
         "monthly-validate",
@@ -2905,7 +2908,7 @@ def main() -> int:
                 fee_rate=args.fee_rate,
                 tax_rate=args.tax_rate,
             )
-            if args.path_output
+            if args.path_output or args.stress_drawdown_output
             else []
         )
         recovery_rows = analyze_monthly_recovery_attribution(result, scenario=args.scenario_name)
@@ -2916,7 +2919,19 @@ def main() -> int:
                 config=attribution_config,
                 scenario=args.scenario_name,
             )
-            if args.proxy_output
+            if args.proxy_output or args.stress_drawdown_output
+            else []
+        )
+        stress_drawdown_rows = (
+            analyze_monthly_stress_drawdown_pressure(
+                scenario=args.scenario_name,
+                monthly_rows=monthly_rows,
+                symbol_rows=symbol_rows,
+                decision_rows=proxy_rows or decision_rows,
+                path_rows=path_rows,
+                recovery_rows=recovery_rows,
+            )
+            if args.stress_drawdown_output
             else []
         )
         save_monthly_attribution_rows(monthly_rows, args.monthly_output)
@@ -2932,6 +2947,8 @@ def main() -> int:
             save_monthly_recovery_attribution(recovery_rows, args.summary_output)
         if args.proxy_output:
             save_monthly_proxy_decision_diagnostics(proxy_rows, args.proxy_output)
+        if args.stress_drawdown_output:
+            save_monthly_stress_drawdown_pressure(stress_drawdown_rows, args.stress_drawdown_output)
 
         def row_float(row: dict[str, str], key: str) -> float:
             try:
@@ -2973,6 +2990,9 @@ def main() -> int:
         if args.proxy_output:
             print(f"proxy_rows  {len(proxy_rows)}")
             print(f"proxy_decision_diagnostics_report  {args.proxy_output}")
+        if args.stress_drawdown_output:
+            print(f"stress_drawdown_pressure_rows  {len(stress_drawdown_rows)}")
+            print(f"stress_drawdown_pressure_report  {args.stress_drawdown_output}")
         return 0
 
     if args.command == "monthly-validate":

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-23 22:41 KST
+Last updated: 2026-06-23 22:55 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 440 tests.
+- `python -m unittest discover -s tests`: PASS, 442 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,89 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only stress drawdown pressure diagnostic for the remaining `stress_exclude_500pct_winners` blocker:
+
+- Added pure report builder:
+  - `analyze_monthly_stress_drawdown_pressure`
+- Added CSV writer:
+  - `save_monthly_stress_drawdown_pressure`
+- Added optional `monthly-attribution` CLI output:
+  - `--stress-drawdown-output`
+- The new report combines existing monthly attribution, symbol realized PnL, proxy decision diagnostics, path attribution, and recovery attribution.
+- This is diagnostics/reporting only.
+- No strategy behavior was changed.
+- No production defaults were changed.
+- No real order execution, Toss API test call, production gate bypass, or live default change was added.
+
+New report:
+
+- `data/reports/stress_exclude_500pct_winners_drawdown_pressure.csv`
+
+Report regeneration command:
+
+```powershell
+python -m backtester monthly-attribution --data-dir data/krx_expanded --start 2024-01-01 --end 2026-06-18 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --stress-exclude-return-above 500 --scenario-name stress_exclude_500pct_winners --monthly-output data/reports/stress_exclude_500pct_winners_monthly_attribution.csv --symbol-output data/reports/stress_exclude_500pct_winners_symbol_attribution.csv --decision-output data/reports/stress_exclude_500pct_winners_decision_attribution.csv --summary-output data/reports/stress_exclude_500pct_winners_recovery_attribution.csv --proxy-output data/reports/stress_exclude_500pct_winners_proxy_decision_diagnostics.csv --path-output data/reports/stress_exclude_500pct_winners_path_attribution.csv --stress-drawdown-output data/reports/stress_exclude_500pct_winners_drawdown_pressure.csv
+```
+
+Stress drawdown findings:
+
+- Scenario: `stress_exclude_500pct_winners`.
+- Total return: `14.45%`.
+- Excess return: `12.96%`.
+- Max drawdown: `-28.0835%`.
+- Worst drawdown date: `2026-06-08`.
+- Hard drawdown breach days at `<= -25%`: `5`.
+- Breach month: `2026-06`.
+- Average breach exposure: `0.6842`.
+- Worst loss month: `2026-03`.
+- Worst month equity change: `-3655376.7348`.
+- Worst month mode: `market_beta_proxy`.
+- Top realized loss symbol: `051910`, realized PnL `-538464.75`.
+- Top loss symbols summary:
+  - `051910:-538464.75`
+  - `011930:-447495.3`
+  - `009830:-438756.881`
+- High-exposure proxy loss months from proxy diagnostics: `11`.
+- Diagnostic tags:
+  - `drawdown_threshold_breach`
+  - `high_exposure_proxy_loss_months`
+  - `symbol_loss_concentration`
+  - `insufficient_post_worst_recovery`
+- Recommended candidate focus:
+  - `test_conditional_proxy_entry_guard`
+
+Interpretation:
+
+- The stress failure is not just a single-name issue.
+- The worst realized loss symbols explain concentration, but the actual hard drawdown breach happens later in `2026-06` after insufficient recovery from the `2026-03` shock.
+- The report points toward a narrow paper-only conditional proxy entry/risk overlay, not broad loosening of train gates and not live trading.
+- Any candidate must preserve the earlier `proxy_reversal_guard_55_extreme60` improvements and avoid `regime_bear`, `walk_forward_002`, and `walk_forward_004` regressions.
+
+Verification in this loop:
+
+- RED check:
+  - New tests failed because `analyze_monthly_stress_drawdown_pressure`, `save_monthly_stress_drawdown_pressure`, and `--stress-drawdown-output` did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_stress_drawdown_pressure_links_breach_days_to_loss_symbols tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_stress_drawdown_pressure_writes_csv tests.test_cli.CliTests.test_monthly_attribution_help_includes_stress_and_output_options tests.test_cli.CliTests.test_monthly_attribution_cli_writes_recovery_summary_report`: PASS, `4` tests.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `203` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `442` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=334.08` observed).
+
+Next recommended action:
+
+- Design one narrow paper-only conditional proxy entry/risk-overlay candidate from the stress drawdown report.
+- Candidate should target high-exposure `market_beta_proxy` loss months without broad cash drag.
+- Validate the candidate with full monthly validation and compare against:
+  - baseline,
+  - `proxy_reversal_guard_55_extreme60`.
+- Do not adopt any candidate that creates `regime_bear`, `walk_forward_002`, or `walk_forward_004` regressions.
+
+## Previous Loop: Direct Alpha Stability Diagnostics
 
 Regenerated and analyzed direct candidate stability-window diagnostics for the direct-alpha train weakness focus:
 

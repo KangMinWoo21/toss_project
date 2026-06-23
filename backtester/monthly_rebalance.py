@@ -1071,6 +1071,38 @@ MONTHLY_RECOVERY_ATTRIBUTION_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_STRESS_DRAWDOWN_PRESSURE_COLUMNS = [
+    "scenario",
+    "worst_drawdown_date",
+    "max_drawdown_pct",
+    "drawdown_threshold_pct",
+    "breach_day_count",
+    "breach_start",
+    "breach_end",
+    "breach_months",
+    "average_breach_exposure",
+    "max_breach_exposure",
+    "average_breach_cash",
+    "worst_loss_month",
+    "worst_month_return_pct",
+    "worst_month_equity_change",
+    "worst_month_mode",
+    "worst_month_target_exposure",
+    "worst_month_cash_weight",
+    "top_loss_symbol",
+    "top_loss_symbol_realized_pnl",
+    "top_loss_symbols",
+    "breach_position_symbols",
+    "top_loss_symbols_in_breach_positions",
+    "top_loss_symbol_overlap_count",
+    "high_exposure_loss_month_count",
+    "decision_mode_counts",
+    "diagnostic",
+    "recommended_candidate_focus",
+    "paper_only",
+    "risk_note",
+]
+
 MONTHLY_ATTRIBUTION_COMPARISON_COLUMNS = [
     "scenario",
     "candidate_label",
@@ -3080,6 +3112,133 @@ def save_monthly_recovery_attribution(rows: list[dict[str, Any]], output_path: P
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_RECOVERY_ATTRIBUTION_COLUMNS)
 
 
+def analyze_monthly_stress_drawdown_pressure(
+    *,
+    scenario: str,
+    monthly_rows: list[dict[str, Any]],
+    symbol_rows: list[dict[str, Any]],
+    decision_rows: list[dict[str, Any]],
+    path_rows: list[dict[str, Any]],
+    recovery_rows: list[dict[str, Any]] | None = None,
+    drawdown_threshold_pct: float = -25.0,
+    top_symbol_count: int = 5,
+) -> list[dict[str, Any]]:
+    recovery = (recovery_rows or [{}])[0] if recovery_rows else {}
+    worst_path = min(
+        path_rows,
+        key=lambda row: _float_or_none(row.get("drawdown_pct")) or 0.0,
+        default={},
+    )
+    breach_rows = [
+        row
+        for row in path_rows
+        if (_float_or_none(row.get("drawdown_pct")) is not None)
+        and (_float_or_none(row.get("drawdown_pct")) or 0.0) <= drawdown_threshold_pct
+    ]
+    worst_month_row = min(
+        monthly_rows,
+        key=lambda row: _float_or_none(row.get("equity_change")) or 0.0,
+        default={},
+    )
+    top_loss_rows = [
+        row
+        for row in sorted(
+            symbol_rows,
+            key=lambda row: _float_or_none(row.get("realized_pnl")) or 0.0,
+        )
+        if (_float_or_none(row.get("realized_pnl")) or 0.0) < 0
+    ][: max(1, top_symbol_count)]
+    top_loss_symbol = str(recovery.get("top_loss_symbol") or (top_loss_rows[0].get("symbol") if top_loss_rows else ""))
+    top_loss_symbol_realized_pnl = str(
+        recovery.get("top_loss_symbol_realized_pnl")
+        or (top_loss_rows[0].get("realized_pnl") if top_loss_rows else "")
+    )
+    top_loss_symbols = str(recovery.get("top_loss_symbols") or _format_loss_symbol_list(top_loss_rows))
+    top_loss_names = _loss_symbol_names(top_loss_symbols)
+    breach_position_symbols = sorted(
+        {
+            symbol
+            for row in breach_rows
+            for symbol in _split_semicolon_values(str(row.get("position_symbols", "")))
+        }
+    )
+    overlap_symbols = [symbol for symbol in top_loss_names if symbol in set(breach_position_symbols)]
+    high_exposure_loss_decisions = [
+        row
+        for row in decision_rows
+        if "high_exposure_proxy_loss" in str(row.get("diagnostic", ""))
+        or (
+            str(row.get("mode", "")) == "market_beta_proxy"
+            and (_float_or_none(row.get("target_exposure")) or 0.0) >= 0.90
+            and (_float_or_none(row.get("month_equity_change")) or 0.0) < 0
+        )
+    ]
+    decision_mode_counts = Counter(str(row.get("mode", "")) for row in decision_rows if row.get("mode"))
+    diagnostics: list[str] = []
+    if breach_rows:
+        diagnostics.append("drawdown_threshold_breach")
+    if high_exposure_loss_decisions:
+        diagnostics.append("high_exposure_proxy_loss_months")
+    if overlap_symbols:
+        diagnostics.append("loss_symbols_active_during_breach")
+    recovery_diagnostic = str(recovery.get("diagnostic", ""))
+    if "symbol_loss_concentration" in recovery_diagnostic:
+        diagnostics.append("symbol_loss_concentration")
+    if "insufficient_post_worst_recovery" in recovery_diagnostic:
+        diagnostics.append("insufficient_post_worst_recovery")
+
+    recommended_focus = "review_stress_drawdown_path"
+    if overlap_symbols and high_exposure_loss_decisions:
+        recommended_focus = "test_conditional_proxy_or_position_loss_guard"
+    elif high_exposure_loss_decisions:
+        recommended_focus = "test_conditional_proxy_entry_guard"
+    elif breach_rows:
+        recommended_focus = "test_drawdown_guard_overlay"
+
+    avg_breach_exposure = _average_numeric(row.get("exposure") for row in breach_rows)
+    max_breach_exposure = _max_numeric(row.get("exposure") for row in breach_rows)
+    avg_breach_cash = _average_numeric(row.get("cash") for row in breach_rows)
+    breach_months = sorted({str(row.get("date", ""))[:7] for row in breach_rows if row.get("date")})
+    row = {
+        "scenario": scenario,
+        "worst_drawdown_date": worst_path.get("date", ""),
+        "max_drawdown_pct": _format_optional_float(_float_or_none(worst_path.get("drawdown_pct"))),
+        "drawdown_threshold_pct": _format_optional_float(drawdown_threshold_pct),
+        "breach_day_count": str(len(breach_rows)),
+        "breach_start": breach_rows[0].get("date", "") if breach_rows else "",
+        "breach_end": breach_rows[-1].get("date", "") if breach_rows else "",
+        "breach_months": ";".join(breach_months),
+        "average_breach_exposure": _format_optional_float(avg_breach_exposure),
+        "max_breach_exposure": _format_optional_float(max_breach_exposure),
+        "average_breach_cash": _format_optional_float(avg_breach_cash),
+        "worst_loss_month": recovery.get("worst_month") or worst_month_row.get("month", ""),
+        "worst_month_return_pct": recovery.get("worst_month_return_pct") or worst_month_row.get("return_pct", ""),
+        "worst_month_equity_change": (
+            recovery.get("worst_month_equity_change") or worst_month_row.get("equity_change", "")
+        ),
+        "worst_month_mode": recovery.get("worst_month_mode") or _mode_for_month(decision_rows, str(worst_month_row.get("month", ""))),
+        "worst_month_target_exposure": recovery.get("worst_month_target_exposure", ""),
+        "worst_month_cash_weight": recovery.get("worst_month_cash_weight", ""),
+        "top_loss_symbol": top_loss_symbol,
+        "top_loss_symbol_realized_pnl": top_loss_symbol_realized_pnl,
+        "top_loss_symbols": top_loss_symbols,
+        "breach_position_symbols": ";".join(breach_position_symbols),
+        "top_loss_symbols_in_breach_positions": ";".join(overlap_symbols),
+        "top_loss_symbol_overlap_count": str(len(overlap_symbols)),
+        "high_exposure_loss_month_count": str(len(high_exposure_loss_decisions)),
+        "decision_mode_counts": ";".join(f"{mode}={count}" for mode, count in sorted(decision_mode_counts.items())),
+        "diagnostic": ";".join(diagnostics) if diagnostics else "no_drawdown_pressure_detected",
+        "recommended_candidate_focus": recommended_focus,
+        "paper_only": "true",
+        "risk_note": "Diagnostic summary only; do not create or transmit live orders from this report.",
+    }
+    return [row]
+
+
+def save_monthly_stress_drawdown_pressure(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_STRESS_DRAWDOWN_PRESSURE_COLUMNS)
+
+
 def save_monthly_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_ATTRIBUTION_COMPARISON_COLUMNS)
 
@@ -3118,6 +3277,38 @@ def save_monthly_attribution_rows(
         for row in rows:
             writer.writerow({column: row.get(column, "") for column in fieldnames})
     return len(rows)
+
+
+def _average_numeric(values: Any) -> float | None:
+    parsed = [_float_or_none(value) for value in values]
+    numeric = [value for value in parsed if value is not None]
+    return sum(numeric) / len(numeric) if numeric else None
+
+
+def _format_loss_symbol_list(rows: list[dict[str, Any]]) -> str:
+    parts = []
+    for row in rows:
+        symbol = str(row.get("symbol", "")).strip()
+        pnl = _format_optional_float(_float_or_none(row.get("realized_pnl")))
+        if symbol:
+            parts.append(f"{symbol}:{pnl}")
+    return ";".join(parts)
+
+
+def _loss_symbol_names(value: str) -> list[str]:
+    names: list[str] = []
+    for part in _split_semicolon_values(value):
+        symbol = part.split(":", 1)[0].strip()
+        if symbol:
+            names.append(symbol)
+    return names
+
+
+def _mode_for_month(decision_rows: list[dict[str, Any]], month: str) -> str:
+    for row in decision_rows:
+        if str(row.get("month", "")).strip() == month:
+            return str(row.get("mode", "")).strip()
+    return ""
 
 
 def _monthly_return_rows(result: MonthlyBacktestResult) -> list[dict[str, Any]]:
