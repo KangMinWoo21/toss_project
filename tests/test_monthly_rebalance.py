@@ -22,6 +22,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_benchmark_excess,
     analyze_monthly_benchmark_contributions,
     analyze_monthly_benchmark_selection,
+    analyze_monthly_benchmark_selection_summary,
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
@@ -97,6 +98,7 @@ from backtester.monthly_rebalance import (
     save_monthly_benchmark_excess,
     save_monthly_benchmark_contributions,
     save_monthly_benchmark_selection,
+    save_monthly_benchmark_selection_summary,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
     save_monthly_validation_remediation,
@@ -3602,6 +3604,126 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("liquidity_rank", text.splitlines()[0])
         self.assertIn("missed_outside_proxy_liquidity_cutoff", text)
+
+    def test_analyze_monthly_benchmark_selection_summary_buckets_monthly_missed_winner_drag(self):
+        rows = analyze_monthly_benchmark_selection_summary(
+            [
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-04",
+                    "start_date": "2025-04-01",
+                    "end_date": "2025-04-17",
+                    "symbol": "AAA",
+                    "strategy_weight": "0.08",
+                    "liquidity_rank": "1",
+                    "contribution_delta_pct": "0.5",
+                    "contribution_diagnostic": "positive_contribution_delta",
+                    "selection_diagnostic": "selected_proxy_winner",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-04",
+                    "start_date": "2025-04-01",
+                    "end_date": "2025-04-17",
+                    "symbol": "BBB",
+                    "strategy_weight": "0.08",
+                    "liquidity_rank": "2",
+                    "contribution_delta_pct": "-0.4",
+                    "contribution_diagnostic": "overweighted_loser",
+                    "selection_diagnostic": "selected_proxy_loser",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-04",
+                    "start_date": "2025-04-01",
+                    "end_date": "2025-04-17",
+                    "symbol": "CCC",
+                    "strategy_weight": "0",
+                    "liquidity_rank": "20",
+                    "contribution_delta_pct": "-0.1",
+                    "contribution_diagnostic": "missed_benchmark_winner",
+                    "selection_diagnostic": "missed_outside_proxy_liquidity_cutoff",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-04",
+                    "start_date": "2025-04-01",
+                    "end_date": "2025-04-17",
+                    "symbol": "DDD",
+                    "strategy_weight": "0",
+                    "liquidity_rank": "80",
+                    "contribution_delta_pct": "-0.2",
+                    "contribution_diagnostic": "missed_benchmark_winner",
+                    "selection_diagnostic": "missed_outside_proxy_liquidity_cutoff",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-04",
+                    "start_date": "2025-04-01",
+                    "end_date": "2025-04-17",
+                    "symbol": "EEE",
+                    "strategy_weight": "0",
+                    "liquidity_rank": "650",
+                    "contribution_delta_pct": "-0.7",
+                    "contribution_diagnostic": "missed_benchmark_winner",
+                    "selection_diagnostic": "missed_outside_proxy_liquidity_cutoff",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-04",
+                    "start_date": "2025-04-01",
+                    "end_date": "2025-04-17",
+                    "symbol": "FFF",
+                    "strategy_weight": "0",
+                    "liquidity_rank": "700",
+                    "contribution_delta_pct": "0.05",
+                    "contribution_diagnostic": "avoided_benchmark_loser",
+                    "selection_diagnostic": "avoided_benchmark_loser",
+                },
+            ]
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "regime_sideways")
+        self.assertEqual(row["month"], "2025-04")
+        self.assertEqual(row["row_count"], "6")
+        self.assertEqual(row["selected_proxy_winner_count"], "1")
+        self.assertEqual(row["selected_proxy_loser_count"], "1")
+        self.assertEqual(row["selected_proxy_delta_pct"], "0.1")
+        self.assertEqual(row["missed_benchmark_winner_count"], "3")
+        self.assertEqual(row["missed_benchmark_winner_delta_pct"], "-1")
+        self.assertEqual(row["missed_rank_13_50_count"], "1")
+        self.assertEqual(row["missed_rank_13_50_delta_pct"], "-0.1")
+        self.assertEqual(row["missed_rank_51_100_count"], "1")
+        self.assertEqual(row["missed_rank_51_100_delta_pct"], "-0.2")
+        self.assertEqual(row["missed_rank_501_plus_count"], "1")
+        self.assertEqual(row["missed_rank_501_plus_delta_pct"], "-0.7")
+        self.assertEqual(row["low_liquidity_missed_winner_delta_share"], "0.7")
+        self.assertEqual(row["avoided_benchmark_loser_count"], "1")
+        self.assertEqual(row["avoided_benchmark_loser_delta_pct"], "0.05")
+        self.assertEqual(row["diagnostic"], "low_liquidity_recovery_drag")
+
+    def test_save_monthly_benchmark_selection_summary_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "benchmark_selection_summary.csv"
+            saved = save_monthly_benchmark_selection_summary(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "month": "2025-04",
+                        "missed_benchmark_winner_count": "3",
+                        "low_liquidity_missed_winner_delta_share": "0.7",
+                        "diagnostic": "low_liquidity_recovery_drag",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("low_liquidity_missed_winner_delta_share", text.splitlines()[0])
+        self.assertIn("low_liquidity_recovery_drag", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

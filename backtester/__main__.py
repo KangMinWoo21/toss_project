@@ -79,6 +79,7 @@ from .monthly_rebalance import (
     analyze_monthly_benchmark_excess,
     analyze_monthly_benchmark_contributions,
     analyze_monthly_benchmark_selection,
+    analyze_monthly_benchmark_selection_summary,
     analyze_symbol_realized_pnl_attribution,
     build_monthly_validation_sweep_plan,
     build_monthly_validation_candidate_decision,
@@ -127,6 +128,7 @@ from .monthly_rebalance import (
     save_monthly_benchmark_excess,
     save_monthly_benchmark_contributions,
     save_monthly_benchmark_selection,
+    save_monthly_benchmark_selection_summary,
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
@@ -902,6 +904,7 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--benchmark-output", default=None)
     monthly_attribution_parser.add_argument("--benchmark-contribution-output", default=None)
     monthly_attribution_parser.add_argument("--benchmark-selection-output", default=None)
+    monthly_attribution_parser.add_argument("--benchmark-selection-summary-output", default=None)
     monthly_attribution_parser.add_argument("--proxy-output", default=None)
     monthly_attribution_parser.add_argument("--path-output", default=None)
     monthly_attribution_parser.add_argument("--execution-gap-output", default=None)
@@ -3275,7 +3278,12 @@ def main() -> int:
                 tax_rate=args.tax_rate,
                 slippage_rate=args.slippage_rate,
             )
-            if args.benchmark_selection_output
+            if args.benchmark_selection_output or args.benchmark_selection_summary_output
+            else []
+        )
+        benchmark_selection_summary_rows = (
+            analyze_monthly_benchmark_selection_summary(benchmark_selection_rows)
+            if args.benchmark_selection_summary_output
             else []
         )
         recovery_rows = analyze_monthly_recovery_attribution(result, scenario=args.scenario_name)
@@ -3323,6 +3331,11 @@ def main() -> int:
             save_monthly_benchmark_selection(
                 benchmark_selection_rows,
                 args.benchmark_selection_output,
+            )
+        if args.benchmark_selection_summary_output:
+            save_monthly_benchmark_selection_summary(
+                benchmark_selection_summary_rows,
+                args.benchmark_selection_summary_output,
             )
         if args.summary_output:
             save_monthly_recovery_attribution(recovery_rows, args.summary_output)
@@ -3383,6 +3396,9 @@ def main() -> int:
         if args.benchmark_selection_output:
             print(f"benchmark_selection_rows  {len(benchmark_selection_rows)}")
             print(f"benchmark_selection_report  {args.benchmark_selection_output}")
+        if args.benchmark_selection_summary_output:
+            print(f"benchmark_selection_summary_rows  {len(benchmark_selection_summary_rows)}")
+            print(f"benchmark_selection_summary_report  {args.benchmark_selection_summary_output}")
         if args.stress_drawdown_output:
             print(f"stress_drawdown_pressure_rows  {len(stress_drawdown_rows)}")
             print(f"stress_drawdown_pressure_report  {args.stress_drawdown_output}")

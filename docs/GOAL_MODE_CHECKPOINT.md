@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 April benchmark selection-rank diagnostic
+Last updated: 2026-06-24 benchmark selection summary diagnostic
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,62 +40,55 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit:
-  `Add monthly benchmark selection attribution` (current HEAD after this loop).
+  `Add monthly benchmark selection summary` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `488` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `490` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=343.78` observed).
+  (`age_hours=344.02` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only monthly benchmark selection-rank diagnostic for the
-`2025-04` recovery-participation gap.
+Added a report-only monthly benchmark selection summary diagnostic to test
+whether the `2025-04` low-liquidity recovery drag repeats across the
+best-candidate `regime_sideways` months.
 
 Changed behavior:
 
-- New `monthly-attribution --benchmark-selection-output` writes each month's
-  contribution rows with signal-date average-trading-value rank, proxy cutoff,
-  rank gap, and selection diagnostic.
-- `rank_symbols_by_average_trading_value` now shares a tuple-returning helper;
-  its public output order is unchanged.
+- New `monthly-attribution --benchmark-selection-summary-output` writes one
+  monthly row with selected-proxy delta, missed-winner delta, missed-winner rank
+  buckets, rank-501+ share, and diagnostic label.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
-- Generated the best-candidate `regime_sideways` benchmark selection report
-  under separate `_current` output paths.
+- Generated the best-candidate `regime_sideways` benchmark selection summary
+  report under a separate `_current` output path.
 
 Verification:
 
 - RED: analyzer/saver imports failed; CLI help lacked
-  `--benchmark-selection-output`.
-- GREEN: targeted benchmark-selection tests PASS, monthly module PASS (`198`
+  `--benchmark-selection-summary-output`.
+- GREEN: targeted benchmark-selection-summary tests PASS, monthly module PASS (`200`
   tests), CLI module PASS (`51` tests).
-- Final verification: full `unittest` PASS (`488` tests), compile PASS,
+- Final verification: full `unittest` PASS (`490` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Selection report rows: `15288`; April rows: `2184`.
-- April selection diagnostics: `missed_outside_proxy_liquidity_cutoff=1496`,
-  `avoided_benchmark_loser=676`, `selected_proxy_loser=6`,
-  `selected_proxy_winner=6`.
-- April missed-winner contribution delta by signal-date liquidity rank bucket:
-  `13-50=-0.1061` (`19` names), `51-100=-0.2644` (`25`), `101-200=-0.2605`
-  (`46`), `201-500=-0.8851` (`160`), `501+=-5.3277` (`1246`).
-- Top missed winners were all outside the top-12 proxy cutoff: `389140`
-  rank `217` (`196.4847%`, delta `-0.0900`), `289010` rank `1925`
-  (`138.4010%`, `-0.0634`), `241520` rank `89` (`119.1772%`, `-0.0546`).
-- Selected April proxy basket was exactly signal-date liquidity ranks `1-12`:
-  six winners and six losers. Main selected loser drag remained `005490`,
-  `000660`, `005380`, and `000270`.
-- Interpretation: April gap is a liquidity-ranked proxy selection miss, not a
-  simple one-share execution or adjacent top-12 cutoff issue. Most missed-winner
-  drag came from rank `501+`, so broad proxy expansion would chase a much wider
-  lower-liquidity recovery and needs separate paper-only evidence first.
+- Summary report rows: `7` months.
+- All `7/7` months are classified `low_liquidity_recovery_drag`.
+- Total missed-winner delta across the window: `-28.5955`; rank-501+ portion:
+  `-21.0094` (`73.47%` of absolute drag).
+- Monthly rank-501+ shares stayed high: `0.7070` to `0.7785`.
+- April remains the largest single missed-winner drag month: total
+  `-6.8438`, rank-501+ `-5.3277`, share `0.7785`.
+- Interpretation: low-liquidity recovery breadth is repeatable within the
+  best-candidate `regime_sideways` window, but selected proxy winners sometimes
+  offset it (`2025-02` selected-proxy delta `+4.1022`). Treat this as a
+  benchmark/selection diagnostic, not evidence to broaden the live proxy basket.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -219,10 +212,12 @@ Pick one narrow loop:
   remaining excess gap. New benchmark-excess evidence points to missed
   `2025-04` recovery participation after the `2025-03` drawdown. Contribution
   and selection-rank evidence points to recovery-breadth/selection rather than
-  only March loss control. Next paper-only work should aggregate the new
-  selection-rank report across other failure/passing months to see whether
-  low-liquidity recovery breadth is repeatable before testing any broader proxy
-  basket. Avoid broad cash, broad stop, or broad proxy cap reuse.
+  only March loss control. Selection-summary evidence shows low-liquidity
+  missed-winner drag repeats inside `regime_sideways`; next paper-only work
+  should compare this summary across passing and failing validation scenarios to
+  separate a broad benchmark artifact from a candidate-specific weakness before
+  testing any broader proxy basket. Avoid broad cash, broad stop, or broad proxy
+  cap reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate
   discipline; do not loosen rejected train windows.
 

@@ -1069,6 +1069,38 @@ MONTHLY_BENCHMARK_SELECTION_COLUMNS = [
     "selection_diagnostic",
 ]
 
+MONTHLY_BENCHMARK_SELECTION_SUMMARY_COLUMNS = [
+    "scenario",
+    "month",
+    "start_date",
+    "end_date",
+    "row_count",
+    "selected_proxy_count",
+    "selected_proxy_winner_count",
+    "selected_proxy_loser_count",
+    "selected_proxy_delta_pct",
+    "missed_benchmark_winner_count",
+    "missed_benchmark_winner_delta_pct",
+    "missed_inside_proxy_cutoff_count",
+    "missed_inside_proxy_cutoff_delta_pct",
+    "missed_rank_13_50_count",
+    "missed_rank_13_50_delta_pct",
+    "missed_rank_51_100_count",
+    "missed_rank_51_100_delta_pct",
+    "missed_rank_101_200_count",
+    "missed_rank_101_200_delta_pct",
+    "missed_rank_201_500_count",
+    "missed_rank_201_500_delta_pct",
+    "missed_rank_501_plus_count",
+    "missed_rank_501_plus_delta_pct",
+    "missed_rank_missing_count",
+    "missed_rank_missing_delta_pct",
+    "low_liquidity_missed_winner_delta_share",
+    "avoided_benchmark_loser_count",
+    "avoided_benchmark_loser_delta_pct",
+    "diagnostic",
+]
+
 SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "symbol",
     "realized_pnl",
@@ -2771,6 +2803,107 @@ def analyze_monthly_benchmark_selection(
     return rows
 
 
+def analyze_monthly_benchmark_selection_summary(
+    selection_rows: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    for row in selection_rows:
+        key = (
+            str(row.get("scenario", "")),
+            str(row.get("month", "")),
+            str(row.get("start_date", "")),
+            str(row.get("end_date", "")),
+        )
+        grouped.setdefault(key, []).append(row)
+
+    rows: list[dict[str, str]] = []
+    for (scenario, month, start_date, end_date), month_rows in sorted(grouped.items()):
+        selected_rows = [
+            row
+            for row in month_rows
+            if (_float_or_none(row.get("strategy_weight")) or 0.0) > 0
+        ]
+        missed_rows = [
+            row
+            for row in month_rows
+            if str(row.get("contribution_diagnostic", "")) == "missed_benchmark_winner"
+        ]
+        avoided_rows = [
+            row
+            for row in month_rows
+            if str(row.get("contribution_diagnostic", "")) == "avoided_benchmark_loser"
+        ]
+        bucket_stats: dict[str, list[float]] = {
+            "inside_proxy_cutoff": [],
+            "13_50": [],
+            "51_100": [],
+            "101_200": [],
+            "201_500": [],
+            "501_plus": [],
+            "missing": [],
+        }
+        for row in missed_rows:
+            bucket = _benchmark_selection_missed_rank_bucket(row)
+            bucket_stats[bucket].append(_float_or_none(row.get("contribution_delta_pct")) or 0.0)
+
+        missed_delta = _sum_selection_delta(missed_rows)
+        selected_delta = _sum_selection_delta(selected_rows)
+        low_liquidity_delta = sum(bucket_stats["501_plus"])
+        low_liquidity_share = (
+            abs(low_liquidity_delta) / abs(missed_delta)
+            if missed_delta
+            else 0.0
+        )
+        selected_winner_count = sum(
+            1 for row in selected_rows if str(row.get("selection_diagnostic", "")) == "selected_proxy_winner"
+        )
+        selected_loser_count = sum(
+            1 for row in selected_rows if str(row.get("selection_diagnostic", "")) == "selected_proxy_loser"
+        )
+        rows.append(
+            {
+                "scenario": scenario,
+                "month": month,
+                "start_date": start_date,
+                "end_date": end_date,
+                "row_count": str(len(month_rows)),
+                "selected_proxy_count": str(len(selected_rows)),
+                "selected_proxy_winner_count": str(selected_winner_count),
+                "selected_proxy_loser_count": str(selected_loser_count),
+                "selected_proxy_delta_pct": _format_optional_float(selected_delta),
+                "missed_benchmark_winner_count": str(len(missed_rows)),
+                "missed_benchmark_winner_delta_pct": _format_optional_float(missed_delta),
+                "missed_inside_proxy_cutoff_count": str(len(bucket_stats["inside_proxy_cutoff"])),
+                "missed_inside_proxy_cutoff_delta_pct": _format_optional_float(
+                    sum(bucket_stats["inside_proxy_cutoff"])
+                ),
+                "missed_rank_13_50_count": str(len(bucket_stats["13_50"])),
+                "missed_rank_13_50_delta_pct": _format_optional_float(sum(bucket_stats["13_50"])),
+                "missed_rank_51_100_count": str(len(bucket_stats["51_100"])),
+                "missed_rank_51_100_delta_pct": _format_optional_float(sum(bucket_stats["51_100"])),
+                "missed_rank_101_200_count": str(len(bucket_stats["101_200"])),
+                "missed_rank_101_200_delta_pct": _format_optional_float(sum(bucket_stats["101_200"])),
+                "missed_rank_201_500_count": str(len(bucket_stats["201_500"])),
+                "missed_rank_201_500_delta_pct": _format_optional_float(sum(bucket_stats["201_500"])),
+                "missed_rank_501_plus_count": str(len(bucket_stats["501_plus"])),
+                "missed_rank_501_plus_delta_pct": _format_optional_float(low_liquidity_delta),
+                "missed_rank_missing_count": str(len(bucket_stats["missing"])),
+                "missed_rank_missing_delta_pct": _format_optional_float(sum(bucket_stats["missing"])),
+                "low_liquidity_missed_winner_delta_share": _format_optional_float(low_liquidity_share),
+                "avoided_benchmark_loser_count": str(len(avoided_rows)),
+                "avoided_benchmark_loser_delta_pct": _format_optional_float(_sum_selection_delta(avoided_rows)),
+                "diagnostic": _monthly_benchmark_selection_summary_diagnostic(
+                    missed_winner_count=len(missed_rows),
+                    low_liquidity_share=low_liquidity_share,
+                    selected_delta=selected_delta,
+                    selected_proxy_loser_count=selected_loser_count,
+                    selected_proxy_winner_count=selected_winner_count,
+                ),
+            }
+        )
+    return rows
+
+
 def _decision_row_for_month(decision_rows: list[dict[str, Any]], month: str) -> dict[str, Any]:
     for row in decision_rows:
         if str(row.get("as_of_date", "")).startswith(month):
@@ -2897,6 +3030,52 @@ def _monthly_benchmark_selection_diagnostic(
     if strategy_weight > 0:
         return "selected_proxy_other"
     return contribution_diagnostic
+
+
+def _sum_selection_delta(rows: list[dict[str, Any]]) -> float:
+    return sum(_float_or_none(row.get("contribution_delta_pct")) or 0.0 for row in rows)
+
+
+def _benchmark_selection_missed_rank_bucket(row: dict[str, Any]) -> str:
+    rank = _int_or_none(row.get("liquidity_rank"))
+    if rank is None:
+        return "missing"
+    cutoff = _int_or_none(row.get("proxy_cutoff_rank")) or 0
+    if cutoff > 0 and rank <= cutoff:
+        return "inside_proxy_cutoff"
+    if 13 <= rank <= 50:
+        return "13_50"
+    if 51 <= rank <= 100:
+        return "51_100"
+    if 101 <= rank <= 200:
+        return "101_200"
+    if 201 <= rank <= 500:
+        return "201_500"
+    return "501_plus"
+
+
+def _monthly_benchmark_selection_summary_diagnostic(
+    *,
+    missed_winner_count: int,
+    low_liquidity_share: float,
+    selected_delta: float,
+    selected_proxy_loser_count: int,
+    selected_proxy_winner_count: int,
+) -> str:
+    if missed_winner_count <= 0:
+        return "no_missed_winner_drag"
+    if low_liquidity_share >= 0.5:
+        return "low_liquidity_recovery_drag"
+    if selected_delta < 0 and selected_proxy_loser_count > selected_proxy_winner_count:
+        return "selected_proxy_loser_drag"
+    return "mixed_recovery_selection_drag"
+
+
+def _int_or_none(value: Any) -> int | None:
+    number = _float_or_none(value)
+    if number is None:
+        return None
+    return int(number)
 
 
 def compare_monthly_attribution_reports(
@@ -4889,6 +5068,14 @@ def save_monthly_benchmark_contributions(rows: list[dict[str, Any]], output_path
 
 def save_monthly_benchmark_selection(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_BENCHMARK_SELECTION_COLUMNS)
+
+
+def save_monthly_benchmark_selection_summary(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_BENCHMARK_SELECTION_SUMMARY_COLUMNS,
+    )
 
 
 def save_monthly_decision_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
