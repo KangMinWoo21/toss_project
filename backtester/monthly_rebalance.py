@@ -1346,6 +1346,34 @@ MONTHLY_PATH_ATTRIBUTION_COMPARISON_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_PATH_ATTRIBUTION_COMPARISON_SUMMARY_COLUMNS = [
+    "scenario",
+    "candidate_label",
+    "month",
+    "day_count",
+    "equity_regression_day_count",
+    "equity_improved_day_count",
+    "drawdown_regression_day_count",
+    "drawdown_improved_day_count",
+    "exposure_reduced_day_count",
+    "exposure_increased_day_count",
+    "symbol_rotation_day_count",
+    "avg_equity_delta",
+    "worst_equity_delta",
+    "worst_equity_delta_date",
+    "avg_drawdown_delta_pct",
+    "worst_drawdown_delta_pct",
+    "worst_drawdown_delta_date",
+    "avg_exposure_delta",
+    "avg_cash_delta",
+    "total_turnover_delta",
+    "total_estimated_trade_cost_delta",
+    "dominant_diagnostic",
+    "diagnostic",
+    "paper_only",
+    "risk_note",
+]
+
 DEPLOYMENT_GATE_COLUMNS = [
     "deployable",
     "reason",
@@ -2991,6 +3019,93 @@ def compare_monthly_path_attribution_reports(
     return rows
 
 
+def summarize_monthly_path_attribution_comparison(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        day = str(row.get("date", "")).strip()
+        month = day[:7]
+        if not month:
+            continue
+        key = (
+            str(row.get("scenario", "")).strip(),
+            str(row.get("candidate_label", "")).strip(),
+            month,
+        )
+        groups.setdefault(key, []).append(row)
+
+    summary_rows: list[dict[str, str]] = []
+    for key in sorted(groups):
+        scenario, candidate_label, month = key
+        month_rows = groups[key]
+        diagnostic_counts: Counter[str] = Counter()
+        for row in month_rows:
+            for token in _split_semicolon_values(str(row.get("diagnostic", ""))):
+                if token and token != "same_path":
+                    diagnostic_counts[token] += 1
+
+        worst_equity_row = _min_numeric_row(month_rows, "equity_delta")
+        worst_drawdown_row = _min_numeric_row(month_rows, "drawdown_delta_pct")
+        dominant_diagnostic = ""
+        if diagnostic_counts:
+            dominant_diagnostic = sorted(
+                diagnostic_counts.items(),
+                key=lambda item: (-item[1], item[0]),
+            )[0][0]
+        diagnostics = sorted(diagnostic_counts)
+        summary_rows.append(
+            {
+                "scenario": scenario,
+                "candidate_label": candidate_label,
+                "month": month,
+                "day_count": str(len(month_rows)),
+                "equity_regression_day_count": str(_count_diagnostic(month_rows, "equity_regression")),
+                "equity_improved_day_count": str(_count_diagnostic(month_rows, "equity_improved")),
+                "drawdown_regression_day_count": str(_count_diagnostic(month_rows, "drawdown_regression")),
+                "drawdown_improved_day_count": str(_count_diagnostic(month_rows, "drawdown_improved")),
+                "exposure_reduced_day_count": str(_count_diagnostic(month_rows, "exposure_reduced")),
+                "exposure_increased_day_count": str(_count_diagnostic(month_rows, "exposure_increased")),
+                "symbol_rotation_day_count": str(_count_diagnostic(month_rows, "symbol_rotation")),
+                "avg_equity_delta": _format_optional_float(_average_numeric(row.get("equity_delta") for row in month_rows)),
+                "worst_equity_delta": _format_optional_float(_float_or_none(worst_equity_row.get("equity_delta"))),
+                "worst_equity_delta_date": str(worst_equity_row.get("date", "")),
+                "avg_drawdown_delta_pct": _format_optional_float(
+                    _average_numeric(row.get("drawdown_delta_pct") for row in month_rows)
+                ),
+                "worst_drawdown_delta_pct": _format_optional_float(
+                    _float_or_none(worst_drawdown_row.get("drawdown_delta_pct"))
+                ),
+                "worst_drawdown_delta_date": str(worst_drawdown_row.get("date", "")),
+                "avg_exposure_delta": _format_optional_float(_average_numeric(row.get("exposure_delta") for row in month_rows)),
+                "avg_cash_delta": _format_optional_float(_average_numeric(row.get("cash_delta") for row in month_rows)),
+                "total_turnover_delta": _format_optional_float(_sum_numeric(row.get("turnover_delta") for row in month_rows)),
+                "total_estimated_trade_cost_delta": _format_optional_float(
+                    _sum_numeric(row.get("estimated_trade_cost_delta") for row in month_rows)
+                ),
+                "dominant_diagnostic": dominant_diagnostic,
+                "diagnostic": ";".join(diagnostics) if diagnostics else "same_path",
+                "paper_only": "true",
+                "risk_note": "Diagnostic only; do not change live allocation from this summary without full validation.",
+            }
+        )
+    return summary_rows
+
+
+def _count_diagnostic(rows: list[dict[str, Any]], token: str) -> int:
+    return sum(1 for row in rows if token in _split_semicolon_values(str(row.get("diagnostic", ""))))
+
+
+def _min_numeric_row(rows: list[dict[str, Any]], column: str) -> dict[str, Any]:
+    numeric_rows = [(value, row) for row in rows if (value := _float_or_none(row.get(column))) is not None]
+    if not numeric_rows:
+        return {}
+    return min(numeric_rows, key=lambda item: item[0])[1]
+
+
+def _sum_numeric(values: Any) -> float | None:
+    numeric = [value for value in (_float_or_none(value) for value in values) if value is not None]
+    return sum(numeric) if numeric else None
+
+
 def _path_symbol_list(row: dict[str, Any]) -> list[str]:
     return [
         symbol.strip()
@@ -3873,6 +3988,14 @@ def save_monthly_path_attribution_comparison(rows: list[dict[str, Any]], output_
         rows,
         output_path,
         columns=MONTHLY_PATH_ATTRIBUTION_COMPARISON_COLUMNS,
+    )
+
+
+def save_monthly_path_attribution_comparison_summary(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_PATH_ATTRIBUTION_COMPARISON_SUMMARY_COLUMNS,
     )
 
 

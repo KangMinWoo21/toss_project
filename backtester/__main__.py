@@ -88,6 +88,7 @@ from .monthly_rebalance import (
     compare_monthly_attribution_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
+    summarize_monthly_path_attribution_comparison,
     compare_monthly_validation_reports,
     compare_monthly_validation_scenario_deltas,
     decide_monthly_allocation,
@@ -127,6 +128,7 @@ from .monthly_rebalance import (
     save_monthly_execution_gap,
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
+    save_monthly_path_attribution_comparison_summary,
     save_monthly_proxy_decision_diagnostics,
     save_monthly_proxy_guard_recovery_exits,
     save_monthly_proxy_guard_outcomes,
@@ -1132,6 +1134,7 @@ def main() -> int:
         "--output",
         default="data/reports/monthly_path_attribution_comparison.csv",
     )
+    monthly_compare_paths_parser.add_argument("--summary-output", default=None)
 
     monthly_candidate_followup_parser = subparsers.add_parser(
         "monthly-candidate-followup",
@@ -1700,6 +1703,16 @@ def main() -> int:
             end=args.end,
         )
         saved = save_monthly_path_attribution_comparison(rows, args.output)
+        summary_rows = (
+            summarize_monthly_path_attribution_comparison(rows)
+            if args.summary_output
+            else []
+        )
+        summary_saved = (
+            save_monthly_path_attribution_comparison_summary(summary_rows, args.summary_output)
+            if args.summary_output
+            else 0
+        )
         equity_regression_rows = [
             row for row in rows if "equity_regression" in str(row.get("diagnostic", ""))
         ]
@@ -1715,6 +1728,19 @@ def main() -> int:
         print(f"comparison_rows  {saved}")
         print(f"equity_regression_days  {len(equity_regression_rows)}")
         print(f"drawdown_regression_days  {len(drawdown_regression_rows)}")
+        if args.summary_output:
+            print(f"path_comparison_summary_report  {args.summary_output}")
+            print(f"summary_rows  {summary_saved}")
+            worst_month = min(
+                summary_rows,
+                key=lambda row: _safe_cli_float(row.get("worst_equity_delta")),
+                default={},
+            )
+            if worst_month:
+                print(
+                    "worst_equity_delta_month  "
+                    f"{worst_month.get('month', '')} delta={worst_month.get('worst_equity_delta', '')}"
+                )
         if worst_row:
             print(
                 "worst_equity_delta_date  "

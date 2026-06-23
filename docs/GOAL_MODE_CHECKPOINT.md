@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 no-trade opportunity diagnostics loop
+Last updated: 2026-06-24 regime sideways path summary loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,35 +40,55 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `73fad4f Expose target persistence train diagnostics`.
+  `054b7f1 Add no-trade stability opportunity diagnostics`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `465` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `468` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=338.73` observed).
+  (`age_hours=338.94` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added no-trade opportunity-cost columns to paper-only train stability summary
-diagnostics and regenerated focused `walk_forward_003` reports.
+Added a compact, paper-only monthly summary for path attribution comparisons
+and applied it to `regime_sideways` variant diagnostics.
 
 Changed behavior:
 
-- Train stability summaries now include:
-  `no_trade_subwindow_count`, `no_trade_benchmark_positive_count`,
-  `no_trade_total_benchmark_return_pct`, and
-  `no_trade_avg_benchmark_return_pct`.
+- `monthly-compare-paths` now accepts `--summary-output`.
+- The summary groups daily path comparison rows by month and reports
+  equity/drawdown regression days, symbol-rotation days, average exposure/cash
+  deltas, worst equity/drawdown deltas, and a dominant diagnostic.
 - This is report-only; no strategy default, validation gate, order, or live
   behavior changed.
 
 TDD:
 
-- RED: stability summary tests failed on missing no-trade fields/header.
-- GREEN: targeted summary tests PASS, `3` tests; monthly module PASS, `179`
-  tests.
+- RED: new path-summary imports/options failed before implementation.
+- GREEN: targeted path-summary tests PASS, monthly module PASS (`181` tests),
+  CLI module PASS (`48` tests).
+- Final verification: full `unittest` PASS (`468` tests), compile PASS,
+  production-check remains BLOCK, health-check remains WARN from stale scalper
+  data only.
+
+`regime_sideways` path-summary evidence versus `proxy_guard_exit_short_minus5`:
+
+- `neutral_breadth_cap75`: `107/126` equity-regression days, `47`
+  drawdown-regression days, `35` symbol-rotation days; worst equity delta
+  `-657162.0359` on `2024-10-29`.
+- `buyable_proxy`: `108/126` equity-regression days, `101`
+  drawdown-regression days, `39` symbol-rotation days; worst equity delta
+  `-172507.1649` on `2024-12-09`.
+- `cash_reserve_proxy`: `104/126` equity-regression days, `68`
+  drawdown-regression days, `39` symbol-rotation days; worst equity delta
+  `-271623.8209` on `2025-01-08`.
+- Decision: do not promote these variants. The blocker is not explained by
+  below-one-share execution gaps alone; broad proxy reweighting/buyability/cash
+  reserve changes degrade path behavior across many days.
+
+Prior `walk_forward_003` no-trade context to preserve:
 
 Focused `walk_forward_003` evidence for `proxy_guard_exit_short_minus5`:
 
@@ -132,17 +152,19 @@ Why still blocked:
 - `proxy_chase_guard_55_med35_short30`: introduced `walk_forward_002` failure.
 - `neutral_breadth_proxy_cap_50`: full-period/stress-slippage regressions.
 - `proxy_guard_exit_short_minus5_neutral_breadth_cap75`: diagnostic-only;
-  reduced failures to `1` but timed out before deployment-gate output and
-  worsened `regime_sideways`.
+  reduced failures to `1` but worsened `regime_sideways`; path summary shows
+  `107/126` equity-regression days versus `proxy_guard_exit_short_minus5`.
 - `position_stop_12`, `weak_cash_10_position_stop_12`,
   `weak_defense_cash_10`: unresolved blockers/regressions.
 - `neutral_breadth_proxy_cap_75`, `target_persistence_2`: held/unchanged.
 - `proxy_reversal_guard_55_extreme60`, `proxy_guard_short5_extreme50_mdd10`:
   paper-review only; improved but still left required failures.
 - `proxy_guard_exit_short_minus5 + market_beta_proxy_buyable_only`: removes
-  below-one-share gaps but worsens most `regime_sideways` path days.
+  below-one-share gaps but worsens most `regime_sideways` path days
+  (`108/126` equity-regression days).
 - `proxy_guard_exit_short_minus5 + market_beta_proxy_unbuyable_cash_reserve`:
-  makes cash reserve explicit but worsens `regime_sideways` excess and path.
+  makes cash reserve explicit but worsens `regime_sideways` excess and path
+  (`104/126` equity-regression days).
 
 ## Remaining Blockers
 
@@ -170,10 +192,10 @@ Diagnostic combo remaining failure:
 
 Pick one narrow loop:
 
-- `regime_sideways`: inspect actual path/position drift in `2024-10`,
-  `2024-11`, `2024-12`, and `2025-01`. Both buyability variants worsened
-  path behavior, so avoid further proxy buyability reweighting/cash-reserve
-  variants unless new evidence isolates a different mechanism.
+- `regime_sideways`: avoid further proxy buyability/reweighting/cash-reserve
+  variants unless new evidence isolates a different mechanism. Next viable
+  test should be narrower: reduce high-exposure proxy loss in neutral breadth
+  without suppressing the `2025-02` and `2025-04` recovery participation.
 - `walk_forward_003`: no-trade opportunity cost is now quantified and explains
   why stricter persistence is not enough. Next test only narrow paper-only
   ideas that reduce no-trade benchmark-positive misses without loosening train

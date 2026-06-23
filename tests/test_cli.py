@@ -952,6 +952,57 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["candidate_only_symbols"], "CCC")
         self.assertIn("higher_trade_cost", rows[0]["diagnostic"])
 
+    def test_monthly_compare_paths_cli_writes_monthly_summary_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            baseline = root / "baseline_path.csv"
+            candidate = root / "candidate_path.csv"
+            output = root / "path_compare.csv"
+            summary_output = root / "path_summary.csv"
+            baseline.write_text(
+                "date,equity,drawdown_pct,cash,exposure,position_count,total_position_quantity,"
+                "position_symbols,turnover_value,estimated_trade_cost\n"
+                "2025-03-03,1000,-5,200,0.8,2,12,AAA;BBB,100,0.1\n"
+                "2025-03-04,1010,-4,190,0.81,2,12,AAA;BBB,0,0\n",
+                encoding="utf-8",
+            )
+            candidate.write_text(
+                "date,equity,drawdown_pct,cash,exposure,position_count,total_position_quantity,"
+                "position_symbols,turnover_value,estimated_trade_cost\n"
+                "2025-03-03,980,-7,392,0.6,2,10,AAA;CCC,200,0.2\n"
+                "2025-03-04,1030,-3,370,0.64,2,10,AAA;CCC,0,0\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-paths",
+                    "--baseline",
+                    str(baseline),
+                    "--candidate",
+                    str(candidate),
+                    "--scenario",
+                    "regime_sideways",
+                    "--candidate-label",
+                    "neutral_cap",
+                    "--output",
+                    str(output),
+                    "--summary-output",
+                    str(summary_output),
+                ],
+            )
+            with summary_output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("path_comparison_summary_report", completed.stdout)
+        self.assertIn("summary_rows  1", completed.stdout)
+        self.assertEqual(rows[0]["month"], "2025-03")
+        self.assertEqual(rows[0]["equity_regression_day_count"], "1")
+        self.assertEqual(rows[0]["symbol_rotation_day_count"], "2")
+        self.assertEqual(rows[0]["worst_equity_delta_date"], "2025-03-03")
+
     def test_monthly_validate_help_includes_failure_diagnostics_output(self):
         completed = subprocess.run(
             [

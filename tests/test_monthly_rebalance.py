@@ -50,6 +50,7 @@ from backtester.monthly_rebalance import (
     compare_monthly_attribution_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
+    summarize_monthly_path_attribution_comparison,
     compare_monthly_validation_scenario_deltas,
     compare_monthly_validation_reports,
     run_monthly_validation_sweep_results,
@@ -109,6 +110,7 @@ from backtester.monthly_rebalance import (
     save_monthly_direct_alpha_timing,
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
+    save_monthly_path_attribution_comparison_summary,
     save_monthly_execution_gap,
     save_monthly_proxy_guard_outcomes,
     save_monthly_proxy_guard_recovery_exits,
@@ -3280,6 +3282,83 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("symbol_rotation", row["diagnostic"])
         self.assertIn("higher_turnover", row["diagnostic"])
         self.assertIn("higher_trade_cost", row["diagnostic"])
+
+    def test_summarize_monthly_path_attribution_comparison_groups_regression_days(self):
+        rows = summarize_monthly_path_attribution_comparison(
+            [
+                {
+                    "scenario": "regime_sideways",
+                    "candidate_label": "neutral_cap",
+                    "date": "2025-03-03",
+                    "equity_delta": "-120",
+                    "drawdown_delta_pct": "-1.5",
+                    "exposure_delta": "-0.20",
+                    "cash_delta": "120",
+                    "turnover_delta": "50",
+                    "estimated_trade_cost_delta": "0.5",
+                    "diagnostic": "equity_regression;drawdown_regression;exposure_reduced;symbol_rotation",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "candidate_label": "neutral_cap",
+                    "date": "2025-03-04",
+                    "equity_delta": "40",
+                    "drawdown_delta_pct": "0.5",
+                    "exposure_delta": "-0.10",
+                    "cash_delta": "80",
+                    "turnover_delta": "0",
+                    "estimated_trade_cost_delta": "0",
+                    "diagnostic": "equity_improved;drawdown_improved;exposure_reduced",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "candidate_label": "neutral_cap",
+                    "date": "2025-04-01",
+                    "equity_delta": "-20",
+                    "drawdown_delta_pct": "0.1",
+                    "exposure_delta": "0.05",
+                    "cash_delta": "-30",
+                    "turnover_delta": "10",
+                    "estimated_trade_cost_delta": "0.1",
+                    "diagnostic": "equity_regression;exposure_increased",
+                },
+            ]
+        )
+
+        by_month = {row["month"]: row for row in rows}
+        march = by_month["2025-03"]
+        self.assertEqual(march["day_count"], "2")
+        self.assertEqual(march["equity_regression_day_count"], "1")
+        self.assertEqual(march["drawdown_regression_day_count"], "1")
+        self.assertEqual(march["symbol_rotation_day_count"], "1")
+        self.assertEqual(march["avg_exposure_delta"], "-0.15")
+        self.assertEqual(march["total_turnover_delta"], "50")
+        self.assertEqual(march["worst_equity_delta"], "-120")
+        self.assertEqual(march["worst_equity_delta_date"], "2025-03-03")
+        self.assertEqual(march["dominant_diagnostic"], "exposure_reduced")
+        self.assertEqual(march["paper_only"], "true")
+
+    def test_save_monthly_path_attribution_comparison_summary_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "path_summary.csv"
+            saved = save_monthly_path_attribution_comparison_summary(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "candidate_label": "neutral_cap",
+                        "month": "2025-03",
+                        "day_count": "2",
+                        "equity_regression_day_count": "1",
+                        "dominant_diagnostic": "exposure_reduced",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("equity_regression_day_count", text.splitlines()[0])
+        self.assertIn("regime_sideways", text)
 
     def test_save_monthly_path_attribution_reports_write_csv(self):
         with TemporaryDirectory() as temp_dir:
