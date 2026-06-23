@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-23 22:24 KST
+Last updated: 2026-06-23 22:41 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 437 tests.
+- `python -m unittest discover -s tests`: PASS, 440 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,108 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Regenerated and analyzed direct candidate stability-window diagnostics for the direct-alpha train weakness focus:
+
+- No strategy behavior was changed.
+- No production defaults were changed.
+- No real order execution, Toss API test call, production gate bypass, or live default change was added.
+- Existing paper-only diagnostic implementation was verified:
+  - `analyze_monthly_train_stability_windows`
+  - `save_monthly_train_stability_windows`
+  - `monthly-train-decision-diagnostics --stability-output ...`
+  - symbol-level stability attribution
+  - paper-only path-drift experiment summary
+
+Regenerated reports:
+
+- `data/reports/monthly_train_decision_path_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_stability_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_stability_symbol_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_path_drift_experiment_diagnostics.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Report regeneration command:
+
+```powershell
+python -m backtester monthly-train-decision-diagnostics --data-dir data/krx_expanded --baseline data/reports/monthly_validation_scenarios_pit_universe.csv --scenario walk_forward_003 --scenario walk_forward_004 --point-in-time-universe data/krx_metadata/krx_universe_monthly.csv --output data/reports/monthly_train_decision_path_diagnostics.csv --stability-output data/reports/monthly_direct_alpha_stability_diagnostics.csv --stability-symbol-output data/reports/monthly_direct_alpha_stability_symbol_diagnostics.csv --path-drift-experiment-output data/reports/monthly_direct_alpha_path_drift_experiment_diagnostics.csv
+```
+
+Diagnostic scope:
+
+- Scenarios:
+  - `walk_forward_003`
+  - `walk_forward_004`
+- Train decision rows: `26`
+- Stability rows: `26`
+- Stability symbol rows: `48`
+- Path-drift experiment rows: `6`
+
+Direct-alpha stability findings:
+
+- `walk_forward_003`:
+  - `13` train decisions.
+  - `7` early decisions had `no_train_symbols`.
+  - `6` counted stability windows were all negative.
+  - Counted rows all had `candidate_positive_ratio=0.0`.
+  - Rejection reasons were split between:
+    - `nonpositive_excess;insufficient_trades;low_positive_ratio`
+    - `nonpositive_excess;low_positive_ratio`
+  - Stability failed reasons were split between:
+    - `nonpositive_excess;no_trades`
+    - `nonpositive_excess`
+  - The PIT/liquidity/train universe stayed broad enough in counted rows:
+    - raw symbols about `2184`
+    - PIT symbols about `2005` to `2035`
+    - liquid/train symbols `100`
+  - This points away from universe-size failure and toward candidate instability / no-trade windows / holding-path drift versus a strong top-100 benchmark.
+
+- `walk_forward_004`:
+  - `13` train decisions.
+  - `7` early decisions had `no_train_symbols`.
+  - `6` counted stability windows were all negative.
+  - Counted rows all had `candidate_positive_ratio=0.0`.
+  - Rejection reasons matched `walk_forward_003`:
+    - `nonpositive_excess;insufficient_trades;low_positive_ratio`
+    - `nonpositive_excess;low_positive_ratio`
+  - Stability failed reasons were split between:
+    - `nonpositive_excess;no_trades`
+    - `nonpositive_excess`
+  - Counted rows again retained liquid/train symbols `100`, so the blocker is not a thin train universe.
+
+Path-drift follow-up evidence:
+
+- All `walk_forward_003` path-drift experiment rows recommended `test_stricter_target_persistence`.
+- `walk_forward_004` recommended mostly `test_stricter_target_persistence`, with the final counted row recommending `test_slower_rebalance_cadence`.
+- Largest missed selected-not-traded contribution examples:
+  - `071970` in `walk_forward_004` on `2025-09-01`
+  - `083650` in `walk_forward_003` on `2025-06-02`
+  - `042660` in `walk_forward_004` on `2025-08-01` / `2025-09-01`
+- This does not justify loosening `min_train_positive_ratio`; it supports paper-only follow-up around target persistence or rebalance cadence.
+
+Verification in this loop:
+
+- Targeted diagnostic/CLI tests:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_breaks_positive_ratio_into_subwindows tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_windows_adds_selection_and_path_context tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_windows_writes_csv tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report`: PASS, `4` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `440` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=333.85` observed).
+
+Next recommended action:
+
+- Keep train-window rejection intact for `walk_forward_003`; do not loosen `min_train_positive_ratio`.
+- Treat direct-alpha target persistence / slower rebalance cadence only as paper-only candidate experiments that require full validation.
+- Continue remaining hard blockers:
+  - `stress_exclude_500pct_winners`: drawdown attribution and stress-specific loss-symbol mitigation.
+  - `regime_sideways`: isolate why recovery is still negative even after the proxy reversal guard candidate improved it.
+  - Baseline `walk_forward_001` / `walk_forward_005`: remain failed in production baseline even though the latest proxy-reversal candidate improved them in paper review.
+
+## Previous Loop: Proxy Reversal Guard Candidate
 
 Added and validated a paper-only proxy reversal guard candidate:
 
