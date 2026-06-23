@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 00:37 KST
+Last updated: 2026-06-24 context-ops update
 
 ## Objective
 
@@ -24,6 +24,39 @@ Do not implement real order execution.
 - Monthly workflows may create plans and reports only.
 - Prefer deterministic `unittest` tests with temp files and fixtures.
 - Preserve existing CLI compatibility.
+
+## Context Operation Rules
+
+Automatic compaction is not preferred in the middle of an active work loop.
+
+Consider compaction only after an important loop is cleanly closed:
+
+- Changes are organized.
+- Required tests and verification were run.
+- Generated reports and key numbers were checked.
+- `docs/GOAL_MODE_CHECKPOINT.md` was updated.
+- Commit and push are complete when needed.
+
+If the context becomes too large and reasoning quality is likely to degrade, Codex may choose to compact earlier.
+
+After compaction, the first actions must always be:
+
+1. Read the goal objective file.
+2. Read `docs/GOAL_MODE_CHECKPOINT.md`.
+3. Run `git status --short`.
+4. Check the latest `production-check` and `health-check` reports.
+5. Reconfirm previously rejected candidates and remaining blockers before continuing.
+
+The compaction summary must include:
+
+- Latest commit.
+- Changed files.
+- Passing tests.
+- Production and health status.
+- Generated reports.
+- Accepted or rejected candidates, with reasons.
+- Remaining BLOCK causes.
+- Exact next task.
 
 ## Current Status
 
