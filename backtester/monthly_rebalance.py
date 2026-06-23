@@ -3802,6 +3802,8 @@ def _proxy_context_recommended_focus(
         return "test_neutral_breadth_loss_discriminator"
     if breadth_context == "strong_breadth" and gain_participation_count > 0 and loss_count == 0:
         return "preserve_strong_breadth_recovery"
+    if breadth_context == "strong_breadth" and guard_triggered_count > 0 and loss_count > 0:
+        return "analyze_guarded_loss_position_pressure"
     if guard_triggered_count > 0 and gain_participation_count > 0:
         return "inspect_guard_recovery_drag"
     if high_exposure_loss_count > 0:
@@ -3824,6 +3826,8 @@ def _proxy_context_diagnostic(
         diagnostics.append("gain_participation_context")
     if guard_triggered_count:
         diagnostics.append("guard_triggered_context")
+    if guard_triggered_count and loss_count:
+        diagnostics.append("guarded_loss_residual")
     if loss_count and gain_count:
         diagnostics.append("mixed_return_context")
     elif loss_count:

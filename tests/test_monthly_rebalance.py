@@ -3043,6 +3043,17 @@ class MonthlyRebalanceTests(unittest.TestCase):
                 },
                 {
                     "scenario": "regime_sideways",
+                    "month": "2025-03",
+                    "mode": "market_beta_proxy",
+                    "month_return_pct": "-6.4",
+                    "target_exposure": "0.55",
+                    "cash_weight": "0.45",
+                    "prior_breadth": "0.70",
+                    "proxy_reversal_guard_triggered": "true",
+                    "diagnostic": "market_beta_proxy;strong_breadth;no_eligible_direct_candidate",
+                },
+                {
+                    "scenario": "regime_sideways",
                     "month": "2025-04",
                     "mode": "market_beta_proxy",
                     "month_return_pct": "0.6",
@@ -3069,6 +3080,12 @@ class MonthlyRebalanceTests(unittest.TestCase):
         strong_high = by_context[("strong_breadth", "high_exposure")]
         self.assertEqual(strong_high["gain_participation_count"], "1")
         self.assertEqual(strong_high["recommended_candidate_focus"], "preserve_strong_breadth_recovery")
+        strong_guarded = by_context[("strong_breadth", "guarded_exposure")]
+        self.assertEqual(strong_guarded["months"], "2025-03")
+        self.assertEqual(strong_guarded["loss_month_count"], "1")
+        self.assertEqual(strong_guarded["guard_triggered_count"], "1")
+        self.assertEqual(strong_guarded["recommended_candidate_focus"], "analyze_guarded_loss_position_pressure")
+        self.assertIn("guarded_loss_residual", strong_guarded["diagnostic"])
         strong_scaled = by_context[("strong_breadth", "scaled_exposure")]
         self.assertEqual(strong_scaled["months"], "2025-04")
         self.assertEqual(strong_scaled["paper_only"], "true")

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 neutral loss guard paper loop
+Last updated: 2026-06-24 guarded residual proxy context loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,57 +40,46 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `f0fda47 Summarize proxy decision contexts`.
+  `3caf0e3 Add neutral proxy loss guard`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
 - Latest full tests: `python -m unittest discover -s tests` PASS, `474` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=339.45` observed).
+  (`age_hours=339.58` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a default-off, paper-only neutral-breadth proxy loss guard and validated
-it as a new research candidate layered on `proxy_guard_exit_short_minus5`.
+Added a report-only proxy context refinement for the remaining
+`regime_sideways` blocker under `proxy_guard_exit_short_minus5_neutral_loss_guard55`.
 
 Changed behavior:
 
-- New `market_beta_proxy_neutral_loss_guard_*` config/CLI fields default off:
-  max exposure `1.0`, lookbacks `0`, thresholds `0.0`.
-- When explicitly enabled, the guard can cap neutral-breadth proxy exposure
-  only if medium and optional short proxy-basket returns are below configured
-  thresholds.
-- The guard is disabled by default. No live-order, production default, Toss API,
-  or baseline validation behavior changed.
+- `monthly-proxy-context-summary` now flags strong-breadth guarded proxy loss
+  residuals as `analyze_guarded_loss_position_pressure`.
+- This is diagnostic/report-only. No strategy default, validation gate, order,
+  live behavior, Toss API, or baseline behavior changed.
 
 TDD:
 
-- RED: new neutral-loss guard import/decision tests and CLI help assertions
-  failed before implementation.
-- GREEN: targeted guard tests PASS, monthly module PASS (`186` tests), CLI
-  module PASS (`49` tests).
+- RED: proxy context-summary test failed because guarded loss residuals were
+  still labeled `review_proxy_context`.
+- GREEN: targeted context-summary test PASS, monthly module PASS (`186`
+  tests), CLI module PASS (`49` tests).
 - Final verification: full `unittest` PASS (`474` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
-Candidate evidence:
+Residual evidence:
 
-- Candidate label: `proxy_guard_exit_short_minus5_neutral_loss_guard55`.
-- Explicit paper args: neutral loss guard max exposure `0.55`, medium lookback
-  `40`, medium max return `35`, short lookback `20`, short max return `15`,
-  layered on the existing `proxy_guard_exit_short_minus5` reversal guard.
-- Focused `regime_sideways`: excess improved from prior candidate `-5.2338%`
-  to `-4.0548%`; max DD moved from `-21.7254%` to `-21.7902%`.
-- The guard capped `2024-10`, `2024-11`, and `2024-12` to `0.55` exposure.
-  It preserved `2025-02` high-exposure strong-breadth recovery at `0.99` and
-  `2025-04` drawdown-scaled strong-breadth recovery at `0.7425`.
-- Full validation versus production baseline: `IMPROVED`, `PAPER_REVIEW`,
-  required failures `5 -> 1`, no new failures.
-- Full validation versus previous best candidate: required failures `2 -> 1`.
-- Remaining failed required scenario: `regime_sideways`
-  (`negative_excess_return`, excess `-4.0548%`, max DD `-21.7902%`).
+- Re-generated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_proxy_context_summary.csv`.
+- Remaining residual context: `strong_breadth/guarded_exposure`, month
+  `2025-03`, avg return `-6.4719%`, avg exposure `0.55`, guard triggers `1`,
+  diagnostic `guarded_loss_residual`.
+- Neutral high-exposure loss contexts are now `0`; strong-breadth recovery
+  contexts remain preserved.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
