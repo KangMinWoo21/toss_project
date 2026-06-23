@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 train stability summary diagnostics loop
+Last updated: 2026-06-24 regime sideways combo diagnostics loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -51,54 +51,38 @@ appending long command logs or full report lists here.
 
 ## Latest Loop
 
-Added paper-only train stability summary diagnostics to
-`monthly-train-decision-diagnostics`.
+Focused on `regime_sideways` because `walk_forward_003` remains a train-gate
+issue that should not be overridden without stronger stability evidence.
 
-Changed behavior:
+Focused attribution for `proxy_guard_exit_short_minus5`:
 
-- New pure report builder: `analyze_monthly_train_stability_summary`.
-- New CSV writer: `save_monthly_train_stability_summary`.
-- New CLI option: `--stability-summary-output`.
-- No trading behavior changed; this is report-only.
+- Reproduced `regime_sideways`: total `-7.2966%`, excess `-5.2338%`,
+  max DD `-21.7254%`.
+- Guard outcomes: `missed_high_exposure_loss=3` (`2024-10`, `2024-11`,
+  `2024-12`), `loss_cap_aligned=1` (`2025-03`), `gain_preserved=3`.
+- Versus baseline: `2025-03` return delta `+2.6350%`; `2025-04` return drag
+  `-0.7512%`; early high-exposure neutral-breadth losses were unchanged.
 
-TDD:
+Tested paper-only combo:
+`proxy_guard_exit_short_minus5_neutral_breadth_cap75`.
 
-- RED: new summary tests failed on missing functions; CLI test failed on
-  unknown `--stability-summary-output`.
-- GREEN: targeted tests PASS, `3` tests.
-- Extra RED/GREEN: split semicolon-composed underperformance drivers into
-  separate `token=count` values.
-
-Generated reports:
-
-- `data/reports/walk_forward_003_train_decision_proxy_guard_exit_short_minus5.csv`
-- `data/reports/walk_forward_003_train_stability_proxy_guard_exit_short_minus5.csv`
-- `data/reports/walk_forward_003_train_stability_summary_proxy_guard_exit_short_minus5.csv`
-- `data/reports/walk_forward_003_train_stability_symbol_proxy_guard_exit_short_minus5.csv`
-- `data/reports/walk_forward_003_train_path_drift_experiment_proxy_guard_exit_short_minus5.csv`
-
-Key `walk_forward_003` finding:
-
-- Summary rows: `2`.
-- Direct candidate row: `balanced`.
-- Direct candidate train decisions summarized: `6`.
-- Direct candidate low-positive-ratio decisions: `6`.
-- Counted stability subwindows: `6`; positive `0`, negative `6`.
-- Negative subwindow ratio: `1.0`.
-- Average stability excess: `-31.7252%`; worst: `-53.3186%`.
-- Dominant failed reason: `nonpositive_excess`.
-- Driver counts:
-  `benchmark_positive_selection_nonpositive=3`,
-  `holding_path_differs_from_selection_snapshot=3`, `no_trades=3`.
-- Diagnostic:
-  `low_positive_ratio_due_to_negative_stability_windows`.
-- No-direct-candidate row: `7` decisions, all `no_train_symbols`.
-- Path-drift experiment rows suggest only paper-review candidates:
-  `test_stricter_target_persistence`, not adopted.
+- Main validation rows completed, but the CLI timed out before writing the
+  deployment-gate CSV. Treat as diagnostic only.
+- Required failures improved from `2` to `1`; `walk_forward_003` resolved.
+- Remaining failure: `regime_sideways`, worsened to excess `-5.8965%`,
+  max DD `-21.8429%`.
+- Decision report: `PAPER_REVIEW`, not adopt/promote.
+- Regime path comparison versus `proxy_guard_exit_short_minus5` showed
+  `107` equity-regression days, `47` drawdown-regression days, `35`
+  symbol-rotation days, worst equity delta `-657162.0359` on `2024-10-29`.
+- Root cause evidence: lower neutral-breadth target weights dropped `010130`
+  from actual held positions in early months; broad cap is not a clean
+  exposure-only fix.
 
 ## Current Best Candidate
 
-`proxy_guard_exit_short_minus5` is the best current paper-review candidate.
+`proxy_guard_exit_short_minus5` remains the best fully validated reference
+candidate.
 
 Result:
 
@@ -123,6 +107,9 @@ Why still blocked:
 
 - `proxy_chase_guard_55_med35_short30`: introduced `walk_forward_002` failure.
 - `neutral_breadth_proxy_cap_50`: full-period/stress-slippage regressions.
+- `proxy_guard_exit_short_minus5_neutral_breadth_cap75`: diagnostic-only;
+  reduced failures to `1` but timed out before deployment-gate output and
+  worsened `regime_sideways`.
 - `position_stop_12`, `weak_cash_10_position_stop_12`,
   `weak_defense_cash_10`: unresolved blockers/regressions.
 - `neutral_breadth_proxy_cap_75`, `target_persistence_2`: held/unchanged.
@@ -145,12 +132,19 @@ Best candidate remaining failures:
 - `walk_forward_003`: train rejected; train excess about `-0.3002%`, test
   excess about `8.7530%`, max DD about `-7.1592%`.
 
+Diagnostic combo remaining failure:
+
+- `proxy_guard_exit_short_minus5_neutral_breadth_cap75` leaves only
+  `regime_sideways`, but it worsens that blocker and needs a clean full rerun
+  before it can be compared operationally.
+
 ## Next Work
 
 Pick one narrow loop:
 
-- `regime_sideways`: inspect high-exposure loss months `2024-10`,
-  `2024-11`, `2024-12`; avoid broad sweeps.
+- `regime_sideways`: inspect actual path/position drift in `2024-10`,
+  `2024-11`, `2024-12`, especially why lower target weights drop expensive
+  symbols such as `010130`; avoid broad neutral-breadth caps as-is.
 - `walk_forward_003`: continue from the new stability summary; inspect the
   negative subwindow symbol/path-drift rows before changing gates.
 
