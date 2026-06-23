@@ -198,6 +198,11 @@ class MonthlyRebalanceConfig:
     market_beta_proxy_size: int = 12
     market_beta_proxy_max_exposure: float = 1.0
     market_beta_proxy_neutral_breadth_max_exposure: float = 1.0
+    market_beta_proxy_neutral_loss_guard_max_exposure: float = 1.0
+    market_beta_proxy_neutral_loss_guard_medium_lookback_days: int = 0
+    market_beta_proxy_neutral_loss_guard_medium_max_return_pct: float = 0.0
+    market_beta_proxy_neutral_loss_guard_short_lookback_days: int = 0
+    market_beta_proxy_neutral_loss_guard_short_max_return_pct: float = 0.0
     market_beta_proxy_reversal_guard_max_exposure: float = 1.0
     market_beta_proxy_reversal_guard_medium_lookback_days: int = 0
     market_beta_proxy_reversal_guard_medium_return_pct: float = 0.0
@@ -9989,6 +9994,17 @@ def _market_beta_proxy_effective_cap(
         if neutral_cap < effective_cap:
             effective_cap = neutral_cap
             reason = "proxy_neutral_breadth_capped"
+        if symbol_candles is not None and signal_date:
+            neutral_loss_cap, neutral_loss_reason = market_beta_proxy_neutral_loss_guard_cap(
+                symbol_candles,
+                signal_date=signal_date,
+                current_cap=effective_cap,
+                prior_breadth=prior_breadth,
+                config=config,
+            )
+            if neutral_loss_cap < effective_cap:
+                effective_cap = neutral_loss_cap
+                reason = neutral_loss_reason
     if symbol_candles is not None and signal_date:
         reversal_cap, reversal_reason = market_beta_proxy_reversal_guard_cap(
             symbol_candles,
@@ -9999,6 +10015,55 @@ def _market_beta_proxy_effective_cap(
         if reversal_cap < effective_cap:
             return reversal_cap, reversal_reason
     return effective_cap, reason
+
+
+def market_beta_proxy_neutral_loss_guard_cap(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    signal_date: str,
+    current_cap: float,
+    prior_breadth: float | None,
+    config: MonthlyRebalanceConfig,
+) -> tuple[float, str]:
+    effective_cap = max(0.0, current_cap)
+    if prior_breadth is None or prior_breadth >= config.fallback_breadth_threshold:
+        return effective_cap, "proxy_exposure_capped"
+    guard_cap = max(0.0, config.market_beta_proxy_neutral_loss_guard_max_exposure)
+    medium_days = int(config.market_beta_proxy_neutral_loss_guard_medium_lookback_days)
+    if medium_days <= 0 or guard_cap >= effective_cap:
+        return effective_cap, "proxy_exposure_capped"
+
+    proxy_symbols = rank_symbols_by_average_trading_value(
+        symbol_candles,
+        signal_date=signal_date,
+        window_days=max(1, config.point_in_time_liquidity_window_days),
+    )[: max(0, config.market_beta_proxy_size)]
+    medium_return = _average_symbol_return_pct(
+        symbol_candles,
+        proxy_symbols,
+        signal_date=signal_date,
+        lookback_days=medium_days,
+    )
+    if (
+        medium_return is None
+        or medium_return > config.market_beta_proxy_neutral_loss_guard_medium_max_return_pct
+    ):
+        return effective_cap, "proxy_exposure_capped"
+
+    short_days = int(config.market_beta_proxy_neutral_loss_guard_short_lookback_days)
+    if short_days > 0:
+        short_return = _average_symbol_return_pct(
+            symbol_candles,
+            proxy_symbols,
+            signal_date=signal_date,
+            lookback_days=short_days,
+        )
+        if (
+            short_return is None
+            or short_return > config.market_beta_proxy_neutral_loss_guard_short_max_return_pct
+        ):
+            return effective_cap, "proxy_exposure_capped"
+    return min(effective_cap, guard_cap), "proxy_neutral_loss_guard_capped"
 
 
 def market_beta_proxy_reversal_guard_cap(

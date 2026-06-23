@@ -2017,6 +2017,11 @@ def main() -> int:
             market_beta_proxy_size=args.market_beta_proxy_size,
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
             market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
+            market_beta_proxy_neutral_loss_guard_max_exposure=args.market_beta_proxy_neutral_loss_guard_max_exposure,
+            market_beta_proxy_neutral_loss_guard_medium_lookback_days=args.market_beta_proxy_neutral_loss_guard_medium_lookback_days,
+            market_beta_proxy_neutral_loss_guard_medium_max_return_pct=args.market_beta_proxy_neutral_loss_guard_medium_max_return_pct,
+            market_beta_proxy_neutral_loss_guard_short_lookback_days=args.market_beta_proxy_neutral_loss_guard_short_lookback_days,
+            market_beta_proxy_neutral_loss_guard_short_max_return_pct=args.market_beta_proxy_neutral_loss_guard_short_max_return_pct,
             market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
             market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
             market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
@@ -2755,6 +2760,11 @@ def main() -> int:
                 market_beta_proxy_size=args.market_beta_proxy_size,
                 market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
                 market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
+                market_beta_proxy_neutral_loss_guard_max_exposure=args.market_beta_proxy_neutral_loss_guard_max_exposure,
+                market_beta_proxy_neutral_loss_guard_medium_lookback_days=args.market_beta_proxy_neutral_loss_guard_medium_lookback_days,
+                market_beta_proxy_neutral_loss_guard_medium_max_return_pct=args.market_beta_proxy_neutral_loss_guard_medium_max_return_pct,
+                market_beta_proxy_neutral_loss_guard_short_lookback_days=args.market_beta_proxy_neutral_loss_guard_short_lookback_days,
+                market_beta_proxy_neutral_loss_guard_short_max_return_pct=args.market_beta_proxy_neutral_loss_guard_short_max_return_pct,
                 market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
                 market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
                 market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
@@ -2967,6 +2977,11 @@ def main() -> int:
                 market_beta_proxy_size=args.market_beta_proxy_size,
                 market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
                 market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
+                market_beta_proxy_neutral_loss_guard_max_exposure=args.market_beta_proxy_neutral_loss_guard_max_exposure,
+                market_beta_proxy_neutral_loss_guard_medium_lookback_days=args.market_beta_proxy_neutral_loss_guard_medium_lookback_days,
+                market_beta_proxy_neutral_loss_guard_medium_max_return_pct=args.market_beta_proxy_neutral_loss_guard_medium_max_return_pct,
+                market_beta_proxy_neutral_loss_guard_short_lookback_days=args.market_beta_proxy_neutral_loss_guard_short_lookback_days,
+                market_beta_proxy_neutral_loss_guard_short_max_return_pct=args.market_beta_proxy_neutral_loss_guard_short_max_return_pct,
                 market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
                 market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
                 market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
@@ -3069,6 +3084,11 @@ def main() -> int:
             point_in_time_universe=point_in_time_universe,
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
             market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
+            market_beta_proxy_neutral_loss_guard_max_exposure=args.market_beta_proxy_neutral_loss_guard_max_exposure,
+            market_beta_proxy_neutral_loss_guard_medium_lookback_days=args.market_beta_proxy_neutral_loss_guard_medium_lookback_days,
+            market_beta_proxy_neutral_loss_guard_medium_max_return_pct=args.market_beta_proxy_neutral_loss_guard_medium_max_return_pct,
+            market_beta_proxy_neutral_loss_guard_short_lookback_days=args.market_beta_proxy_neutral_loss_guard_short_lookback_days,
+            market_beta_proxy_neutral_loss_guard_short_max_return_pct=args.market_beta_proxy_neutral_loss_guard_short_max_return_pct,
             market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
             market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
             market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
@@ -3270,6 +3290,11 @@ def main() -> int:
             market_beta_proxy_size=args.market_beta_proxy_size,
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
             market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
+            market_beta_proxy_neutral_loss_guard_max_exposure=args.market_beta_proxy_neutral_loss_guard_max_exposure,
+            market_beta_proxy_neutral_loss_guard_medium_lookback_days=args.market_beta_proxy_neutral_loss_guard_medium_lookback_days,
+            market_beta_proxy_neutral_loss_guard_medium_max_return_pct=args.market_beta_proxy_neutral_loss_guard_medium_max_return_pct,
+            market_beta_proxy_neutral_loss_guard_short_lookback_days=args.market_beta_proxy_neutral_loss_guard_short_lookback_days,
+            market_beta_proxy_neutral_loss_guard_short_max_return_pct=args.market_beta_proxy_neutral_loss_guard_short_max_return_pct,
             market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
             market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
             market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
@@ -3629,6 +3654,11 @@ def _add_common_args_without_data(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_market_beta_proxy_reversal_guard_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--market-beta-proxy-neutral-loss-guard-max-exposure", type=float, default=1.0)
+    parser.add_argument("--market-beta-proxy-neutral-loss-guard-medium-lookback-days", type=int, default=0)
+    parser.add_argument("--market-beta-proxy-neutral-loss-guard-medium-max-return-pct", type=float, default=0.0)
+    parser.add_argument("--market-beta-proxy-neutral-loss-guard-short-lookback-days", type=int, default=0)
+    parser.add_argument("--market-beta-proxy-neutral-loss-guard-short-max-return-pct", type=float, default=0.0)
     parser.add_argument("--market-beta-proxy-reversal-guard-max-exposure", type=float, default=1.0)
     parser.add_argument("--market-beta-proxy-reversal-guard-medium-lookback-days", type=int, default=0)
     parser.add_argument("--market-beta-proxy-reversal-guard-medium-return-pct", type=float, default=0.0)

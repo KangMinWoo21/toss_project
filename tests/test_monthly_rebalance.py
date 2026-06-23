@@ -76,6 +76,7 @@ from backtester.monthly_rebalance import (
     load_point_in_time_universe,
     liquidity_universe_exposure_scale,
     mark_order_plan_execution,
+    market_beta_proxy_neutral_loss_guard_cap,
     market_beta_proxy_reversal_guard_cap,
     market_volatility_exposure_scale,
     risk_exit_code,
@@ -290,6 +291,11 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_size, 12)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_max_exposure, 1.0)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_neutral_breadth_max_exposure, 1.0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_neutral_loss_guard_max_exposure, 1.0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_neutral_loss_guard_medium_lookback_days, 0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_neutral_loss_guard_medium_max_return_pct, 0.0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_neutral_loss_guard_short_lookback_days, 0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_neutral_loss_guard_short_max_return_pct, 0.0)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_max_exposure, 1.0)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_medium_lookback_days, 0)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_medium_return_pct, 0.0)
@@ -304,6 +310,69 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(RiskLimits().max_total_target_weight, 1.0)
         self.assertEqual(RiskLimits().max_total_buy_value, 10_000_000.0)
         self.assertEqual(RiskLimits().max_order_count, 15)
+
+    def test_market_beta_proxy_neutral_loss_guard_caps_only_neutral_weak_proxy_momentum(self):
+        config = MonthlyRebalanceConfig(
+            market_beta_proxy_neutral_loss_guard_max_exposure=0.55,
+            market_beta_proxy_neutral_loss_guard_medium_lookback_days=4,
+            market_beta_proxy_neutral_loss_guard_medium_max_return_pct=30.0,
+            market_beta_proxy_neutral_loss_guard_short_lookback_days=2,
+            market_beta_proxy_neutral_loss_guard_short_max_return_pct=15.0,
+            fallback_breadth_threshold=0.8,
+            market_beta_proxy_size=2,
+            point_in_time_liquidity_window_days=1,
+        )
+        symbol_candles = {
+            "AAA": _priced_candles("2025-01-01", [100, 106, 110, 112, 114], volume=10_000),
+            "BBB": _priced_candles("2025-01-01", [100, 105, 109, 111, 113], volume=9_000),
+        }
+
+        cap, reason = market_beta_proxy_neutral_loss_guard_cap(
+            symbol_candles,
+            signal_date="2025-01-05",
+            current_cap=1.0,
+            prior_breadth=0.47,
+            config=config,
+        )
+        strong_cap, strong_reason = market_beta_proxy_neutral_loss_guard_cap(
+            symbol_candles,
+            signal_date="2025-01-05",
+            current_cap=1.0,
+            prior_breadth=0.85,
+            config=config,
+        )
+
+        self.assertEqual(cap, 0.55)
+        self.assertEqual(reason, "proxy_neutral_loss_guard_capped")
+        self.assertEqual(strong_cap, 1.0)
+        self.assertEqual(strong_reason, "proxy_exposure_capped")
+
+    def test_market_beta_proxy_neutral_loss_guard_preserves_neutral_strong_proxy_momentum(self):
+        config = MonthlyRebalanceConfig(
+            market_beta_proxy_neutral_loss_guard_max_exposure=0.55,
+            market_beta_proxy_neutral_loss_guard_medium_lookback_days=4,
+            market_beta_proxy_neutral_loss_guard_medium_max_return_pct=30.0,
+            market_beta_proxy_neutral_loss_guard_short_lookback_days=2,
+            market_beta_proxy_neutral_loss_guard_short_max_return_pct=15.0,
+            fallback_breadth_threshold=0.8,
+            market_beta_proxy_size=2,
+            point_in_time_liquidity_window_days=1,
+        )
+        symbol_candles = {
+            "AAA": _priced_candles("2025-01-01", [100, 118, 130, 145, 155], volume=10_000),
+            "BBB": _priced_candles("2025-01-01", [100, 117, 129, 143, 154], volume=9_000),
+        }
+
+        cap, reason = market_beta_proxy_neutral_loss_guard_cap(
+            symbol_candles,
+            signal_date="2025-01-05",
+            current_cap=1.0,
+            prior_breadth=0.47,
+            config=config,
+        )
+
+        self.assertEqual(cap, 1.0)
+        self.assertEqual(reason, "proxy_exposure_capped")
 
     def test_market_beta_proxy_reversal_guard_caps_rollover_after_medium_overheat(self):
         config = MonthlyRebalanceConfig(
@@ -5312,6 +5381,41 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(decision.mode, "market_beta_proxy")
         self.assertEqual(decision.reason, "no_train_candidate_strong_breadth_proxy")
         self.assertEqual(decision.target_weights, {"AAA": 0.495, "BBB": 0.495})
+
+    def test_decide_monthly_allocation_caps_neutral_high_exposure_proxy_loss_context_only(self):
+        decision = decide_monthly_allocation(
+            {
+                "AAA": _priced_candles("2024-01-01", [100, 106, 110, 112, 114, 115], volume=3_000),
+                "BBB": _priced_candles("2024-01-01", [100, 105, 109, 111, 113, 114], volume=2_000),
+                "CCC": _priced_candles("2024-01-01", [110, 108, 106, 104, 102, 101], volume=1_000),
+            },
+            as_of_date="2024-01-06",
+            config=MonthlyRebalanceConfig(
+                train_start="2024-01-01",
+                min_train_trades=999,
+                min_rows_per_window=3,
+                fallback_breadth_days=3,
+                fallback_breadth_threshold=0.8,
+                market_beta_breadth_threshold=0.5,
+                point_in_time_min_history_days=3,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_window_days=1,
+                point_in_time_liquidity_top_n=3,
+                market_beta_proxy_size=2,
+                market_beta_proxy_neutral_loss_guard_max_exposure=0.55,
+                market_beta_proxy_neutral_loss_guard_medium_lookback_days=4,
+                market_beta_proxy_neutral_loss_guard_medium_max_return_pct=30.0,
+                market_beta_proxy_neutral_loss_guard_short_lookback_days=2,
+                market_beta_proxy_neutral_loss_guard_short_max_return_pct=15.0,
+                max_position_weight=0.5,
+            ),
+            portfolio_value=1_000_000,
+            reference_prices={"AAA": 115, "BBB": 114, "CCC": 101},
+        )
+
+        self.assertEqual(decision.mode, "market_beta_proxy")
+        self.assertEqual(decision.reason, "no_train_candidate_neutral_breadth_proxy_proxy_neutral_loss_guard_capped")
+        self.assertEqual(decision.target_weights, {"AAA": 0.275, "BBB": 0.275})
 
     def test_decide_monthly_allocation_scales_exposure_when_market_trend_is_negative(self):
         decision = decide_monthly_allocation(
