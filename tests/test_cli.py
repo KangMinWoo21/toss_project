@@ -750,6 +750,62 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["guard_outcome"], "profitable_continuation_capped")
         self.assertEqual(rows[0]["paper_only"], "true")
 
+    def test_monthly_proxy_guard_recovery_exits_cli_writes_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            proxy_input = root / "proxy_diagnostics.csv"
+            comparison_input = root / "attribution_comparison.csv"
+            output = root / "proxy_guard_recovery_exits.csv"
+            proxy_input.write_text(
+                "scenario,month,month_return_pct,month_status,mode,reason,target_exposure,cash_weight,"
+                "proxy_reversal_guard_triggered,proxy_reversal_guard_medium_return_pct,"
+                "proxy_reversal_guard_short_return_pct,proxy_reversal_guard_medium_drawdown_pct,"
+                "proxy_reversal_guard_reason,diagnostic\n"
+                "walk_forward_005,2026-03,-13.954,LOSS,market_beta_proxy,"
+                "no_train_candidate_strong_breadth_proxy_proxy_reversal_guard_capped,0.55,0.45,"
+                "true,63.4465,32.5244,-4.9111,proxy_reversal_guard_capped,"
+                "market_beta_proxy;strong_breadth\n"
+                "walk_forward_005,2026-04,16.3361,GAIN,market_beta_proxy,"
+                "no_train_candidate_strong_breadth_proxy_proxy_reversal_guard_capped,0.55,0.45,"
+                "true,36.6735,-6.6038,-12.4731,proxy_reversal_guard_capped,"
+                "market_beta_proxy;proxy_gain_participation;strong_breadth\n",
+                encoding="utf-8",
+            )
+            comparison_input.write_text(
+                "scenario,month,baseline_return_pct,candidate_return_pct,return_delta_pct,"
+                "baseline_worst_drawdown_pct,candidate_worst_drawdown_pct,drawdown_delta_pct,diagnostic\n"
+                "walk_forward_005,2026-03,-19.2651,-13.954,5.3111,-20.5503,-15.2709,5.2794,drawdown_improved\n"
+                "walk_forward_005,2026-04,20.1371,16.3361,-3.801,-14.7816,-10.6855,4.0961,return_drag\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-proxy-guard-recovery-exits",
+                    "--proxy-input",
+                    str(proxy_input),
+                    "--comparison-input",
+                    str(comparison_input),
+                    "--scenario",
+                    "walk_forward_005",
+                    "--candidate-label",
+                    "proxy_guard_short5_extreme50_mdd10",
+                    "--output",
+                    str(output),
+                ],
+            )
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("proxy_guard_recovery_exit_report", completed.stdout)
+        self.assertEqual(rows[0]["recovery_exit_outcome"], "recovery_drag_after_loss_cap")
+        self.assertEqual(rows[0]["paper_only"], "true")
+
     def test_monthly_compare_attribution_cli_writes_monthly_delta_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

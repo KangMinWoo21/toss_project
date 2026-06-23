@@ -27,6 +27,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_direct_alpha_selection,
     analyze_monthly_direct_alpha_timing,
     analyze_monthly_path_attribution,
+    analyze_monthly_proxy_guard_recovery_exits,
     analyze_monthly_proxy_guard_outcomes,
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
@@ -107,6 +108,7 @@ from backtester.monthly_rebalance import (
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
     save_monthly_proxy_guard_outcomes,
+    save_monthly_proxy_guard_recovery_exits,
     save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
     save_monthly_stress_drawdown_pressure,
@@ -2779,6 +2781,99 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("guard_outcome", text)
         self.assertIn("candidate_design_hint", text)
+
+    def test_analyze_monthly_proxy_guard_recovery_exits_flags_recovery_drag_after_loss_cap(self):
+        rows = analyze_monthly_proxy_guard_recovery_exits(
+            [
+                {
+                    "scenario": "walk_forward_005",
+                    "month": "2026-03",
+                    "mode": "market_beta_proxy",
+                    "reason": "no_train_candidate_strong_breadth_proxy_proxy_reversal_guard_capped",
+                    "target_exposure": "0.55",
+                    "cash_weight": "0.45",
+                    "month_return_pct": "-13.954",
+                    "month_status": "LOSS",
+                    "proxy_reversal_guard_triggered": "true",
+                    "proxy_reversal_guard_medium_return_pct": "63.4465",
+                    "proxy_reversal_guard_short_return_pct": "32.5244",
+                    "proxy_reversal_guard_medium_drawdown_pct": "-4.9111",
+                    "diagnostic": "market_beta_proxy;strong_breadth;no_eligible_direct_candidate",
+                },
+                {
+                    "scenario": "walk_forward_005",
+                    "month": "2026-04",
+                    "mode": "market_beta_proxy",
+                    "reason": "no_train_candidate_strong_breadth_proxy_proxy_reversal_guard_capped",
+                    "target_exposure": "0.55",
+                    "cash_weight": "0.45",
+                    "month_return_pct": "16.3361",
+                    "month_status": "GAIN",
+                    "proxy_reversal_guard_triggered": "true",
+                    "proxy_reversal_guard_medium_return_pct": "36.6735",
+                    "proxy_reversal_guard_short_return_pct": "-6.6038",
+                    "proxy_reversal_guard_medium_drawdown_pct": "-12.4731",
+                    "diagnostic": "market_beta_proxy;proxy_gain_participation;strong_breadth",
+                },
+            ],
+            [
+                {
+                    "scenario": "walk_forward_005",
+                    "month": "2026-03",
+                    "baseline_return_pct": "-19.2651",
+                    "candidate_return_pct": "-13.954",
+                    "return_delta_pct": "5.3111",
+                    "baseline_worst_drawdown_pct": "-20.5503",
+                    "candidate_worst_drawdown_pct": "-15.2709",
+                    "drawdown_delta_pct": "5.2794",
+                    "diagnostic": "drawdown_improved",
+                },
+                {
+                    "scenario": "walk_forward_005",
+                    "month": "2026-04",
+                    "baseline_return_pct": "20.1371",
+                    "candidate_return_pct": "16.3361",
+                    "return_delta_pct": "-3.801",
+                    "baseline_worst_drawdown_pct": "-14.7816",
+                    "candidate_worst_drawdown_pct": "-10.6855",
+                    "drawdown_delta_pct": "4.0961",
+                    "diagnostic": "return_drag",
+                },
+            ],
+            scenario="walk_forward_005",
+            candidate_label="proxy_guard_short5_extreme50_mdd10",
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["loss_month"], "2026-03")
+        self.assertEqual(row["recovery_month"], "2026-04")
+        self.assertEqual(row["loss_guard_triggered"], "true")
+        self.assertEqual(row["recovery_guard_triggered"], "true")
+        self.assertEqual(row["recovery_exit_outcome"], "recovery_drag_after_loss_cap")
+        self.assertEqual(row["candidate_design_hint"], "test_guard_exit_after_loss_cap_confirmation")
+        self.assertIn("do_not_broaden_loss_cap", row["risk_note"])
+        self.assertEqual(row["paper_only"], "true")
+
+    def test_save_monthly_proxy_guard_recovery_exits_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "proxy_guard_recovery_exits.csv"
+            saved = save_monthly_proxy_guard_recovery_exits(
+                [
+                    {
+                        "scenario": "walk_forward_005",
+                        "loss_month": "2026-03",
+                        "recovery_month": "2026-04",
+                        "recovery_exit_outcome": "recovery_drag_after_loss_cap",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("recovery_exit_outcome", text.splitlines()[0])
+        self.assertIn("recovery_drag_after_loss_cap", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

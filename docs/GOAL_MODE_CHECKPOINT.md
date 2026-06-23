@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 attribution train-start loop
+Last updated: 2026-06-24 proxy guard recovery-exit loop
 
 ## Objective
 
@@ -69,6 +69,77 @@ The compaction summary must include:
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added paper-only proxy guard recovery-exit diagnostics to separate useful guarded loss caps from recovery-month cap drag:
+
+- Added pure report builder:
+  - `analyze_monthly_proxy_guard_recovery_exits`
+- Added CSV writer:
+  - `save_monthly_proxy_guard_recovery_exits`
+- Added CLI:
+  - `python -m backtester monthly-proxy-guard-recovery-exits`
+- Inputs:
+  - `--proxy-input`: CSV from `monthly-attribution --proxy-output`
+  - `--comparison-input`: CSV from `monthly-compare-attribution`
+- This is diagnostics/reporting only. It does not change strategy behavior and does not add real order execution.
+
+TDD result:
+
+- RED:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_guard_recovery_exits_flags_recovery_drag_after_loss_cap tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_proxy_guard_recovery_exits_writes_csv`
+  - Failed because the new analysis/save functions did not exist.
+  - `python -m unittest tests.test_cli.CliTests.test_monthly_proxy_guard_recovery_exits_cli_writes_report`
+  - Failed because `monthly-proxy-guard-recovery-exits` was not a known command.
+- GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_guard_recovery_exits_flags_recovery_drag_after_loss_cap tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_proxy_guard_recovery_exits_writes_csv tests.test_cli.CliTests.test_monthly_proxy_guard_recovery_exits_cli_writes_report`: PASS, `3` tests.
+
+Generated reports:
+
+- `data/reports/walk_forward_005_validation_train_proxy_guard_short5_extreme50_mdd10_recovery_exit_diagnostics.csv`
+- `data/reports/regime_sideways_proxy_guard_short5_extreme50_mdd10_recovery_exit_diagnostics.csv`
+
+Key findings:
+
+- `walk_forward_005`:
+  - Guarded loss month: `2026-03`.
+  - Loss improvement: return delta `+5.3111`, drawdown delta `+5.2794`.
+  - Recovery month: `2026-04`.
+  - Recovery drag: return delta `-3.8010`.
+  - Exposure stayed capped from `0.55` in `2026-03` to `0.55` in `2026-04`.
+  - `recovery_exit_outcome`: `recovery_drag_after_loss_cap`.
+  - `candidate_design_hint`: `test_guard_exit_after_loss_cap_confirmation`.
+- `regime_sideways`:
+  - Guarded loss month: `2025-03`.
+  - Loss improvement: return delta `+2.6350`, drawdown delta `+2.3226`.
+  - Recovery month: `2025-04`.
+  - Proxy guard itself exited; exposure was `0.7425` and `recovery_guard_triggered=false`.
+  - `recovery_exit_outcome`: `recovery_uncapped_after_loss_cap`.
+  - This confirms `regime_sideways` is not mainly a proxy-guard recovery-exit problem; the earlier unchanged high-exposure proxy loss months `2024-10`, `2024-11`, and `2024-12` remain more important.
+
+Verification:
+
+- `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `215` tests.
+- `python -m unittest discover -s tests`: PASS, `454` tests.
+- `python -m compileall -q backtester`: PASS.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, scalper data stale (`age_hours=336.33` observed).
+
+Candidate decision:
+
+- Keep `proxy_guard_short5_extreme50_mdd10` as `PAPER_REVIEW`.
+- The guard is useful for loss months, but it still over-stays in `walk_forward_005` recovery.
+- Do not adopt it because validation remains blocked.
+
+Next exact task:
+
+- Design one narrow paper-only guard-exit candidate:
+  - Preserve guarded loss caps in `stress` and `walk_forward_005` loss months.
+  - Exit or relax the cap after a guarded loss only when recovery evidence appears, starting from the `2026-04` pattern.
+  - Do not reintroduce the prior rejected `walk_forward_002` profitable-continuation cap.
+  - Do not change production defaults.
+- Validate with full `monthly-validate` and compare against baseline plus the current `proxy_guard_short5_extreme50_mdd10`.
+
+## Previous Loop: Validation-Aligned Attribution
 
 Added validation-aligned monthly attribution support so walk-forward test windows can be reproduced without silently using a different train start:
 

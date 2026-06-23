@@ -1071,6 +1071,39 @@ MONTHLY_PROXY_GUARD_OUTCOME_COLUMNS = [
     "risk_note",
 ]
 
+MONTHLY_PROXY_GUARD_RECOVERY_EXIT_COLUMNS = [
+    "scenario",
+    "candidate_label",
+    "loss_month",
+    "recovery_month",
+    "loss_month_return_pct",
+    "loss_return_delta_pct",
+    "loss_drawdown_delta_pct",
+    "loss_target_exposure",
+    "loss_cash_weight",
+    "loss_guard_triggered",
+    "loss_guard_reason",
+    "loss_guard_medium_return_pct",
+    "loss_guard_short_return_pct",
+    "loss_guard_medium_drawdown_pct",
+    "recovery_month_return_pct",
+    "recovery_baseline_return_pct",
+    "recovery_candidate_return_pct",
+    "recovery_return_delta_pct",
+    "recovery_drawdown_delta_pct",
+    "recovery_target_exposure",
+    "recovery_cash_weight",
+    "recovery_guard_triggered",
+    "recovery_guard_reason",
+    "recovery_guard_medium_return_pct",
+    "recovery_guard_short_return_pct",
+    "recovery_guard_medium_drawdown_pct",
+    "recovery_exit_outcome",
+    "candidate_design_hint",
+    "risk_note",
+    "paper_only",
+]
+
 MONTHLY_RECOVERY_ATTRIBUTION_COLUMNS = [
     "scenario",
     "start",
@@ -3342,8 +3375,105 @@ def _monthly_proxy_guard_outcome_label(
     return "review_proxy_context", "review_before_candidate_change"
 
 
+def analyze_monthly_proxy_guard_recovery_exits(
+    proxy_rows: list[dict[str, Any]],
+    comparison_rows: list[dict[str, Any]],
+    *,
+    scenario: str = "",
+    candidate_label: str = "candidate",
+) -> list[dict[str, Any]]:
+    comparisons_by_month = {
+        str(row.get("month", "")): row for row in comparison_rows if str(row.get("month", ""))
+    }
+    market_proxy_rows = [
+        row
+        for row in proxy_rows
+        if str(row.get("mode", "")).strip() == "market_beta_proxy" and str(row.get("month", ""))
+    ]
+    market_proxy_rows.sort(key=lambda row: str(row.get("month", "")))
+
+    rows: list[dict[str, Any]] = []
+    for index, loss_proxy in enumerate(market_proxy_rows[:-1]):
+        loss_month_return = _float_or_none(loss_proxy.get("month_return_pct"))
+        loss_guard_triggered = _parse_bool(loss_proxy.get("proxy_reversal_guard_triggered", False))
+        if not loss_guard_triggered or loss_month_return is None or loss_month_return >= 0:
+            continue
+
+        recovery_proxy = market_proxy_rows[index + 1]
+        recovery_month_return = _float_or_none(recovery_proxy.get("month_return_pct"))
+        loss_comparison = comparisons_by_month.get(str(loss_proxy.get("month", "")), {})
+        recovery_comparison = comparisons_by_month.get(str(recovery_proxy.get("month", "")), {})
+        recovery_return_delta = _float_or_none(recovery_comparison.get("return_delta_pct"))
+        recovery_guard_triggered = _parse_bool(recovery_proxy.get("proxy_reversal_guard_triggered", False))
+
+        recovery_exit_outcome, design_hint = _monthly_proxy_guard_recovery_exit_label(
+            recovery_guard_triggered=recovery_guard_triggered,
+            recovery_month_return=recovery_month_return,
+            recovery_return_delta=recovery_return_delta,
+        )
+        rows.append(
+            {
+                "scenario": scenario or loss_proxy.get("scenario", ""),
+                "candidate_label": candidate_label,
+                "loss_month": loss_proxy.get("month", ""),
+                "recovery_month": recovery_proxy.get("month", ""),
+                "loss_month_return_pct": loss_proxy.get("month_return_pct", ""),
+                "loss_return_delta_pct": loss_comparison.get("return_delta_pct", ""),
+                "loss_drawdown_delta_pct": loss_comparison.get("drawdown_delta_pct", ""),
+                "loss_target_exposure": loss_proxy.get("target_exposure", ""),
+                "loss_cash_weight": loss_proxy.get("cash_weight", ""),
+                "loss_guard_triggered": str(loss_guard_triggered).lower(),
+                "loss_guard_reason": loss_proxy.get("proxy_reversal_guard_reason", ""),
+                "loss_guard_medium_return_pct": loss_proxy.get("proxy_reversal_guard_medium_return_pct", ""),
+                "loss_guard_short_return_pct": loss_proxy.get("proxy_reversal_guard_short_return_pct", ""),
+                "loss_guard_medium_drawdown_pct": loss_proxy.get("proxy_reversal_guard_medium_drawdown_pct", ""),
+                "recovery_month_return_pct": recovery_proxy.get("month_return_pct", ""),
+                "recovery_baseline_return_pct": recovery_comparison.get("baseline_return_pct", ""),
+                "recovery_candidate_return_pct": recovery_comparison.get("candidate_return_pct", ""),
+                "recovery_return_delta_pct": recovery_comparison.get("return_delta_pct", ""),
+                "recovery_drawdown_delta_pct": recovery_comparison.get("drawdown_delta_pct", ""),
+                "recovery_target_exposure": recovery_proxy.get("target_exposure", ""),
+                "recovery_cash_weight": recovery_proxy.get("cash_weight", ""),
+                "recovery_guard_triggered": str(recovery_guard_triggered).lower(),
+                "recovery_guard_reason": recovery_proxy.get("proxy_reversal_guard_reason", ""),
+                "recovery_guard_medium_return_pct": recovery_proxy.get("proxy_reversal_guard_medium_return_pct", ""),
+                "recovery_guard_short_return_pct": recovery_proxy.get("proxy_reversal_guard_short_return_pct", ""),
+                "recovery_guard_medium_drawdown_pct": recovery_proxy.get("proxy_reversal_guard_medium_drawdown_pct", ""),
+                "recovery_exit_outcome": recovery_exit_outcome,
+                "candidate_design_hint": design_hint,
+                "risk_note": (
+                    "Diagnostic only; do_not_broaden_loss_cap or promote live trading without full "
+                    "walk-forward validation and regression checks."
+                ),
+                "paper_only": "true",
+            }
+        )
+    return rows
+
+
+def _monthly_proxy_guard_recovery_exit_label(
+    *,
+    recovery_guard_triggered: bool,
+    recovery_month_return: float | None,
+    recovery_return_delta: float | None,
+) -> tuple[str, str]:
+    if recovery_month_return is not None and recovery_month_return > 0:
+        if recovery_guard_triggered and recovery_return_delta is not None and recovery_return_delta < 0:
+            return "recovery_drag_after_loss_cap", "test_guard_exit_after_loss_cap_confirmation"
+        if recovery_guard_triggered:
+            return "recovery_still_capped_without_drag", "review_guard_exit_before_tuning"
+        return "recovery_uncapped_after_loss_cap", "preserve_recovery_participation"
+    if recovery_month_return is not None and recovery_month_return < 0:
+        return "continued_loss_after_loss_cap", "keep_loss_cap_and_review_loss_cluster"
+    return "no_clear_recovery_after_loss_cap", "inspect_next_month_context"
+
+
 def save_monthly_proxy_guard_outcomes(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PROXY_GUARD_OUTCOME_COLUMNS)
+
+
+def save_monthly_proxy_guard_recovery_exits(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PROXY_GUARD_RECOVERY_EXIT_COLUMNS)
 
 
 def save_monthly_recovery_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:

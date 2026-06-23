@@ -59,6 +59,7 @@ from .monthly_rebalance import (
     analyze_monthly_path_attribution,
     analyze_monthly_performance_concentration,
     analyze_monthly_proxy_decision_diagnostics,
+    analyze_monthly_proxy_guard_recovery_exits,
     analyze_monthly_proxy_guard_outcomes,
     analyze_monthly_recovery_attribution,
     analyze_monthly_stress_drawdown_pressure,
@@ -124,6 +125,7 @@ from .monthly_rebalance import (
     save_monthly_path_attribution,
     save_monthly_path_attribution_comparison,
     save_monthly_proxy_decision_diagnostics,
+    save_monthly_proxy_guard_recovery_exits,
     save_monthly_proxy_guard_outcomes,
     save_monthly_recovery_attribution,
     save_monthly_stress_drawdown_pressure,
@@ -888,6 +890,27 @@ def main() -> int:
         default="data/reports/monthly_proxy_guard_outcome_diagnostics.csv",
     )
 
+    monthly_proxy_guard_recovery_parser = subparsers.add_parser(
+        "monthly-proxy-guard-recovery-exits",
+        help="Classify paper-only proxy guard recovery drag after guarded loss months",
+    )
+    monthly_proxy_guard_recovery_parser.add_argument(
+        "--proxy-input",
+        default="data/reports/monthly_proxy_decision_diagnostics.csv",
+        help="CSV written by monthly-attribution --proxy-output",
+    )
+    monthly_proxy_guard_recovery_parser.add_argument(
+        "--comparison-input",
+        required=True,
+        help="CSV written by monthly-compare-attribution",
+    )
+    monthly_proxy_guard_recovery_parser.add_argument("--scenario", default="")
+    monthly_proxy_guard_recovery_parser.add_argument("--candidate-label", default="candidate")
+    monthly_proxy_guard_recovery_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_proxy_guard_recovery_exit_diagnostics.csv",
+    )
+
     monthly_validate_parser = subparsers.add_parser(
         "monthly-validate",
         help="Run duration, regime, and stress validation scenarios for monthly rebalance deployment",
@@ -1514,6 +1537,28 @@ def main() -> int:
         print(f"guard_triggered_rows  {len(triggered_rows)}")
         print(f"profitable_continuation_caps  {len(continuation_caps)}")
         print(f"missed_high_exposure_losses  {len(missed_losses)}")
+        return 0
+
+    if args.command == "monthly-proxy-guard-recovery-exits":
+        proxy_rows = _read_csv_dicts(Path(args.proxy_input))
+        comparison_rows = _read_csv_dicts(Path(args.comparison_input))
+        rows = analyze_monthly_proxy_guard_recovery_exits(
+            proxy_rows,
+            comparison_rows,
+            scenario=args.scenario,
+            candidate_label=args.candidate_label,
+        )
+        saved = save_monthly_proxy_guard_recovery_exits(rows, args.output)
+        recovery_drag_rows = [
+            row for row in rows if str(row.get("recovery_exit_outcome", "")) == "recovery_drag_after_loss_cap"
+        ]
+        uncapped_recovery_rows = [
+            row for row in rows if str(row.get("recovery_exit_outcome", "")) == "recovery_uncapped_after_loss_cap"
+        ]
+        print(f"proxy_guard_recovery_exit_report  {args.output}")
+        print(f"proxy_guard_recovery_exit_rows  {saved}")
+        print(f"recovery_drag_after_loss_cap_rows  {len(recovery_drag_rows)}")
+        print(f"recovery_uncapped_after_loss_cap_rows  {len(uncapped_recovery_rows)}")
         return 0
 
     if args.command == "monthly-compare-validation":
