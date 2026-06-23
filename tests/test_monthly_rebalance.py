@@ -4565,6 +4565,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
                 "stability_window_start": "2025-02-02",
                 "stability_window_end": "2025-08-21",
                 "stability_excess_return_pct": "-1.0",
+                "stability_buy_hold_return_pct": "6.0",
                 "stability_positive": "false",
                 "stability_failed_reason": "no_trades",
                 "stability_underperformance_driver": "no_trades;benchmark_positive_selection_nonpositive",
@@ -4585,6 +4586,10 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(row["positive_subwindow_count"], "1")
         self.assertEqual(row["negative_subwindow_count"], "3")
         self.assertEqual(row["negative_subwindow_ratio"], "0.75")
+        self.assertEqual(row["no_trade_subwindow_count"], "1")
+        self.assertEqual(row["no_trade_benchmark_positive_count"], "1")
+        self.assertEqual(row["no_trade_total_benchmark_return_pct"], "6")
+        self.assertEqual(row["no_trade_avg_benchmark_return_pct"], "6")
         self.assertEqual(row["candidate_positive_ratio_min"], "0")
         self.assertEqual(row["candidate_positive_ratio_max"], "0.25")
         self.assertEqual(row["avg_stability_excess_return_pct"], "-1")
@@ -4618,6 +4623,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(saved, 1)
         self.assertIn("scenario,walk_forward_preset", text.splitlines()[0])
+        self.assertIn("no_trade_total_benchmark_return_pct", text.splitlines()[0])
         self.assertIn("low_positive_ratio_due_to_negative_stability_windows", text)
 
     def test_analyze_monthly_train_stability_summary_keeps_no_candidate_windows(self):

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 train target-persistence diagnostics loop
+Last updated: 2026-06-24 no-trade opportunity diagnostics loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,45 +40,49 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `3b9244e Clarify empty train diagnostics`.
+  `73fad4f Expose target persistence train diagnostics`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
 - Latest full tests: `python -m unittest discover -s tests` PASS, `465` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=338.59` observed).
+  (`age_hours=338.73` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added target-persistence control to paper-only train diagnostics and tested the
-`walk_forward_003` path-drift recommendation.
+Added no-trade opportunity-cost columns to paper-only train stability summary
+diagnostics and regenerated focused `walk_forward_003` reports.
 
 Changed behavior:
 
-- `monthly-train-decision-diagnostics` now accepts
-  `--direct-alpha-target-persistence-signals`.
-- This only affects diagnostic/report runs; no strategy default, validation
-  gate, order, or live behavior changed.
+- Train stability summaries now include:
+  `no_trade_subwindow_count`, `no_trade_benchmark_positive_count`,
+  `no_trade_total_benchmark_return_pct`, and
+  `no_trade_avg_benchmark_return_pct`.
+- This is report-only; no strategy default, validation gate, order, or live
+  behavior changed.
 
 TDD:
 
-- RED: train-diagnostics help/CLI tests failed because the option was missing
-  and unrecognized.
-- GREEN: targeted CLI tests PASS, `2` tests; CLI module PASS, `47` tests.
+- RED: stability summary tests failed on missing no-trade fields/header.
+- GREEN: targeted summary tests PASS, `3` tests; monthly module PASS, `179`
+  tests.
 
 Focused `walk_forward_003` evidence for `proxy_guard_exit_short_minus5`:
 
 - Baseline persistence `1`: avg stability excess `-31.7252%`, worst
-  `-53.3186%`, negative windows `6/6`; drivers include path drift `3`.
+  `-53.3186%`, negative windows `6/6`; no-trade `3`, positive-benchmark
+  no-trade `3`, total no-trade benchmark return `43.4006%`.
 - Persistence `2`: avg `-25.1776%`, worst `-38.1485%`, negative windows
-  still `6/6`; drivers shift to `no_trades=6`, path drift `1`.
+  still `6/6`; no-trade `6`, positive-benchmark no-trade `6`, total
+  no-trade benchmark return `151.0656%`.
 - Persistence `3`: avg `-25.1776%`, worst `-38.1485%`, negative windows
-  still `6/6`; drivers `benchmark_positive_selection_nonpositive=6`,
-  `no_trades=6`; no symbol/path-drift rows.
+  still `6/6`; no-trade `6`, positive-benchmark no-trade `6`, total
+  no-trade benchmark return `151.0656%`.
 - Decision: do not promote stricter target persistence as-is. It suppresses
-  path drift but does not make the train window eligible.
+  path drift by suppressing direct-alpha trades, increasing opportunity cost.
 
 Prior `walk_forward_003` diagnostic context to preserve:
 
@@ -170,10 +174,10 @@ Pick one narrow loop:
   `2024-11`, `2024-12`, and `2025-01`. Both buyability variants worsened
   path behavior, so avoid further proxy buyability reweighting/cash-reserve
   variants unless new evidence isolates a different mechanism.
-- `walk_forward_003`: target-persistence `2`/`3` reduced path-drift evidence
-  but still left `6/6` negative train windows. Next inspect whether no-trade
-  windows are appropriate risk-off behavior or a separate opportunity cost
-  problem before changing gates.
+- `walk_forward_003`: no-trade opportunity cost is now quantified and explains
+  why stricter persistence is not enough. Next test only narrow paper-only
+  ideas that reduce no-trade benchmark-positive misses without loosening train
+  gates.
 
 For code changes, use test-first work and finish with focused tests, full
 `unittest`, `compileall`, production-check, health-check, checkpoint update,

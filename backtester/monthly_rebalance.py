@@ -885,6 +885,10 @@ MONTHLY_TRAIN_STABILITY_SUMMARY_COLUMNS = [
     "positive_subwindow_count",
     "negative_subwindow_count",
     "negative_subwindow_ratio",
+    "no_trade_subwindow_count",
+    "no_trade_benchmark_positive_count",
+    "no_trade_total_benchmark_return_pct",
+    "no_trade_avg_benchmark_return_pct",
     "candidate_positive_ratio_min",
     "candidate_positive_ratio_max",
     "candidate_positive_ratio_median",
@@ -5130,6 +5134,17 @@ def analyze_monthly_train_stability_summary(stability_rows: list[dict[str, Any]]
             for value in (_float_or_none(row.get("candidate_positive_ratio")) for row in rows)
             if value is not None
         ]
+        no_trade_rows = [
+            row
+            for row in counted_rows
+            if "no_trades" in _split_semicolon_values(str(row.get("stability_failed_reason", "")))
+            or "no_trades" in _split_semicolon_values(str(row.get("stability_underperformance_driver", "")))
+        ]
+        no_trade_benchmark_returns = [
+            value
+            for value in (_float_or_none(row.get("stability_buy_hold_return_pct")) for row in no_trade_rows)
+            if value is not None and value > 0
+        ]
         failed_reason_counts: Counter[str] = Counter()
         driver_counts: Counter[str] = Counter()
         negative_window_tokens: list[str] = []
@@ -5190,6 +5205,14 @@ def analyze_monthly_train_stability_summary(stability_rows: list[dict[str, Any]]
                 "positive_subwindow_count": str(len(positive_rows)),
                 "negative_subwindow_count": str(negative_count),
                 "negative_subwindow_ratio": _format_optional_float(negative_ratio),
+                "no_trade_subwindow_count": str(len(no_trade_rows)),
+                "no_trade_benchmark_positive_count": str(len(no_trade_benchmark_returns)),
+                "no_trade_total_benchmark_return_pct": _format_optional_float(
+                    sum(no_trade_benchmark_returns) if no_trade_benchmark_returns else None
+                ),
+                "no_trade_avg_benchmark_return_pct": _format_optional_float(
+                    mean(no_trade_benchmark_returns) if no_trade_benchmark_returns else None
+                ),
                 "candidate_positive_ratio_min": _format_optional_float(min(positive_ratios) if positive_ratios else None),
                 "candidate_positive_ratio_max": _format_optional_float(max(positive_ratios) if positive_ratios else None),
                 "candidate_positive_ratio_median": _format_optional_float(median(positive_ratios) if positive_ratios else None),
