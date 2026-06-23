@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 April benchmark contribution diagnostic
+Last updated: 2026-06-24 April benchmark selection-rank diagnostic
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -39,59 +39,63 @@ appending long command logs or full report lists here.
 
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
-- Latest completed local goal commit before this loop:
-  `a913141 Add monthly benchmark excess attribution`.
+- Latest completed local goal commit:
+  `Add monthly benchmark selection attribution` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `486` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `488` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=343.46` observed).
+  (`age_hours=343.78` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only monthly benchmark contribution diagnostic for the
+Added a report-only monthly benchmark selection-rank diagnostic for the
 `2025-04` recovery-participation gap.
 
 Changed behavior:
 
-- New `monthly-attribution --benchmark-contribution-output` writes each
-  month's target-basket symbol contribution versus equal-weight benchmark
-  contribution.
+- New `monthly-attribution --benchmark-selection-output` writes each month's
+  contribution rows with signal-date average-trading-value rank, proxy cutoff,
+  rank gap, and selection diagnostic.
+- `rank_symbols_by_average_trading_value` now shares a tuple-returning helper;
+  its public output order is unchanged.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
-- Generated the best-candidate `regime_sideways` benchmark contribution report
+- Generated the best-candidate `regime_sideways` benchmark selection report
   under separate `_current` output paths.
 
 Verification:
 
 - RED: analyzer/saver imports failed; CLI help lacked
-  `--benchmark-contribution-output`.
-- GREEN: targeted benchmark-contribution tests PASS, monthly module PASS (`196`
+  `--benchmark-selection-output`.
+- GREEN: targeted benchmark-selection tests PASS, monthly module PASS (`198`
   tests), CLI module PASS (`51` tests).
-- Final verification: full `unittest` PASS (`486` tests), compile PASS,
+- Final verification: full `unittest` PASS (`488` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Contribution report rows: `15288`; April rows: `2184`.
-- April diagnostic counts: `missed_benchmark_winner=1496`,
-  `avoided_benchmark_loser=676`, `positive_contribution_delta=6`,
-  `overweighted_loser=6`.
-- April contribution-delta sums: missed benchmark winners `-6.8438`,
-  overweighted losers `-2.6465`, selected winners `+2.3324`, avoided losers
-  `+1.3332`.
-- Largest single drags were overweighted proxy losers: `005490` (`-0.6076`),
-  `000660` (`-0.6075`), `005380` (`-0.5515`), `000270` (`-0.5339`).
-- Strong selected winners partly offset them: `042660` (`+0.7610`), `064350`
-  (`+0.4641`), `047810` (`+0.4042`).
-- Interpretation: April gap is primarily recovery breadth/selection, with many
-  omitted benchmark winners plus a few overweighted losers. Next work should
-  inspect recovery-basket construction/selection breadth before testing a new
-  candidate.
+- Selection report rows: `15288`; April rows: `2184`.
+- April selection diagnostics: `missed_outside_proxy_liquidity_cutoff=1496`,
+  `avoided_benchmark_loser=676`, `selected_proxy_loser=6`,
+  `selected_proxy_winner=6`.
+- April missed-winner contribution delta by signal-date liquidity rank bucket:
+  `13-50=-0.1061` (`19` names), `51-100=-0.2644` (`25`), `101-200=-0.2605`
+  (`46`), `201-500=-0.8851` (`160`), `501+=-5.3277` (`1246`).
+- Top missed winners were all outside the top-12 proxy cutoff: `389140`
+  rank `217` (`196.4847%`, delta `-0.0900`), `289010` rank `1925`
+  (`138.4010%`, `-0.0634`), `241520` rank `89` (`119.1772%`, `-0.0546`).
+- Selected April proxy basket was exactly signal-date liquidity ranks `1-12`:
+  six winners and six losers. Main selected loser drag remained `005490`,
+  `000660`, `005380`, and `000270`.
+- Interpretation: April gap is a liquidity-ranked proxy selection miss, not a
+  simple one-share execution or adjacent top-12 cutoff issue. Most missed-winner
+  drag came from rank `501+`, so broad proxy expansion would chase a much wider
+  lower-liquidity recovery and needs separate paper-only evidence first.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -214,9 +218,11 @@ Pick one narrow loop:
 - `regime_sideways`: the neutral loss guard reduced but did not solve the
   remaining excess gap. New benchmark-excess evidence points to missed
   `2025-04` recovery participation after the `2025-03` drawdown. Contribution
-  evidence points to recovery-breadth/selection rather than only March loss
-  control. Next paper-only work should inspect recovery basket construction and
-  avoid broad cash, broad stop, or broad proxy cap reuse.
+  and selection-rank evidence points to recovery-breadth/selection rather than
+  only March loss control. Next paper-only work should aggregate the new
+  selection-rank report across other failure/passing months to see whether
+  low-liquidity recovery breadth is repeatable before testing any broader proxy
+  basket. Avoid broad cash, broad stop, or broad proxy cap reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate
   discipline; do not loosen rejected train windows.
 

@@ -630,6 +630,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--summary-output", completed.stdout)
         self.assertIn("--benchmark-output", completed.stdout)
         self.assertIn("--benchmark-contribution-output", completed.stdout)
+        self.assertIn("--benchmark-selection-output", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-neutral-loss-guard-max-exposure", completed.stdout)
@@ -661,6 +662,7 @@ class CliTests(unittest.TestCase):
                 self._write_trend_price_file(data_dir, symbol, close=100, step=step, volume=volume)
             summary_output = root / "recovery_summary.csv"
             proxy_output = root / "proxy_diagnostics.csv"
+            benchmark_selection_output = root / "benchmark_selection.csv"
             stress_drawdown_output = root / "stress_drawdown.csv"
 
             completed = self._run_backtester_in_cwd(
@@ -689,6 +691,8 @@ class CliTests(unittest.TestCase):
                     str(summary_output),
                     "--proxy-output",
                     str(proxy_output),
+                    "--benchmark-selection-output",
+                    str(benchmark_selection_output),
                     "--stress-drawdown-output",
                     str(stress_drawdown_output),
                 ],
@@ -708,18 +712,27 @@ class CliTests(unittest.TestCase):
                     stress_drawdown_rows = list(csv.DictReader(f))
             else:
                 stress_drawdown_rows = []
+            if benchmark_selection_output.exists():
+                with benchmark_selection_output.open(encoding="utf-8") as f:
+                    benchmark_selection_rows = list(csv.DictReader(f))
+            else:
+                benchmark_selection_rows = []
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("recovery_attribution_report", completed.stdout)
         self.assertIn("proxy_decision_diagnostics_report", completed.stdout)
+        self.assertIn("benchmark_selection_report", completed.stdout)
         self.assertIn("stress_drawdown_pressure_report", completed.stdout)
         self.assertTrue(rows)
         self.assertTrue(proxy_rows)
+        self.assertTrue(benchmark_selection_rows)
         self.assertTrue(stress_drawdown_rows)
         self.assertEqual(rows[0]["scenario"], "walk_forward_unit")
         self.assertEqual(proxy_rows[0]["scenario"], "walk_forward_unit")
+        self.assertEqual(benchmark_selection_rows[0]["scenario"], "walk_forward_unit")
         self.assertEqual(stress_drawdown_rows[0]["scenario"], "walk_forward_unit")
         self.assertIn("recommended_next_action", proxy_rows[0])
+        self.assertIn("selection_diagnostic", benchmark_selection_rows[0])
         self.assertIn("recommended_candidate_focus", stress_drawdown_rows[0])
         self.assertIn("diagnostic", rows[0])
 

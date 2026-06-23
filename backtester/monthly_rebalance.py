@@ -1047,6 +1047,28 @@ MONTHLY_BENCHMARK_CONTRIBUTION_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_BENCHMARK_SELECTION_COLUMNS = [
+    "scenario",
+    "month",
+    "start_date",
+    "end_date",
+    "decision_as_of_date",
+    "decision_signal_date",
+    "decision_reason",
+    "symbol",
+    "contribution_role",
+    "strategy_weight",
+    "benchmark_weight",
+    "symbol_return_pct",
+    "contribution_delta_pct",
+    "contribution_diagnostic",
+    "liquidity_rank",
+    "average_trading_value",
+    "proxy_cutoff_rank",
+    "rank_gap_to_proxy_cutoff",
+    "selection_diagnostic",
+]
+
 SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "symbol",
     "realized_pnl",
@@ -2672,6 +2694,83 @@ def analyze_monthly_benchmark_contributions(
     )
 
 
+def analyze_monthly_benchmark_selection(
+    monthly_rows: list[dict[str, Any]],
+    decision_rows: list[dict[str, Any]],
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    config: MonthlyRebalanceConfig | None = None,
+    scenario: str = "",
+    fee_rate: float = 0.00015,
+    tax_rate: float = 0.0018,
+    slippage_rate: float = 0.0005,
+) -> list[dict[str, str]]:
+    cfg = config or MonthlyRebalanceConfig()
+    contribution_rows = analyze_monthly_benchmark_contributions(
+        monthly_rows,
+        decision_rows,
+        symbol_candles,
+        scenario=scenario,
+        fee_rate=fee_rate,
+        tax_rate=tax_rate,
+        slippage_rate=slippage_rate,
+    )
+    decision_by_month = {
+        str(row.get("month", "")): _decision_row_for_month(decision_rows, str(row.get("month", "")))
+        for row in monthly_rows
+        if str(row.get("month", ""))
+    }
+    rank_cache: dict[str, dict[str, tuple[int, float]]] = {}
+    rows: list[dict[str, str]] = []
+    for row in contribution_rows:
+        month = str(row.get("month", "")).strip()
+        decision_row = decision_by_month.get(month, {})
+        signal_date = str(decision_row.get("signal_date", "")).strip()
+        if signal_date and signal_date not in rank_cache:
+            rank_cache[signal_date] = _average_trading_value_rank_map(
+                symbol_candles,
+                signal_date=signal_date,
+                window_days=cfg.point_in_time_liquidity_window_days,
+            )
+        rank_data = rank_cache.get(signal_date, {})
+        symbol = str(row.get("symbol", "")).strip()
+        rank, average_trading_value = rank_data.get(symbol, (None, None))
+        rank_gap = (
+            rank - cfg.market_beta_proxy_size
+            if rank is not None and cfg.market_beta_proxy_size > 0
+            else None
+        )
+        rows.append(
+            {
+                "scenario": str(row.get("scenario", "")),
+                "month": month,
+                "start_date": str(row.get("start_date", "")),
+                "end_date": str(row.get("end_date", "")),
+                "decision_as_of_date": str(decision_row.get("as_of_date", "")),
+                "decision_signal_date": signal_date,
+                "decision_reason": str(decision_row.get("reason", "")),
+                "symbol": symbol,
+                "contribution_role": str(row.get("contribution_role", "")),
+                "strategy_weight": str(row.get("strategy_weight", "")),
+                "benchmark_weight": str(row.get("benchmark_weight", "")),
+                "symbol_return_pct": str(row.get("symbol_return_pct", "")),
+                "contribution_delta_pct": str(row.get("contribution_delta_pct", "")),
+                "contribution_diagnostic": str(row.get("diagnostic", "")),
+                "liquidity_rank": "" if rank is None else str(rank),
+                "average_trading_value": _format_optional_float(average_trading_value),
+                "proxy_cutoff_rank": str(cfg.market_beta_proxy_size),
+                "rank_gap_to_proxy_cutoff": "" if rank_gap is None else str(rank_gap),
+                "selection_diagnostic": _monthly_benchmark_selection_diagnostic(
+                    contribution_diagnostic=str(row.get("diagnostic", "")),
+                    strategy_weight=_float_or_none(row.get("strategy_weight")) or 0.0,
+                    liquidity_rank=rank,
+                    proxy_cutoff_rank=cfg.market_beta_proxy_size,
+                ),
+            }
+        )
+    return rows
+
+
 def _decision_row_for_month(decision_rows: list[dict[str, Any]], month: str) -> dict[str, Any]:
     for row in decision_rows:
         if str(row.get("as_of_date", "")).startswith(month):
@@ -2774,6 +2873,30 @@ def _monthly_benchmark_contribution_diagnostic(
     if contribution_delta < 0:
         return "negative_contribution_delta"
     return "neutral_contribution_delta"
+
+
+def _monthly_benchmark_selection_diagnostic(
+    *,
+    contribution_diagnostic: str,
+    strategy_weight: float,
+    liquidity_rank: int | None,
+    proxy_cutoff_rank: int,
+) -> str:
+    if contribution_diagnostic == "missed_benchmark_winner":
+        if liquidity_rank is None:
+            return "missed_no_liquidity_rank"
+        if proxy_cutoff_rank > 0 and liquidity_rank > proxy_cutoff_rank:
+            return "missed_outside_proxy_liquidity_cutoff"
+        return "missed_inside_proxy_liquidity_cutoff"
+    if strategy_weight > 0 and contribution_diagnostic == "overweighted_loser":
+        return "selected_proxy_loser"
+    if strategy_weight > 0 and contribution_diagnostic == "positive_contribution_delta":
+        return "selected_proxy_winner"
+    if contribution_diagnostic == "avoided_benchmark_loser":
+        return "avoided_benchmark_loser"
+    if strategy_weight > 0:
+        return "selected_proxy_other"
+    return contribution_diagnostic
 
 
 def compare_monthly_attribution_reports(
@@ -4762,6 +4885,10 @@ def save_monthly_benchmark_excess(rows: list[dict[str, Any]], output_path: Path 
 
 def save_monthly_benchmark_contributions(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_BENCHMARK_CONTRIBUTION_COLUMNS)
+
+
+def save_monthly_benchmark_selection(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_BENCHMARK_SELECTION_COLUMNS)
 
 
 def save_monthly_decision_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
@@ -10515,6 +10642,22 @@ def rank_symbols_by_average_trading_value(
     signal_date: str,
     window_days: int,
 ) -> list[str]:
+    return [
+        symbol
+        for symbol, _ in rank_symbol_average_trading_values(
+            symbol_candles,
+            signal_date=signal_date,
+            window_days=window_days,
+        )
+    ]
+
+
+def rank_symbol_average_trading_values(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    signal_date: str,
+    window_days: int,
+) -> list[tuple[str, float]]:
     rows: list[tuple[str, float]] = []
     for symbol, candles in symbol_candles.items():
         history = [candle for candle in candles if candle.date <= signal_date]
@@ -10524,7 +10667,25 @@ def rank_symbols_by_average_trading_value(
         average_trading_value = sum(candle.close * candle.volume for candle in window) / len(window)
         rows.append((symbol, average_trading_value))
     rows.sort(key=lambda row: row[1], reverse=True)
-    return [symbol for symbol, _ in rows]
+    return rows
+
+
+def _average_trading_value_rank_map(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    signal_date: str,
+    window_days: int,
+) -> dict[str, tuple[int, float]]:
+    return {
+        symbol: (index + 1, average_trading_value)
+        for index, (symbol, average_trading_value) in enumerate(
+            rank_symbol_average_trading_values(
+                symbol_candles,
+                signal_date=signal_date,
+                window_days=window_days,
+            )
+        )
+    }
 
 
 def _market_beta_target_weights(

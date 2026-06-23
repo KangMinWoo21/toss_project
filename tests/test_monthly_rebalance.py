@@ -21,6 +21,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_performance_concentration,
     analyze_monthly_benchmark_excess,
     analyze_monthly_benchmark_contributions,
+    analyze_monthly_benchmark_selection,
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
@@ -95,6 +96,7 @@ from backtester.monthly_rebalance import (
     save_monthly_performance_concentration,
     save_monthly_benchmark_excess,
     save_monthly_benchmark_contributions,
+    save_monthly_benchmark_selection,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
     save_monthly_validation_remediation,
@@ -3525,6 +3527,81 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("contribution_delta_pct", text.splitlines()[0])
         self.assertIn("missed_benchmark_winner", text)
+
+    def test_analyze_monthly_benchmark_selection_marks_missed_winner_outside_proxy_rank_cutoff(self):
+        rows = analyze_monthly_benchmark_selection(
+            [
+                {
+                    "month": "2025-04",
+                    "start_date": "2025-04-01",
+                    "end_date": "2025-04-30",
+                    "return_pct": "2.0",
+                }
+            ],
+            [
+                {
+                    "as_of_date": "2025-04-01",
+                    "signal_date": "2025-03-31",
+                    "reason": "unit_proxy",
+                    "target_weights": "AAA:1.0",
+                }
+            ],
+            {
+                "AAA": [
+                    Candle("2025-03-30", 100, 100, 100, 100, 10_000),
+                    Candle("2025-03-31", 100, 100, 100, 100, 10_000),
+                    Candle("2025-04-01", 100, 100, 100, 100, 10_000),
+                    Candle("2025-04-30", 90, 90, 90, 90, 10_000),
+                ],
+                "BBB": [
+                    Candle("2025-03-30", 100, 100, 100, 100, 5_000),
+                    Candle("2025-03-31", 100, 100, 100, 100, 5_000),
+                    Candle("2025-04-01", 100, 100, 100, 100, 5_000),
+                    Candle("2025-04-30", 150, 150, 150, 150, 5_000),
+                ],
+            },
+            config=MonthlyRebalanceConfig(
+                market_beta_proxy_size=1,
+                point_in_time_liquidity_window_days=2,
+            ),
+            scenario="regime_sideways",
+            fee_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
+        )
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["AAA"]["liquidity_rank"], "1")
+        self.assertEqual(by_symbol["AAA"]["selection_diagnostic"], "selected_proxy_loser")
+        self.assertEqual(by_symbol["BBB"]["contribution_diagnostic"], "missed_benchmark_winner")
+        self.assertEqual(by_symbol["BBB"]["liquidity_rank"], "2")
+        self.assertEqual(by_symbol["BBB"]["proxy_cutoff_rank"], "1")
+        self.assertEqual(by_symbol["BBB"]["rank_gap_to_proxy_cutoff"], "1")
+        self.assertEqual(
+            by_symbol["BBB"]["selection_diagnostic"],
+            "missed_outside_proxy_liquidity_cutoff",
+        )
+
+    def test_save_monthly_benchmark_selection_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "benchmark_selection.csv"
+            saved = save_monthly_benchmark_selection(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "month": "2025-04",
+                        "symbol": "BBB",
+                        "liquidity_rank": "2",
+                        "selection_diagnostic": "missed_outside_proxy_liquidity_cutoff",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("liquidity_rank", text.splitlines()[0])
+        self.assertIn("missed_outside_proxy_liquidity_cutoff", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
