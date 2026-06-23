@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 execution-gap diagnostics loop
+Last updated: 2026-06-24 buyable proxy candidate loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -39,44 +39,61 @@ appending long command logs or full report lists here.
 
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
-- Latest strategy commit: `2c77fad Add proxy guard recovery exit candidate`.
+- Latest completed local goal commit before this loop:
+  `c097d81 Add monthly execution gap diagnostics`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `461` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `462` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=337.90` observed).
+  (`age_hours=338.14` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added report-only execution-gap diagnostics to `monthly-attribution`.
+Added a default-off paper-only market beta proxy buyability candidate switch.
 
 Changed behavior:
 
-- New pure analyzer/writer: `analyze_monthly_execution_gap`,
-  `save_monthly_execution_gap`.
-- New opt-in CLI output: `--execution-gap-output`.
-- No order execution behavior changed; report is paper-only.
+- New config flag: `market_beta_proxy_buyable_only=False`.
+- New CLI flag on monthly plan/backtest/attribution/validate/train-diagnostics:
+  `--market-beta-proxy-buyable-only`.
+- When enabled, market beta proxy fallback reuses
+  `compress_decision_to_buyable_targets`; direct `market_beta` ETF fallback is
+  unchanged.
+- Defaults and live/order behavior are unchanged.
 
 TDD:
 
-- RED: new monthly rebalance tests failed on missing functions; CLI help test
-  failed on missing `--execution-gap-output`.
-- GREEN: targeted tests PASS, `3` tests.
+- RED: config/CLI tests failed on the missing flag; the first fixture also
+  exposed an invalid empty train slice before the intended fallback path.
+- GREEN: targeted tests PASS, `5` tests; monthly+CLI modules PASS, `223`
+  tests.
 
-Key `regime_sideways` evidence:
+Focused `regime_sideways` evidence with current
+`proxy_guard_exit_short_minus5` guard settings plus buyable proxy:
+
+- Output prefix:
+  `data/reports/regime_sideways_proxy_guard_exit_short_minus5_buyable_proxy_*`.
+- Headline: total return `-7.87%`, excess `-5.80%`, max DD `-21.84%`.
+- Execution gaps: rows `45`; buyable compression reasons include
+  `buyable_targets_11of12` (`15` rows) and `buyable_targets_9of12` (`9`
+  rows). Prior below-one-share misses are removed.
+- Comparison versus `proxy_guard_exit_short_minus5`: changed decision rows `4`,
+  symbol rotation rows `4`, new drawdown breach months `0`.
+- Path comparison is worse: equity regression days `108/126`,
+  drawdown regression days `101/126`, worst equity delta
+  `2024-12-09 = -172507.1649`.
+- Decision: reject as-is; do not run full validation or promote.
+
+Prior execution-gap context to preserve:
 
 - `proxy_guard_exit_short_minus5_execution_gap.csv`: rows `55`;
   `target_underfilled_after_rebalance=51`, `target_value_below_one_share=4`.
 - `proxy_guard_exit_short_minus5_neutral_breadth_cap75_execution_gap.csv`:
   rows `57`; `target_underfilled_after_rebalance=51`,
   `target_value_below_one_share=6`.
-- The rejected neutral-cap combo adds `010130` one-share misses on
-  `2024-10-14` and `2024-11-01`; `207940` remains below one share.
-- This confirms broad neutral-breadth caps can change actual holdings through
-  lot-size/price constraints, not just reduce exposure.
 
 ## Current Best Candidate
 
@@ -114,6 +131,8 @@ Why still blocked:
 - `neutral_breadth_proxy_cap_75`, `target_persistence_2`: held/unchanged.
 - `proxy_reversal_guard_55_extreme60`, `proxy_guard_short5_extreme50_mdd10`:
   paper-review only; improved but still left required failures.
+- `proxy_guard_exit_short_minus5 + market_beta_proxy_buyable_only`: removes
+  below-one-share gaps but worsens most `regime_sideways` path days.
 
 ## Remaining Blockers
 
@@ -142,10 +161,9 @@ Diagnostic combo remaining failure:
 Pick one narrow loop:
 
 - `regime_sideways`: inspect actual path/position drift in `2024-10`,
-  `2024-11`, `2024-12`, especially why lower target weights drop expensive
-  symbols such as `010130`; use `--execution-gap-output` before testing any
-  buyability-aware proxy/weighting candidate. Avoid broad neutral-breadth caps
-  as-is.
+  `2024-11`, `2024-12`. The buyable proxy test worsened December via symbol
+  rotation; inspect removed/added proxy names around `2024-12-09` before
+  changing weighting again. Avoid broad neutral-breadth caps as-is.
 - `walk_forward_003`: continue from the new stability summary; inspect the
   negative subwindow symbol/path-drift rows before changing gates.
 

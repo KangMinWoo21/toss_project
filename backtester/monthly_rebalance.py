@@ -206,6 +206,7 @@ class MonthlyRebalanceConfig:
     market_beta_proxy_reversal_guard_extreme_return_pct: float = 0.0
     market_beta_proxy_reversal_guard_medium_drawdown_pct: float = 0.0
     market_beta_proxy_reversal_guard_recovery_exit_short_return_pct: float = 0.0
+    market_beta_proxy_buyable_only: bool = False
     event_scores: EventScoreStore | None = None
     event_lookback_days: int = 5
     min_entry_event_score: float = -0.2
@@ -1536,6 +1537,8 @@ def decide_monthly_allocation(
                 config=cfg,
                 proxy_max_exposure=proxy_max_exposure,
                 proxy_cap_reason=proxy_cap_reason,
+                reference_prices=reference_prices,
+                portfolio_value=portfolio_value,
                 proxy_reason=("no_train_candidate_neutral_breadth_proxy" + reason_suffix)
                 if prior_breadth < cfg.fallback_breadth_threshold
                 else ("no_train_candidate_strong_breadth_proxy" + reason_suffix),
@@ -1566,6 +1569,8 @@ def decide_monthly_allocation(
                 config=cfg,
                 proxy_max_exposure=proxy_max_exposure,
                 proxy_cap_reason=proxy_cap_reason,
+                reference_prices=reference_prices,
+                portfolio_value=portfolio_value,
                 proxy_reason="weak_train_neutral_breadth_proxy" + reason_suffix,
                 direct_reason="weak_train_neutral_breadth" + reason_suffix,
                 empty_reason="weak_train_no_market_beta_proxy",
@@ -9528,6 +9533,8 @@ def _market_beta_or_cash_decision(
     empty_reason: str,
     proxy_max_exposure: float | None = None,
     proxy_cap_reason: str = "proxy_exposure_capped",
+    reference_prices: dict[str, float] | None = None,
+    portfolio_value: float | None = None,
 ) -> MonthlyDecision:
     beta_weights = _market_beta_target_weights(
         symbol_candles,
@@ -9543,7 +9550,7 @@ def _market_beta_or_cash_decision(
             is_proxy
             and max(0.0, max_proxy_budget) < target_budget - 1e-12
         )
-        return MonthlyDecision(
+        decision = MonthlyDecision(
             as_of_date=as_of_date,
             signal_date=signal_date,
             mode="market_beta_proxy" if is_proxy else "market_beta",
@@ -9555,6 +9562,20 @@ def _market_beta_or_cash_decision(
                 else (proxy_reason if is_proxy else direct_reason)
             ),
         )
+        if (
+            is_proxy
+            and config.market_beta_proxy_buyable_only
+            and reference_prices is not None
+            and portfolio_value is not None
+        ):
+            return compress_decision_to_buyable_targets(
+                decision,
+                reference_prices=reference_prices,
+                portfolio_value=portfolio_value,
+                max_position_weight=config.max_position_weight,
+                min_target_value=config.min_target_value,
+            )
+        return decision
     return MonthlyDecision(
         as_of_date=as_of_date,
         signal_date=signal_date,
