@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-23 23:47 KST
+Last updated: 2026-06-24 00:37 KST
 
 ## Objective
 
@@ -27,15 +27,170 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 449 tests.
+- `python -m unittest discover -s tests`: PASS, 451 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
-- Candidate follow-up state: latest `proxy_chase_guard_55_med35_short30` is `REJECT`; it fixed stress drawdown and `walk_forward_001`, but created a new `walk_forward_002` failure and did not fix `regime_sideways`, `walk_forward_003`, or `walk_forward_005`.
+- Candidate follow-up state: latest `proxy_guard_short5_extreme50_mdd10` is `PAPER_REVIEW` / `IMPROVED`; it fixed `stress_exclude_500pct_winners` and `walk_forward_001` without new failures, but still leaves `regime_sideways`, `walk_forward_003`, and `walk_forward_005` failed.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a default-off paper/backtest proxy reversal guard discriminator based on medium-window proxy basket drawdown:
+
+- Added `MonthlyRebalanceConfig.market_beta_proxy_reversal_guard_medium_drawdown_pct`.
+- Added CLI option:
+  - `--market-beta-proxy-reversal-guard-medium-drawdown-pct`
+- Added proxy diagnostics evidence column:
+  - `proxy_reversal_guard_medium_drawdown_pct`
+- Added proxy guard outcome evidence column:
+  - `guard_medium_drawdown_pct`
+- Also exposed existing deep drawdown guard options on `monthly-attribution` so attribution can analyze the same existing risk controls as validation:
+  - `--drawdown-guard-deep-trigger-pct`
+  - `--drawdown-guard-deep-scale`
+- Defaults remain inactive:
+  - medium drawdown trigger default `0.0`
+  - deep drawdown attribution defaults match the existing config and do not change behavior unless passed.
+- This is paper/backtest/diagnostic-only.
+- No production default was changed.
+- No real order execution, Toss API test call, production gate bypass, or live default change was added.
+
+Discriminator tested:
+
+- Candidate label: `proxy_guard_short5_extreme50_mdd10`.
+- Candidate options:
+  - `--market-beta-proxy-reversal-guard-max-exposure 0.55`
+  - `--market-beta-proxy-reversal-guard-medium-lookback-days 40`
+  - `--market-beta-proxy-reversal-guard-medium-return-pct 35`
+  - `--market-beta-proxy-reversal-guard-short-lookback-days 20`
+  - `--market-beta-proxy-reversal-guard-short-max-return-pct 5`
+  - `--market-beta-proxy-reversal-guard-extreme-return-pct 50`
+  - `--market-beta-proxy-reversal-guard-medium-drawdown-pct -10`
+
+Why this candidate:
+
+- Prior rejected candidate capped `walk_forward_002` `2025-06`, a profitable continuation month.
+- Existing `short<=5 or medium>=50` avoided that cap but missed stress `2026-05`, leaving stress max drawdown at `-25.76%`.
+- Medium-window proxy basket max drawdown separated the key cases:
+  - stress `2026-05`: medium return `36.5887`, short return `29.1252`, medium drawdown about `-10.8355`
+  - `walk_forward_002` `2025-06`: medium return `38.5407`, short return `8.6214`, medium drawdown about `-8.8095`
+- Threshold `-10%` kept the stress cap and avoided the profitable continuation cap.
+
+Attribution results:
+
+- Stress attribution `stress_proxy_guard_short5_extreme50_mdd10`:
+  - total return `29.40%`
+  - excess return `27.91%`
+  - max drawdown `-21.26%`
+  - guard triggered rows: `3`
+  - profitable continuation caps: `0`
+  - missed high-exposure losses: `8`
+  - capped loss months:
+    - `2025-03`
+    - `2026-03`
+    - `2026-05`
+- `walk_forward_002` attribution:
+  - total return `15.85%`
+  - excess return `0.83%`
+  - max drawdown `-4.45%`
+  - guard triggered rows: `0`
+  - profitable continuation caps: `0`
+  - `2025-06` remained uncapped at target exposure `0.99` and returned `11.2376%`.
+
+Full validation result:
+
+- `monthly-validate` candidate scenarios: `18`.
+- Candidate failed required scenarios: `3`.
+- Candidate deployment gate: `deployable=False`.
+- Failed required names:
+  - `regime_sideways`
+  - `walk_forward_003`
+  - `walk_forward_005`
+- Baseline comparison:
+  - `monthly-compare-validation`: `IMPROVED`
+  - baseline failed required: `5`
+  - candidate failed required: `3`
+  - failed delta: `-2`
+  - resolved failures:
+    - `stress_exclude_500pct_winners`
+    - `walk_forward_001`
+  - new failures: none
+  - unchanged failures:
+    - `regime_sideways`
+    - `walk_forward_003`
+    - `walk_forward_005`
+- Candidate decision:
+  - `PAPER_REVIEW`
+  - recommendation: keep paper-only; do not promote while unchanged failures remain.
+
+Regenerated reports:
+
+- `data/reports/stress_proxy_guard_short5_extreme50_mdd10_monthly_attribution.csv`
+- `data/reports/stress_proxy_guard_short5_extreme50_mdd10_symbol_attribution.csv`
+- `data/reports/stress_proxy_guard_short5_extreme50_mdd10_decision_attribution.csv`
+- `data/reports/stress_proxy_guard_short5_extreme50_mdd10_recovery_attribution.csv`
+- `data/reports/stress_proxy_guard_short5_extreme50_mdd10_proxy_decision_diagnostics.csv`
+- `data/reports/stress_proxy_guard_short5_extreme50_mdd10_path_attribution.csv`
+- `data/reports/stress_proxy_guard_short5_extreme50_mdd10_drawdown_pressure.csv`
+- `data/reports/stress_proxy_guard_short5_extreme50_mdd10_proxy_guard_outcomes.csv`
+- `data/reports/walk_forward_002_proxy_guard_short5_extreme50_mdd10_monthly_attribution.csv`
+- `data/reports/walk_forward_002_proxy_guard_short5_extreme50_mdd10_symbol_attribution.csv`
+- `data/reports/walk_forward_002_proxy_guard_short5_extreme50_mdd10_decision_attribution.csv`
+- `data/reports/walk_forward_002_proxy_guard_short5_extreme50_mdd10_recovery_attribution.csv`
+- `data/reports/walk_forward_002_proxy_guard_short5_extreme50_mdd10_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_002_proxy_guard_short5_extreme50_mdd10_path_attribution.csv`
+- `data/reports/walk_forward_002_proxy_guard_short5_extreme50_mdd10_proxy_guard_outcomes.csv`
+- `data/reports/monthly_validation_candidate_proxy_guard_short5_extreme50_mdd10.csv`
+- `data/reports/monthly_validation_failures_candidate_proxy_guard_short5_extreme50_mdd10.csv`
+- `data/reports/monthly_validation_remediation_candidate_proxy_guard_short5_extreme50_mdd10.csv`
+- `data/reports/monthly_validation_sweep_plan_candidate_proxy_guard_short5_extreme50_mdd10.csv`
+- `data/reports/monthly_validation_comparison_proxy_guard_short5_extreme50_mdd10.csv`
+- `data/reports/monthly_validation_comparison_deltas_proxy_guard_short5_extreme50_mdd10.csv`
+- `data/reports/monthly_validation_candidate_decision_proxy_guard_short5_extreme50_mdd10.csv`
+- `data/reports/monthly_validation_failure_patterns.csv`
+- `data/reports/monthly_validation_failure_drilldown.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `449` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED checks:
+  - New monthly rebalance tests failed because `market_beta_proxy_reversal_guard_medium_drawdown_pct` did not exist.
+  - New CLI tests failed because `--market-beta-proxy-reversal-guard-medium-drawdown-pct` did not exist.
+  - New attribution CLI test failed because existing deep drawdown guard options were not exposed on `monthly-attribution`.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_monthly_config_defaults_to_five_candidate_slots tests.test_monthly_rebalance.MonthlyRebalanceTests.test_market_beta_proxy_reversal_guard_caps_medium_drawdown_after_overheat tests.test_monthly_rebalance.MonthlyRebalanceTests.test_market_beta_proxy_reversal_guard_preserves_continuation_without_medium_drawdown tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_decision_diagnostics_includes_reversal_guard_evidence`: PASS, `4` tests.
+  - `python -m unittest tests.test_cli.CliTests.test_monthly_backtest_help_includes_deep_drawdown_guard_options tests.test_cli.CliTests.test_monthly_attribution_help_includes_stress_and_output_options tests.test_cli.CliTests.test_monthly_attribution_cli_writes_recovery_summary_report`: PASS, `3` tests.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `212` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `451` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with scalper data stale (`age_hours=335.78` observed).
+
+Current interpretation:
+
+- `proxy_guard_short5_extreme50_mdd10` is the best current paper-review candidate in this family.
+- It should not be promoted to production defaults because validation still fails 3 required scenarios.
+- It is useful as a safer reference candidate because it resolved stress drawdown and `walk_forward_001` without the prior `walk_forward_002` regression.
+
+Next recommended action:
+
+- Keep this candidate paper-only.
+- Continue with the remaining blockers:
+  - `regime_sideways`: still negative excess `-5.2338`, root cause `insufficient_recovery`.
+  - `walk_forward_003`: still `train_window_rejected`; do not override the train gate.
+  - `walk_forward_005`: still negative excess `-2.1023`, improved but not resolved.
+- Next highest-value diagnostic: compare `regime_sideways` and `walk_forward_005` recovery attribution under baseline vs `proxy_guard_short5_extreme50_mdd10` to isolate remaining insufficient recovery without reintroducing `walk_forward_002`/`walk_forward_004` regressions.
+
+## Previous Loop: Proxy Guard Outcome Diagnostics
 
 Added a paper-only proxy guard outcome diagnostic so rejected proxy guard candidates can be decomposed before another full validation run:
 

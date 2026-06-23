@@ -839,6 +839,8 @@ def main() -> int:
     _add_market_beta_proxy_reversal_guard_args(monthly_attribution_parser)
     monthly_attribution_parser.add_argument("--drawdown-guard-trigger-pct", type=float, default=-15.0)
     monthly_attribution_parser.add_argument("--drawdown-guard-scale", type=float, default=0.75)
+    monthly_attribution_parser.add_argument("--drawdown-guard-deep-trigger-pct", type=float, default=0.0)
+    monthly_attribution_parser.add_argument("--drawdown-guard-deep-scale", type=float, default=0.5)
     monthly_attribution_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
     monthly_attribution_parser.add_argument("--point-in-time-min-history-days", type=int, default=252)
     monthly_attribution_parser.add_argument("--point-in-time-universe", default=None, help="CSV with date,symbol snapshots")
@@ -1891,6 +1893,7 @@ def main() -> int:
             market_beta_proxy_reversal_guard_short_lookback_days=args.market_beta_proxy_reversal_guard_short_lookback_days,
             market_beta_proxy_reversal_guard_short_max_return_pct=args.market_beta_proxy_reversal_guard_short_max_return_pct,
             market_beta_proxy_reversal_guard_extreme_return_pct=args.market_beta_proxy_reversal_guard_extreme_return_pct,
+            market_beta_proxy_reversal_guard_medium_drawdown_pct=args.market_beta_proxy_reversal_guard_medium_drawdown_pct,
             point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
             point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
             point_in_time_min_history_days=args.point_in_time_min_history_days,
@@ -2618,6 +2621,7 @@ def main() -> int:
                 market_beta_proxy_reversal_guard_short_lookback_days=args.market_beta_proxy_reversal_guard_short_lookback_days,
                 market_beta_proxy_reversal_guard_short_max_return_pct=args.market_beta_proxy_reversal_guard_short_max_return_pct,
                 market_beta_proxy_reversal_guard_extreme_return_pct=args.market_beta_proxy_reversal_guard_extreme_return_pct,
+                market_beta_proxy_reversal_guard_medium_drawdown_pct=args.market_beta_proxy_reversal_guard_medium_drawdown_pct,
                 event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
                 event_lookback_days=args.event_lookback_days,
                 min_entry_event_score=args.min_entry_event_score,
@@ -2826,6 +2830,7 @@ def main() -> int:
                 market_beta_proxy_reversal_guard_short_lookback_days=args.market_beta_proxy_reversal_guard_short_lookback_days,
                 market_beta_proxy_reversal_guard_short_max_return_pct=args.market_beta_proxy_reversal_guard_short_max_return_pct,
                 market_beta_proxy_reversal_guard_extreme_return_pct=args.market_beta_proxy_reversal_guard_extreme_return_pct,
+                market_beta_proxy_reversal_guard_medium_drawdown_pct=args.market_beta_proxy_reversal_guard_medium_drawdown_pct,
                 event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
                 event_lookback_days=args.event_lookback_days,
                 min_entry_event_score=args.min_entry_event_score,
@@ -2910,6 +2915,8 @@ def main() -> int:
             candidate_pool_size=args.candidate_pool_size,
             drawdown_guard_trigger_pct=args.drawdown_guard_trigger_pct,
             drawdown_guard_scale=args.drawdown_guard_scale,
+            drawdown_guard_deep_trigger_pct=args.drawdown_guard_deep_trigger_pct,
+            drawdown_guard_deep_scale=args.drawdown_guard_deep_scale,
             position_trailing_stop_pct=args.position_trailing_stop_pct,
             point_in_time_min_history_days=args.point_in_time_min_history_days,
             point_in_time_universe=point_in_time_universe,
@@ -2921,6 +2928,7 @@ def main() -> int:
             market_beta_proxy_reversal_guard_short_lookback_days=args.market_beta_proxy_reversal_guard_short_lookback_days,
             market_beta_proxy_reversal_guard_short_max_return_pct=args.market_beta_proxy_reversal_guard_short_max_return_pct,
             market_beta_proxy_reversal_guard_extreme_return_pct=args.market_beta_proxy_reversal_guard_extreme_return_pct,
+            market_beta_proxy_reversal_guard_medium_drawdown_pct=args.market_beta_proxy_reversal_guard_medium_drawdown_pct,
         )
         result = run_monthly_rebalance_backtest(
             symbol_candles,
@@ -3103,6 +3111,7 @@ def main() -> int:
             market_beta_proxy_reversal_guard_short_lookback_days=args.market_beta_proxy_reversal_guard_short_lookback_days,
             market_beta_proxy_reversal_guard_short_max_return_pct=args.market_beta_proxy_reversal_guard_short_max_return_pct,
             market_beta_proxy_reversal_guard_extreme_return_pct=args.market_beta_proxy_reversal_guard_extreme_return_pct,
+            market_beta_proxy_reversal_guard_medium_drawdown_pct=args.market_beta_proxy_reversal_guard_medium_drawdown_pct,
             event_scores=load_event_scores(args.events, _parse_source_weights(args.event_source_weights)) if args.events else None,
             event_lookback_days=args.event_lookback_days,
             min_entry_event_score=args.min_entry_event_score,
@@ -3458,6 +3467,7 @@ def _add_market_beta_proxy_reversal_guard_args(parser: argparse.ArgumentParser) 
     parser.add_argument("--market-beta-proxy-reversal-guard-short-lookback-days", type=int, default=0)
     parser.add_argument("--market-beta-proxy-reversal-guard-short-max-return-pct", type=float, default=0.0)
     parser.add_argument("--market-beta-proxy-reversal-guard-extreme-return-pct", type=float, default=0.0)
+    parser.add_argument("--market-beta-proxy-reversal-guard-medium-drawdown-pct", type=float, default=0.0)
 
 
 def _add_news_args(parser: argparse.ArgumentParser) -> None:

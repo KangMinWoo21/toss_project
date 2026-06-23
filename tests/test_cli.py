@@ -600,6 +600,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-medium-lookback-days", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-medium-drawdown-pct", completed.stdout)
 
     def test_monthly_attribution_help_includes_stress_and_output_options(self):
         completed = subprocess.run(
@@ -626,6 +627,9 @@ class CliTests(unittest.TestCase):
         self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-medium-lookback-days", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-medium-drawdown-pct", completed.stdout)
+        self.assertIn("--drawdown-guard-deep-trigger-pct", completed.stdout)
+        self.assertIn("--drawdown-guard-deep-scale", completed.stdout)
         self.assertIn("--proxy-output", completed.stdout)
         self.assertIn("--stress-drawdown-output", completed.stdout)
 
@@ -660,6 +664,12 @@ class CliTests(unittest.TestCase):
                     "20",
                     "--scenario-name",
                     "walk_forward_unit",
+                    "--drawdown-guard-deep-trigger-pct",
+                    "-20",
+                    "--drawdown-guard-deep-scale",
+                    "0.35",
+                    "--market-beta-proxy-reversal-guard-medium-drawdown-pct",
+                    "-10",
                     "--summary-output",
                     str(summary_output),
                     "--proxy-output",

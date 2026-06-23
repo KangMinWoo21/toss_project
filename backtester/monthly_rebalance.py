@@ -204,6 +204,7 @@ class MonthlyRebalanceConfig:
     market_beta_proxy_reversal_guard_short_lookback_days: int = 0
     market_beta_proxy_reversal_guard_short_max_return_pct: float = 0.0
     market_beta_proxy_reversal_guard_extreme_return_pct: float = 0.0
+    market_beta_proxy_reversal_guard_medium_drawdown_pct: float = 0.0
     event_scores: EventScoreStore | None = None
     event_lookback_days: int = 5
     min_entry_event_score: float = -0.2
@@ -1035,6 +1036,7 @@ MONTHLY_PROXY_DECISION_DIAGNOSTIC_COLUMNS = [
     "proxy_reversal_guard_cap",
     "proxy_reversal_guard_medium_return_pct",
     "proxy_reversal_guard_short_return_pct",
+    "proxy_reversal_guard_medium_drawdown_pct",
     "proxy_reversal_guard_reason",
     "diagnostic",
     "recommended_next_action",
@@ -1055,6 +1057,7 @@ MONTHLY_PROXY_GUARD_OUTCOME_COLUMNS = [
     "guard_cap",
     "guard_medium_return_pct",
     "guard_short_return_pct",
+    "guard_medium_drawdown_pct",
     "guard_reason",
     "loss_month",
     "gain_month",
@@ -2913,6 +2916,7 @@ def analyze_monthly_proxy_decision_diagnostics(
                 "cap": "",
                 "medium_return_pct": "",
                 "short_return_pct": "",
+                "medium_drawdown_pct": "",
                 "reason": "not_market_beta_proxy",
             }
         rows.append(
@@ -2946,6 +2950,7 @@ def analyze_monthly_proxy_decision_diagnostics(
                 "proxy_reversal_guard_cap": guard_evidence["cap"],
                 "proxy_reversal_guard_medium_return_pct": guard_evidence["medium_return_pct"],
                 "proxy_reversal_guard_short_return_pct": guard_evidence["short_return_pct"],
+                "proxy_reversal_guard_medium_drawdown_pct": guard_evidence["medium_drawdown_pct"],
                 "proxy_reversal_guard_reason": guard_evidence["reason"],
                 "diagnostic": ";".join(diagnostics) if diagnostics else "no_proxy_issue_detected",
                 "recommended_next_action": _monthly_proxy_decision_recommended_action(diagnostics),
@@ -3043,6 +3048,7 @@ def _market_beta_proxy_reversal_guard_diagnostics(
             "cap": _format_optional_float(current_cap),
             "medium_return_pct": "",
             "short_return_pct": "",
+            "medium_drawdown_pct": "",
             "reason": "proxy_exposure_capped",
         }
 
@@ -3081,6 +3087,12 @@ def _market_beta_proxy_reversal_guard_diagnostics(
         signal_date=signal_date,
         lookback_days=medium_days,
     )
+    medium_drawdown = _proxy_basket_max_drawdown_pct(
+        decision_candles,
+        proxy_symbols,
+        signal_date=signal_date,
+        lookback_days=medium_days,
+    )
     short_return: float | None = None
     short_days = int(config.market_beta_proxy_reversal_guard_short_lookback_days)
     if short_days > 0:
@@ -3099,7 +3111,13 @@ def _market_beta_proxy_reversal_guard_diagnostics(
         short_allows_cap = short_days <= 0 or (
             short_return is not None and short_return <= config.market_beta_proxy_reversal_guard_short_max_return_pct
         )
-        if extreme_overheat or short_allows_cap:
+        drawdown_trigger = config.market_beta_proxy_reversal_guard_medium_drawdown_pct
+        drawdown_allows_cap = (
+            drawdown_trigger < 0
+            and medium_drawdown is not None
+            and medium_drawdown <= drawdown_trigger
+        )
+        if extreme_overheat or short_allows_cap or drawdown_allows_cap:
             triggered = True
             current_cap = min(current_cap, guard_cap)
             reason = "proxy_reversal_guard_capped"
@@ -3109,6 +3127,7 @@ def _market_beta_proxy_reversal_guard_diagnostics(
         "cap": _format_optional_float(current_cap),
         "medium_return_pct": _format_optional_float(medium_return),
         "short_return_pct": _format_optional_float(short_return),
+        "medium_drawdown_pct": _format_optional_float(medium_drawdown),
         "reason": reason,
     }
 
@@ -3285,6 +3304,7 @@ def analyze_monthly_proxy_guard_outcomes(proxy_rows: list[dict[str, Any]]) -> li
                 "guard_cap": proxy.get("proxy_reversal_guard_cap", ""),
                 "guard_medium_return_pct": proxy.get("proxy_reversal_guard_medium_return_pct", ""),
                 "guard_short_return_pct": proxy.get("proxy_reversal_guard_short_return_pct", ""),
+                "guard_medium_drawdown_pct": proxy.get("proxy_reversal_guard_medium_drawdown_pct", ""),
                 "guard_reason": proxy.get("proxy_reversal_guard_reason", ""),
                 "loss_month": str(loss_month).lower(),
                 "gain_month": str(gain_month).lower(),
@@ -9082,8 +9102,20 @@ def market_beta_proxy_reversal_guard_cap(
 
     extreme_trigger = config.market_beta_proxy_reversal_guard_extreme_return_pct
     extreme_overheat = extreme_trigger > 0 and medium_return >= extreme_trigger
+    medium_drawdown = _proxy_basket_max_drawdown_pct(
+        symbol_candles,
+        proxy_symbols,
+        signal_date=signal_date,
+        lookback_days=medium_days,
+    )
+    drawdown_trigger = config.market_beta_proxy_reversal_guard_medium_drawdown_pct
+    drawdown_allows_cap = (
+        drawdown_trigger < 0
+        and medium_drawdown is not None
+        and medium_drawdown <= drawdown_trigger
+    )
     short_days = int(config.market_beta_proxy_reversal_guard_short_lookback_days)
-    if short_days > 0 and not extreme_overheat:
+    if short_days > 0 and not extreme_overheat and not drawdown_allows_cap:
         short_return = _average_symbol_return_pct(
             symbol_candles,
             proxy_symbols,
@@ -9096,6 +9128,52 @@ def market_beta_proxy_reversal_guard_cap(
         ):
             return effective_cap, "proxy_exposure_capped"
     return min(effective_cap, guard_cap), "proxy_reversal_guard_capped"
+
+
+def _proxy_basket_max_drawdown_pct(
+    symbol_candles: dict[str, list[Candle]],
+    symbols: list[str],
+    *,
+    signal_date: str,
+    lookback_days: int,
+) -> float | None:
+    if lookback_days <= 0 or not symbols:
+        return None
+    normalized_series: list[dict[str, float]] = []
+    all_dates: set[str] = set()
+    for symbol in symbols:
+        history = [
+            candle
+            for candle in sorted(symbol_candles.get(symbol, []), key=lambda candle: candle.date)
+            if candle.date <= signal_date and candle.close > 0
+        ]
+        if len(history) <= lookback_days:
+            continue
+        window = history[-lookback_days - 1:]
+        base_price = window[0].close
+        if base_price <= 0:
+            continue
+        series = {candle.date: candle.close / base_price for candle in window}
+        normalized_series.append(series)
+        all_dates.update(series)
+    if not normalized_series:
+        return None
+    min_observations = max(1, len(normalized_series) // 2)
+    basket_values: list[float] = []
+    for day in sorted(all_dates):
+        day_values = [series[day] for series in normalized_series if day in series]
+        if len(day_values) >= min_observations:
+            basket_values.append(sum(day_values) / len(day_values))
+    if not basket_values:
+        return None
+    peak = basket_values[0]
+    worst_drawdown = 0.0
+    for value in basket_values:
+        if value > peak:
+            peak = value
+        if peak > 0:
+            worst_drawdown = min(worst_drawdown, (value / peak - 1.0) * 100.0)
+    return worst_drawdown
 
 
 def _average_symbol_return_pct(
