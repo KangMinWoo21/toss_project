@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 monthly benchmark-excess diagnostic
+Last updated: 2026-06-24 April benchmark contribution diagnostic
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,51 +40,58 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `30fbb87 Refresh best candidate comparison evidence`.
+  `a913141 Add monthly benchmark excess attribution`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `484` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `486` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=343.27` observed).
+  (`age_hours=343.46` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only monthly benchmark-excess diagnostic for the remaining
-`regime_sideways` negative-excess blocker.
+Added a report-only monthly benchmark contribution diagnostic for the
+`2025-04` recovery-participation gap.
 
 Changed behavior:
 
-- New `monthly-attribution --benchmark-output` writes per-month strategy return,
-  equal-weight buy-hold return, and monthly excess.
+- New `monthly-attribution --benchmark-contribution-output` writes each
+  month's target-basket symbol contribution versus equal-weight benchmark
+  contribution.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
-- Generated the best-candidate `regime_sideways` benchmark-excess report under
-  separate `_current` output paths.
+- Generated the best-candidate `regime_sideways` benchmark contribution report
+  under separate `_current` output paths.
 
 Verification:
 
-- RED: analyzer/saver imports failed; CLI help lacked `--benchmark-output`.
-- GREEN: targeted benchmark-excess tests PASS, monthly module PASS (`194`
+- RED: analyzer/saver imports failed; CLI help lacked
+  `--benchmark-contribution-output`.
+- GREEN: targeted benchmark-contribution tests PASS, monthly module PASS (`196`
   tests), CLI module PASS (`51` tests).
-- Final verification: full `unittest` PASS (`484` tests), compile PASS,
+- Final verification: full `unittest` PASS (`486` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Best-candidate `regime_sideways` benchmark-excess rows: `7`.
-- Negative-excess months: `4`; positive-excess months: `3`.
-- Largest monthly excess drag is `2025-04`: strategy `+0.5697%` versus
-  benchmark `+5.5069%`, monthly excess `-4.9372%`, worst drawdown `-21.7902%`.
-- Other negative-excess months: `2025-01` (`-1.6436%`), `2024-12`
-  (`-1.2740%`), `2025-03` (`-0.9108%`).
-- Interpretation: March remains the largest absolute strategy loss, but April
-  is the main residual benchmark gap. Next work should investigate missed
-  recovery participation after the March drawdown, not broaden the March loss
-  cap or reuse stopped-out candidates.
+- Contribution report rows: `15288`; April rows: `2184`.
+- April diagnostic counts: `missed_benchmark_winner=1496`,
+  `avoided_benchmark_loser=676`, `positive_contribution_delta=6`,
+  `overweighted_loser=6`.
+- April contribution-delta sums: missed benchmark winners `-6.8438`,
+  overweighted losers `-2.6465`, selected winners `+2.3324`, avoided losers
+  `+1.3332`.
+- Largest single drags were overweighted proxy losers: `005490` (`-0.6076`),
+  `000660` (`-0.6075`), `005380` (`-0.5515`), `000270` (`-0.5339`).
+- Strong selected winners partly offset them: `042660` (`+0.7610`), `064350`
+  (`+0.4641`), `047810` (`+0.4042`).
+- Interpretation: April gap is primarily recovery breadth/selection, with many
+  omitted benchmark winners plus a few overweighted losers. Next work should
+  inspect recovery-basket construction/selection breadth before testing a new
+  candidate.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -206,9 +213,10 @@ Pick one narrow loop:
 
 - `regime_sideways`: the neutral loss guard reduced but did not solve the
   remaining excess gap. New benchmark-excess evidence points to missed
-  `2025-04` recovery participation after the `2025-03` drawdown. Next paper-only
-  work should inspect April holdings/benchmark contribution before broadening
-  any March loss cap.
+  `2025-04` recovery participation after the `2025-03` drawdown. Contribution
+  evidence points to recovery-breadth/selection rather than only March loss
+  control. Next paper-only work should inspect recovery basket construction and
+  avoid broad cash, broad stop, or broad proxy cap reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate
   discipline; do not loosen rejected train windows.
 

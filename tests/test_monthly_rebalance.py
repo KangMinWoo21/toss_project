@@ -20,6 +20,7 @@ from backtester.monthly_rebalance import (
     audit_point_in_time_price_coverage,
     analyze_monthly_performance_concentration,
     analyze_monthly_benchmark_excess,
+    analyze_monthly_benchmark_contributions,
     analyze_monthly_drawdown_attribution,
     analyze_monthly_decision_attribution,
     analyze_monthly_direct_alpha_holding_path,
@@ -93,6 +94,7 @@ from backtester.monthly_rebalance import (
     save_monthly_performance_audit_rows,
     save_monthly_performance_concentration,
     save_monthly_benchmark_excess,
+    save_monthly_benchmark_contributions,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
     save_monthly_validation_remediation,
@@ -3462,6 +3464,67 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("monthly_excess_return_pct", text.splitlines()[0])
         self.assertIn("NEGATIVE_EXCESS", text)
+
+    def test_analyze_monthly_benchmark_contributions_flags_missed_benchmark_winners(self):
+        rows = analyze_monthly_benchmark_contributions(
+            [
+                {
+                    "month": "2025-04",
+                    "start_date": "2025-04-01",
+                    "end_date": "2025-04-30",
+                    "return_pct": "2.0",
+                }
+            ],
+            [
+                {
+                    "as_of_date": "2025-04-01",
+                    "reason": "unit_proxy",
+                    "target_weights": "AAA:0.1;BBB:0.2",
+                }
+            ],
+            {
+                "AAA": [_candle("2025-04-01", 100, 100), _candle("2025-04-30", 120, 120)],
+                "BBB": [_candle("2025-04-01", 100, 100), _candle("2025-04-30", 100, 100)],
+                "CCC": [_candle("2025-04-01", 100, 100), _candle("2025-04-30", 110, 110)],
+            },
+            scenario="regime_sideways",
+            fee_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
+        )
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["CCC"]["contribution_role"], "benchmark_only")
+        self.assertEqual(by_symbol["CCC"]["strategy_weight"], "0")
+        self.assertEqual(by_symbol["CCC"]["benchmark_weight"], "0.3333")
+        self.assertEqual(by_symbol["CCC"]["symbol_return_pct"], "10")
+        self.assertEqual(by_symbol["CCC"]["strategy_contribution_pct"], "0")
+        self.assertEqual(by_symbol["CCC"]["benchmark_contribution_pct"], "3.3333")
+        self.assertEqual(by_symbol["CCC"]["contribution_delta_pct"], "-3.3333")
+        self.assertIn("missed_benchmark_winner", by_symbol["CCC"]["diagnostic"])
+        self.assertEqual(by_symbol["AAA"]["contribution_role"], "strategy_underweight")
+        self.assertIn("underweighted_benchmark_winner", by_symbol["AAA"]["diagnostic"])
+
+    def test_save_monthly_benchmark_contributions_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "benchmark_contributions.csv"
+            saved = save_monthly_benchmark_contributions(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "month": "2025-04",
+                        "symbol": "CCC",
+                        "contribution_role": "benchmark_only",
+                        "diagnostic": "missed_benchmark_winner",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("contribution_delta_pct", text.splitlines()[0])
+        self.assertIn("missed_benchmark_winner", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

@@ -1029,6 +1029,24 @@ MONTHLY_BENCHMARK_EXCESS_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_BENCHMARK_CONTRIBUTION_COLUMNS = [
+    "scenario",
+    "month",
+    "start_date",
+    "end_date",
+    "decision_as_of_date",
+    "decision_reason",
+    "symbol",
+    "contribution_role",
+    "strategy_weight",
+    "benchmark_weight",
+    "symbol_return_pct",
+    "strategy_contribution_pct",
+    "benchmark_contribution_pct",
+    "contribution_delta_pct",
+    "diagnostic",
+]
+
 SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "symbol",
     "realized_pnl",
@@ -2571,6 +2589,191 @@ def analyze_monthly_benchmark_excess(
             }
         )
     return rows
+
+
+def analyze_monthly_benchmark_contributions(
+    monthly_rows: list[dict[str, Any]],
+    decision_rows: list[dict[str, Any]],
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    scenario: str = "",
+    fee_rate: float = 0.00015,
+    tax_rate: float = 0.0018,
+    slippage_rate: float = 0.0005,
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for monthly_row in monthly_rows:
+        month = str(monthly_row.get("month", "")).strip()
+        start_date = str(monthly_row.get("start_date", "")).strip()
+        end_date = str(monthly_row.get("end_date", "")).strip()
+        if not month or not start_date or not end_date:
+            continue
+        decision_row = _decision_row_for_month(decision_rows, month)
+        strategy_weights = _parse_decision_target_weights(decision_row)
+        symbol_returns = _net_period_symbol_returns(
+            symbol_candles,
+            start=start_date,
+            end=end_date,
+            fee_rate=fee_rate,
+            tax_rate=tax_rate,
+            slippage_rate=slippage_rate,
+        )
+        benchmark_weight = 1 / len(symbol_returns) if symbol_returns else 0.0
+        symbols = sorted(set(strategy_weights) | set(symbol_returns))
+        for symbol in symbols:
+            strategy_weight = strategy_weights.get(symbol, 0.0)
+            symbol_return = symbol_returns.get(symbol)
+            symbol_benchmark_weight = benchmark_weight if symbol in symbol_returns else 0.0
+            strategy_contribution = (
+                strategy_weight * symbol_return if symbol_return is not None else None
+            )
+            benchmark_contribution = (
+                symbol_benchmark_weight * symbol_return if symbol_return is not None else None
+            )
+            contribution_delta = (
+                strategy_contribution - benchmark_contribution
+                if strategy_contribution is not None and benchmark_contribution is not None
+                else None
+            )
+            rows.append(
+                {
+                    "scenario": scenario,
+                    "month": month,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "decision_as_of_date": str(decision_row.get("as_of_date", "")),
+                    "decision_reason": str(decision_row.get("reason", "")),
+                    "symbol": symbol,
+                    "contribution_role": _monthly_benchmark_contribution_role(
+                        strategy_weight,
+                        symbol_benchmark_weight,
+                    ),
+                    "strategy_weight": _format_optional_float(strategy_weight),
+                    "benchmark_weight": _format_optional_float(symbol_benchmark_weight),
+                    "symbol_return_pct": _format_optional_float(symbol_return),
+                    "strategy_contribution_pct": _format_optional_float(strategy_contribution),
+                    "benchmark_contribution_pct": _format_optional_float(benchmark_contribution),
+                    "contribution_delta_pct": _format_optional_float(contribution_delta),
+                    "diagnostic": _monthly_benchmark_contribution_diagnostic(
+                        strategy_weight=strategy_weight,
+                        benchmark_weight=symbol_benchmark_weight,
+                        symbol_return=symbol_return,
+                        contribution_delta=contribution_delta,
+                    ),
+                }
+            )
+    return sorted(
+        rows,
+        key=lambda row: (
+            row.get("month", ""),
+            _float_or_none(row.get("contribution_delta_pct")) or 0.0,
+            row.get("symbol", ""),
+        ),
+    )
+
+
+def _decision_row_for_month(decision_rows: list[dict[str, Any]], month: str) -> dict[str, Any]:
+    for row in decision_rows:
+        if str(row.get("as_of_date", "")).startswith(month):
+            return row
+    return {}
+
+
+def _parse_decision_target_weights(decision_row: dict[str, Any]) -> dict[str, float]:
+    weights: dict[str, float] = {}
+    for token in _split_semicolon_values(str(decision_row.get("target_weights", ""))):
+        symbol, _, raw_weight = token.partition(":")
+        symbol = symbol.strip()
+        weight = _float_or_none(raw_weight)
+        if symbol and weight is not None and weight > 0:
+            weights[symbol] = weight
+    if weights:
+        return weights
+    selected_symbols = _split_semicolon_values(str(decision_row.get("selected_symbols", "")))
+    target_exposure = _float_or_none(decision_row.get("target_exposure"))
+    if selected_symbols and target_exposure is not None and target_exposure > 0:
+        equal_weight = target_exposure / len(selected_symbols)
+        return {symbol: equal_weight for symbol in selected_symbols}
+    return {}
+
+
+def _net_period_symbol_returns(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    start: str,
+    end: str,
+    fee_rate: float,
+    tax_rate: float,
+    slippage_rate: float,
+) -> dict[str, float]:
+    returns: dict[str, float] = {}
+    for symbol, candles in symbol_candles.items():
+        symbol_return = _net_period_symbol_return_pct(
+            candles,
+            start=start,
+            end=end,
+            fee_rate=fee_rate,
+            tax_rate=tax_rate,
+            slippage_rate=slippage_rate,
+        )
+        if symbol_return is not None:
+            returns[symbol] = symbol_return
+    return returns
+
+
+def _net_period_symbol_return_pct(
+    candles: list[Candle],
+    *,
+    start: str,
+    end: str,
+    fee_rate: float,
+    tax_rate: float,
+    slippage_rate: float,
+) -> float | None:
+    first = next((candle for candle in candles if start <= candle.date <= end and candle.open > 0), None)
+    last = next((candle for candle in reversed(candles) if start <= candle.date <= end and candle.close > 0), None)
+    if first is None or last is None or first.date > last.date:
+        return None
+    fill_price = first.open * (1 + slippage_rate)
+    quantity = 1 / (fill_price * (1 + fee_rate))
+    exit_price = last.close * (1 - slippage_rate)
+    gross = quantity * exit_price
+    final_value = gross - gross * fee_rate - gross * tax_rate
+    return (final_value - 1) * 100
+
+
+def _monthly_benchmark_contribution_role(strategy_weight: float, benchmark_weight: float) -> str:
+    if strategy_weight <= 0 and benchmark_weight > 0:
+        return "benchmark_only"
+    if strategy_weight > 0 and benchmark_weight <= 0:
+        return "strategy_only"
+    if abs(strategy_weight - benchmark_weight) <= 1e-9:
+        return "matched_weight"
+    return "strategy_overweight" if strategy_weight > benchmark_weight else "strategy_underweight"
+
+
+def _monthly_benchmark_contribution_diagnostic(
+    *,
+    strategy_weight: float,
+    benchmark_weight: float,
+    symbol_return: float | None,
+    contribution_delta: float | None,
+) -> str:
+    if symbol_return is None or contribution_delta is None:
+        return "missing_symbol_return"
+    if strategy_weight <= 0 and benchmark_weight > 0 and symbol_return > 0:
+        return "missed_benchmark_winner"
+    if strategy_weight < benchmark_weight and symbol_return > 0 and contribution_delta < 0:
+        return "underweighted_benchmark_winner"
+    if strategy_weight > benchmark_weight and symbol_return < 0 and contribution_delta < 0:
+        return "overweighted_loser"
+    if strategy_weight <= 0 and benchmark_weight > 0 and symbol_return < 0:
+        return "avoided_benchmark_loser"
+    if contribution_delta > 0:
+        return "positive_contribution_delta"
+    if contribution_delta < 0:
+        return "negative_contribution_delta"
+    return "neutral_contribution_delta"
 
 
 def compare_monthly_attribution_reports(
@@ -4555,6 +4758,10 @@ def save_monthly_attribution_comparison(rows: list[dict[str, Any]], output_path:
 
 def save_monthly_benchmark_excess(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_BENCHMARK_EXCESS_COLUMNS)
+
+
+def save_monthly_benchmark_contributions(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_BENCHMARK_CONTRIBUTION_COLUMNS)
 
 
 def save_monthly_decision_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
