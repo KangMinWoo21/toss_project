@@ -630,6 +630,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--market-beta-proxy-reversal-guard-medium-drawdown-pct", completed.stdout)
         self.assertIn("--drawdown-guard-deep-trigger-pct", completed.stdout)
         self.assertIn("--drawdown-guard-deep-scale", completed.stdout)
+        self.assertIn("--train-start", completed.stdout)
         self.assertIn("--proxy-output", completed.stdout)
         self.assertIn("--stress-drawdown-output", completed.stdout)
 
@@ -662,6 +663,8 @@ class CliTests(unittest.TestCase):
                     "2024-08-07",
                     "--point-in-time-min-history-days",
                     "20",
+                    "--train-start",
+                    "2024-01-01",
                     "--scenario-name",
                     "walk_forward_unit",
                     "--drawdown-guard-deep-trigger-pct",

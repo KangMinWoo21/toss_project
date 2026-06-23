@@ -830,6 +830,7 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--slippage-rate", type=float, default=0.0005)
     monthly_attribution_parser.add_argument("--min-trade-value", type=float, default=10_000)
     monthly_attribution_parser.add_argument("--presets", default="balanced")
+    monthly_attribution_parser.add_argument("--train-start", default=None)
     monthly_attribution_parser.add_argument("--scenario-name", default="")
     monthly_attribution_parser.add_argument("--cash-buffer-weight", type=float, default=0.01)
     monthly_attribution_parser.add_argument("--max-position-weight", type=float, default=0.15)
@@ -2910,6 +2911,7 @@ def main() -> int:
         presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
         attribution_config = MonthlyRebalanceConfig(
             presets=presets,
+            train_start=args.train_start,
             cash_buffer_weight=args.cash_buffer_weight,
             max_position_weight=args.max_position_weight,
             candidate_pool_size=args.candidate_pool_size,

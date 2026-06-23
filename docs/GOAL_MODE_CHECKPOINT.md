@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 context-ops update
+Last updated: 2026-06-24 attribution train-start loop
 
 ## Objective
 
@@ -69,6 +69,94 @@ The compaction summary must include:
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added validation-aligned monthly attribution support so walk-forward test windows can be reproduced without silently using a different train start:
+
+- Added `monthly-attribution --train-start`.
+- Passed the option through to `MonthlyRebalanceConfig.train_start`.
+- This is paper/report-only; it does not add order execution and does not change default behavior.
+
+TDD result:
+
+- RED:
+  - `python -m unittest tests.test_cli.CliTests.test_monthly_attribution_help_includes_stress_and_output_options tests.test_cli.CliTests.test_monthly_attribution_cli_writes_recovery_summary_report`
+  - Failed because `--train-start` was absent from help and rejected by argparse.
+- GREEN:
+  - Same targeted command: PASS, `2` tests.
+
+Root cause confirmed:
+
+- Before this change, `monthly-attribution` for `walk_forward_005_proxy_guard_short5_extreme50_mdd10` looked better than full validation:
+  - attribution without explicit train start: total `18.7897%`, excess `4.7080%`, max DD `-15.2709%`.
+  - full validation candidate: total `11.9793%`, excess `-2.1023%`, max DD `-15.2709%`.
+- With `--train-start 2025-01-14`, attribution reproduces the full validation candidate result:
+  - total `11.9793%`, excess `-2.1023%`, max DD `-15.2709%`.
+- This means prior non-validation-aligned attribution understated the remaining `walk_forward_005` recovery problem.
+
+Generated reports:
+
+- `data/reports/regime_sideways_proxy_guard_short5_extreme50_mdd10_monthly_attribution.csv`
+- `data/reports/regime_sideways_proxy_guard_short5_extreme50_mdd10_symbol_attribution.csv`
+- `data/reports/regime_sideways_proxy_guard_short5_extreme50_mdd10_decision_attribution.csv`
+- `data/reports/regime_sideways_proxy_guard_short5_extreme50_mdd10_recovery_attribution.csv`
+- `data/reports/regime_sideways_proxy_guard_short5_extreme50_mdd10_proxy_decision_diagnostics.csv`
+- `data/reports/regime_sideways_proxy_guard_short5_extreme50_mdd10_path_attribution.csv`
+- `data/reports/regime_sideways_proxy_guard_short5_extreme50_mdd10_attribution_comparison.csv`
+- `data/reports/regime_sideways_proxy_guard_short5_extreme50_mdd10_decision_comparison.csv`
+- `data/reports/walk_forward_005_validation_train_monthly_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_symbol_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_decision_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_recovery_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_005_validation_train_path_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_short5_extreme50_mdd10_monthly_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_short5_extreme50_mdd10_symbol_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_short5_extreme50_mdd10_decision_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_short5_extreme50_mdd10_recovery_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_short5_extreme50_mdd10_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_short5_extreme50_mdd10_path_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_short5_extreme50_mdd10_attribution_comparison.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_short5_extreme50_mdd10_decision_comparison.csv`
+
+Key findings:
+
+- `regime_sideways` under `proxy_guard_short5_extreme50_mdd10`:
+  - total `-7.2966%`, buy-hold `-2.0628%`, excess `-5.2338%`, max DD `-21.7254%`.
+  - The guard only changed `2025-03`, improving return by `2.6350` points and drawdown by `2.3226` points.
+  - `2024-10`, `2024-11`, and `2024-12` remained unchanged high-exposure proxy loss months.
+  - Remaining failure mode: `absolute_loss_and_benchmark_drag`.
+- `walk_forward_005` validation-aligned candidate:
+  - total `11.9793%`, buy-hold `14.0817%`, excess `-2.1023%`, max DD `-15.2709%`.
+  - `2026-03` improved by `5.3111` return points and `5.2794` drawdown points.
+  - `2026-04` became a recovery drag month: return delta `-3.8010` because candidate exposure stayed capped at `0.55` versus baseline drawdown-guard exposure `0.7425`.
+  - Remaining failure mode: `benchmark_outpaced_recovery`.
+
+Verification:
+
+- `python -m unittest tests.test_cli tests.test_monthly_rebalance`: PASS, `212` tests.
+- `python -m unittest discover -s tests`: PASS, `451` tests.
+- `python -m compileall -q backtester`: PASS.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, scalper data stale (`age_hours=336.16` observed).
+
+Candidate decision:
+
+- Keep `proxy_guard_short5_extreme50_mdd10` as `PAPER_REVIEW`.
+- It remains useful because it resolved stress drawdown and `walk_forward_001` without new validation failures.
+- Do not adopt it because `regime_sideways`, `walk_forward_003`, and `walk_forward_005` remain failed.
+
+Next exact task:
+
+- Add/report-test proxy guard recovery-exit diagnostics before tuning another parameter.
+- Focus on months where the guard reduced a loss month but remained active into a recovery month:
+  - `walk_forward_005` `2026-03` loss reduction is useful.
+  - `walk_forward_005` `2026-04` cap creates recovery drag.
+- Any next candidate must preserve:
+  - `walk_forward_002` profitable continuation behavior,
+  - `walk_forward_004` non-regression,
+  - the stress drawdown improvement from `2026-03`/`2026-05`.
+
+## Previous Loop: Proxy Drawdown Guard Discriminator
 
 Added a default-off paper/backtest proxy reversal guard discriminator based on medium-window proxy basket drawdown:
 
