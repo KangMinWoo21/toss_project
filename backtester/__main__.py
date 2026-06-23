@@ -60,6 +60,7 @@ from .monthly_rebalance import (
     analyze_monthly_path_attribution,
     analyze_monthly_performance_concentration,
     analyze_monthly_proxy_decision_diagnostics,
+    analyze_monthly_proxy_decision_context_summary,
     analyze_monthly_proxy_guard_recovery_exits,
     analyze_monthly_proxy_guard_outcomes,
     analyze_monthly_recovery_attribution,
@@ -130,6 +131,7 @@ from .monthly_rebalance import (
     save_monthly_path_attribution_comparison,
     save_monthly_path_attribution_comparison_summary,
     save_monthly_proxy_decision_diagnostics,
+    save_monthly_proxy_decision_context_summary,
     save_monthly_proxy_guard_recovery_exits,
     save_monthly_proxy_guard_outcomes,
     save_monthly_recovery_attribution,
@@ -903,6 +905,20 @@ def main() -> int:
         default="data/reports/monthly_proxy_guard_outcome_diagnostics.csv",
     )
 
+    monthly_proxy_context_parser = subparsers.add_parser(
+        "monthly-proxy-context-summary",
+        help="Summarize paper-only proxy decision diagnostics by breadth and exposure context",
+    )
+    monthly_proxy_context_parser.add_argument(
+        "--proxy-input",
+        default="data/reports/monthly_proxy_decision_diagnostics.csv",
+        help="CSV written by monthly-attribution --proxy-output",
+    )
+    monthly_proxy_context_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_proxy_decision_context_summary.csv",
+    )
+
     monthly_proxy_guard_recovery_parser = subparsers.add_parser(
         "monthly-proxy-guard-recovery-exits",
         help="Classify paper-only proxy guard recovery drag after guarded loss months",
@@ -1561,6 +1577,26 @@ def main() -> int:
         print(f"guard_triggered_rows  {len(triggered_rows)}")
         print(f"profitable_continuation_caps  {len(continuation_caps)}")
         print(f"missed_high_exposure_losses  {len(missed_losses)}")
+        return 0
+
+    if args.command == "monthly-proxy-context-summary":
+        proxy_rows = _read_csv_dicts(Path(args.proxy_input))
+        rows = analyze_monthly_proxy_decision_context_summary(proxy_rows)
+        saved = save_monthly_proxy_decision_context_summary(rows, args.output)
+        neutral_high_loss_contexts = [
+            row
+            for row in rows
+            if str(row.get("breadth_context", "")) == "neutral_breadth"
+            and str(row.get("exposure_bucket", "")) == "high_exposure"
+            and _safe_cli_float(row.get("high_exposure_loss_count")) > 0
+        ]
+        recovery_contexts = [
+            row for row in rows if _safe_cli_float(row.get("gain_participation_count")) > 0
+        ]
+        print(f"proxy_context_summary_report  {args.output}")
+        print(f"proxy_context_summary_rows  {saved}")
+        print(f"neutral_high_exposure_loss_contexts  {len(neutral_high_loss_contexts)}")
+        print(f"gain_participation_contexts  {len(recovery_contexts)}")
         return 0
 
     if args.command == "monthly-proxy-guard-recovery-exits":

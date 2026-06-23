@@ -757,6 +757,43 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["guard_outcome"], "profitable_continuation_capped")
         self.assertEqual(rows[0]["paper_only"], "true")
 
+    def test_monthly_proxy_context_summary_cli_writes_context_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            proxy_input = root / "proxy_diagnostics.csv"
+            output = root / "proxy_context_summary.csv"
+            proxy_input.write_text(
+                "scenario,month,month_return_pct,mode,target_exposure,cash_weight,prior_breadth,"
+                "proxy_reversal_guard_triggered,diagnostic\n"
+                "regime_sideways,2024-10,-2.7,market_beta_proxy,0.99,0.01,0.47,false,"
+                "market_beta_proxy;high_exposure_proxy;high_exposure_proxy_loss;neutral_breadth\n"
+                "regime_sideways,2025-02,3.4,market_beta_proxy,0.99,0.01,0.75,false,"
+                "market_beta_proxy;high_exposure_proxy;proxy_gain_participation;strong_breadth\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-proxy-context-summary",
+                    "--proxy-input",
+                    str(proxy_input),
+                    "--output",
+                    str(output),
+                ],
+            )
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("proxy_context_summary_report", completed.stdout)
+        self.assertIn("neutral_high_exposure_loss_contexts  1", completed.stdout)
+        self.assertEqual(rows[0]["breadth_context"], "neutral_breadth")
+        self.assertEqual(rows[0]["recommended_candidate_focus"], "test_neutral_breadth_loss_discriminator")
+
     def test_monthly_proxy_guard_recovery_exits_cli_writes_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

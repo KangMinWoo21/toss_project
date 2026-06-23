@@ -31,6 +31,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_proxy_guard_recovery_exits,
     analyze_monthly_proxy_guard_outcomes,
     analyze_monthly_proxy_decision_diagnostics,
+    analyze_monthly_proxy_decision_context_summary,
     analyze_monthly_recovery_attribution,
     analyze_monthly_stress_drawdown_pressure,
     analyze_monthly_validation_failures,
@@ -115,6 +116,7 @@ from backtester.monthly_rebalance import (
     save_monthly_proxy_guard_outcomes,
     save_monthly_proxy_guard_recovery_exits,
     save_monthly_proxy_decision_diagnostics,
+    save_monthly_proxy_decision_context_summary,
     save_monthly_recovery_attribution,
     save_monthly_stress_drawdown_pressure,
     save_monthly_train_decision_path,
@@ -2933,6 +2935,95 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("guard_outcome", text)
         self.assertIn("candidate_design_hint", text)
+
+    def test_analyze_monthly_proxy_decision_context_summary_groups_loss_and_recovery_context(self):
+        rows = analyze_monthly_proxy_decision_context_summary(
+            [
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2024-10",
+                    "mode": "market_beta_proxy",
+                    "month_return_pct": "-2.7",
+                    "target_exposure": "0.99",
+                    "cash_weight": "0.01",
+                    "prior_breadth": "0.47",
+                    "proxy_reversal_guard_triggered": "false",
+                    "diagnostic": "market_beta_proxy;high_exposure_proxy;high_exposure_proxy_loss;neutral_breadth",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2024-11",
+                    "mode": "market_beta_proxy",
+                    "month_return_pct": "-1.8",
+                    "target_exposure": "0.99",
+                    "cash_weight": "0.01",
+                    "prior_breadth": "0.48",
+                    "proxy_reversal_guard_triggered": "false",
+                    "diagnostic": "market_beta_proxy;high_exposure_proxy;high_exposure_proxy_loss;neutral_breadth",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-02",
+                    "mode": "market_beta_proxy",
+                    "month_return_pct": "3.4",
+                    "target_exposure": "0.99",
+                    "cash_weight": "0.01",
+                    "prior_breadth": "0.75",
+                    "proxy_reversal_guard_triggered": "false",
+                    "diagnostic": "market_beta_proxy;high_exposure_proxy;proxy_gain_participation;strong_breadth",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-04",
+                    "mode": "market_beta_proxy",
+                    "month_return_pct": "0.6",
+                    "target_exposure": "0.7425",
+                    "cash_weight": "0.2575",
+                    "prior_breadth": "0.55",
+                    "proxy_reversal_guard_triggered": "false",
+                    "diagnostic": "market_beta_proxy;proxy_gain_participation;already_scaled_by_drawdown_guard;scaled_proxy_recovery;strong_breadth",
+                },
+            ]
+        )
+
+        by_context = {
+            (row["breadth_context"], row["exposure_bucket"]): row
+            for row in rows
+        }
+        neutral_high = by_context[("neutral_breadth", "high_exposure")]
+        self.assertEqual(neutral_high["proxy_month_count"], "2")
+        self.assertEqual(neutral_high["loss_month_count"], "2")
+        self.assertEqual(neutral_high["high_exposure_loss_count"], "2")
+        self.assertEqual(neutral_high["gain_participation_count"], "0")
+        self.assertEqual(neutral_high["avg_target_exposure"], "0.99")
+        self.assertEqual(neutral_high["recommended_candidate_focus"], "test_neutral_breadth_loss_discriminator")
+        strong_high = by_context[("strong_breadth", "high_exposure")]
+        self.assertEqual(strong_high["gain_participation_count"], "1")
+        self.assertEqual(strong_high["recommended_candidate_focus"], "preserve_strong_breadth_recovery")
+        strong_scaled = by_context[("strong_breadth", "scaled_exposure")]
+        self.assertEqual(strong_scaled["months"], "2025-04")
+        self.assertEqual(strong_scaled["paper_only"], "true")
+
+    def test_save_monthly_proxy_decision_context_summary_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "proxy_context_summary.csv"
+            saved = save_monthly_proxy_decision_context_summary(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "breadth_context": "neutral_breadth",
+                        "exposure_bucket": "high_exposure",
+                        "proxy_month_count": "2",
+                        "recommended_candidate_focus": "test_neutral_breadth_loss_discriminator",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("breadth_context", text.splitlines()[0])
+        self.assertIn("test_neutral_breadth_loss_discriminator", text)
 
     def test_analyze_monthly_proxy_guard_recovery_exits_flags_recovery_drag_after_loss_cap(self):
         rows = analyze_monthly_proxy_guard_recovery_exits(

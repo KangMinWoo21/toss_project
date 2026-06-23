@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 regime sideways path summary loop
+Last updated: 2026-06-24 proxy context summary loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,40 +40,56 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `054b7f1 Add no-trade stability opportunity diagnostics`.
+  `b6e6110 Add monthly path comparison summaries`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `468` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `471` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=338.94` observed).
+  (`age_hours=339.09` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a compact, paper-only monthly summary for path attribution comparisons
-and applied it to `regime_sideways` variant diagnostics.
+Added a compact, paper-only proxy decision context summary and applied it to
+`regime_sideways` proxy diagnostics.
 
 Changed behavior:
 
-- `monthly-compare-paths` now accepts `--summary-output`.
-- The summary groups daily path comparison rows by month and reports
-  equity/drawdown regression days, symbol-rotation days, average exposure/cash
-  deltas, worst equity/drawdown deltas, and a dominant diagnostic.
+- New `monthly-proxy-context-summary` command reads proxy diagnostics CSV and
+  groups proxy months by `breadth_context` and `exposure_bucket`.
+- Summary reports proxy/loss/gain counts, high-exposure loss counts,
+  gain-participation counts, guard-trigger counts, average return/exposure, and
+  a paper-only recommended candidate focus.
 - This is report-only; no strategy default, validation gate, order, or live
   behavior changed.
 
 TDD:
 
-- RED: new path-summary imports/options failed before implementation.
-- GREEN: targeted path-summary tests PASS, monthly module PASS (`181` tests),
-  CLI module PASS (`48` tests).
-- Final verification: full `unittest` PASS (`468` tests), compile PASS,
+- RED: new proxy context-summary imports/CLI command failed before
+  implementation.
+- GREEN: targeted context-summary tests PASS, monthly module PASS (`183`
+  tests), CLI module PASS (`49` tests).
+- Final verification: full `unittest` PASS (`471` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
-`regime_sideways` path-summary evidence versus `proxy_guard_exit_short_minus5`:
+`regime_sideways` proxy context evidence for `proxy_guard_exit_short_minus5`:
+
+- `neutral_breadth/high_exposure`: months `2024-10;2024-11;2024-12`,
+  `3/3` loss months, avg monthly return `-2.3376%`, avg exposure `0.99`,
+  focus `test_neutral_breadth_loss_discriminator`.
+- `strong_breadth/high_exposure`: month `2025-02`, gain `3.4379%`, exposure
+  `0.99`, focus `preserve_strong_breadth_recovery`.
+- `strong_breadth/scaled_exposure`: month `2025-04`, gain `0.5519%`,
+  exposure `0.7425`, focus `preserve_strong_breadth_recovery`.
+- Decision: next candidate, if any, should target neutral-breadth
+  high-exposure loss only and explicitly preserve strong-breadth recovery
+  participation.
+
+Prior `regime_sideways` path-summary evidence versus
+`proxy_guard_exit_short_minus5`:
 
 - `neutral_breadth_cap75`: `107/126` equity-regression days, `47`
   drawdown-regression days, `35` symbol-rotation days; worst equity delta
@@ -194,8 +210,10 @@ Pick one narrow loop:
 
 - `regime_sideways`: avoid further proxy buyability/reweighting/cash-reserve
   variants unless new evidence isolates a different mechanism. Next viable
-  test should be narrower: reduce high-exposure proxy loss in neutral breadth
-  without suppressing the `2025-02` and `2025-04` recovery participation.
+  paper-only test should be a neutral-breadth high-exposure loss discriminator
+  for `2024-10` through `2024-12`, with explicit guardrails preserving
+  `2025-02` high-exposure strong-breadth recovery and `2025-04` scaled
+  strong-breadth recovery.
 - `walk_forward_003`: no-trade opportunity cost is now quantified and explains
   why stricter persistence is not enough. Next test only narrow paper-only
   ideas that reduce no-trade benchmark-positive misses without loosening train

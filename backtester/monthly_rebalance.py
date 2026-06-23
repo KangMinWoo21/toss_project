@@ -1075,6 +1075,29 @@ MONTHLY_PROXY_DECISION_DIAGNOSTIC_COLUMNS = [
     "recommended_next_action",
 ]
 
+MONTHLY_PROXY_DECISION_CONTEXT_SUMMARY_COLUMNS = [
+    "scenario",
+    "breadth_context",
+    "exposure_bucket",
+    "proxy_month_count",
+    "loss_month_count",
+    "gain_month_count",
+    "high_exposure_loss_count",
+    "gain_participation_count",
+    "guard_triggered_count",
+    "avg_month_return_pct",
+    "total_month_return_pct",
+    "avg_target_exposure",
+    "avg_cash_weight",
+    "min_prior_breadth",
+    "max_prior_breadth",
+    "months",
+    "recommended_candidate_focus",
+    "diagnostic",
+    "paper_only",
+    "risk_note",
+]
+
 MONTHLY_PROXY_GUARD_OUTCOME_COLUMNS = [
     "scenario",
     "as_of_date",
@@ -3656,6 +3679,153 @@ def save_monthly_decision_attribution(rows: list[dict[str, Any]], output_path: P
 
 def save_monthly_proxy_decision_diagnostics(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PROXY_DECISION_DIAGNOSTIC_COLUMNS)
+
+
+def save_monthly_proxy_decision_context_summary(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PROXY_DECISION_CONTEXT_SUMMARY_COLUMNS)
+
+
+def analyze_monthly_proxy_decision_context_summary(proxy_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for proxy in proxy_rows:
+        if str(proxy.get("mode", "")).strip() != "market_beta_proxy":
+            continue
+        diagnostic_tokens = set(_split_semicolon_values(str(proxy.get("diagnostic", ""))))
+        key = (
+            str(proxy.get("scenario", "")).strip(),
+            _proxy_breadth_context(diagnostic_tokens),
+            _proxy_exposure_bucket(proxy, diagnostic_tokens),
+        )
+        groups.setdefault(key, []).append(proxy)
+
+    rows: list[dict[str, Any]] = []
+    for key in sorted(groups):
+        scenario, breadth_context, exposure_bucket = key
+        context_rows = groups[key]
+        month_returns = [_float_or_none(row.get("month_return_pct")) for row in context_rows]
+        target_exposures = [_float_or_none(row.get("target_exposure")) for row in context_rows]
+        cash_weights = [_float_or_none(row.get("cash_weight")) for row in context_rows]
+        prior_breadths = [
+            value for value in (_float_or_none(row.get("prior_breadth")) for row in context_rows)
+            if value is not None
+        ]
+        loss_count = sum(1 for value in month_returns if value is not None and value < 0)
+        gain_count = sum(1 for value in month_returns if value is not None and value > 0)
+        high_exposure_loss_count = sum(
+            1
+            for row in context_rows
+            if "high_exposure_proxy_loss" in _split_semicolon_values(str(row.get("diagnostic", "")))
+        )
+        gain_participation_count = sum(
+            1
+            for row in context_rows
+            if "proxy_gain_participation" in _split_semicolon_values(str(row.get("diagnostic", "")))
+        )
+        guard_triggered_count = sum(
+            1 for row in context_rows if _parse_bool(row.get("proxy_reversal_guard_triggered", False))
+        )
+        months = sorted({str(row.get("month", "")).strip() for row in context_rows if str(row.get("month", "")).strip()})
+        rows.append(
+            {
+                "scenario": scenario,
+                "breadth_context": breadth_context,
+                "exposure_bucket": exposure_bucket,
+                "proxy_month_count": str(len(context_rows)),
+                "loss_month_count": str(loss_count),
+                "gain_month_count": str(gain_count),
+                "high_exposure_loss_count": str(high_exposure_loss_count),
+                "gain_participation_count": str(gain_participation_count),
+                "guard_triggered_count": str(guard_triggered_count),
+                "avg_month_return_pct": _format_optional_float(_average_numeric(month_returns)),
+                "total_month_return_pct": _format_optional_float(_sum_numeric(month_returns)),
+                "avg_target_exposure": _format_optional_float(_average_numeric(target_exposures)),
+                "avg_cash_weight": _format_optional_float(_average_numeric(cash_weights)),
+                "min_prior_breadth": _format_optional_float(min(prior_breadths) if prior_breadths else None),
+                "max_prior_breadth": _format_optional_float(max(prior_breadths) if prior_breadths else None),
+                "months": ";".join(months),
+                "recommended_candidate_focus": _proxy_context_recommended_focus(
+                    breadth_context=breadth_context,
+                    high_exposure_loss_count=high_exposure_loss_count,
+                    gain_participation_count=gain_participation_count,
+                    guard_triggered_count=guard_triggered_count,
+                    loss_count=loss_count,
+                ),
+                "diagnostic": _proxy_context_diagnostic(
+                    high_exposure_loss_count=high_exposure_loss_count,
+                    gain_participation_count=gain_participation_count,
+                    guard_triggered_count=guard_triggered_count,
+                    loss_count=loss_count,
+                    gain_count=gain_count,
+                ),
+                "paper_only": "true",
+                "risk_note": "Diagnostic only; use for paper candidate design and never for live order transmission.",
+            }
+        )
+    return rows
+
+
+def _proxy_breadth_context(diagnostic_tokens: set[str]) -> str:
+    if "neutral_breadth" in diagnostic_tokens:
+        return "neutral_breadth"
+    if "strong_breadth" in diagnostic_tokens:
+        return "strong_breadth"
+    if "weak_breadth" in diagnostic_tokens:
+        return "weak_breadth"
+    return "unknown_breadth"
+
+
+def _proxy_exposure_bucket(proxy: dict[str, Any], diagnostic_tokens: set[str]) -> str:
+    target_exposure = _float_or_none(proxy.get("target_exposure"))
+    if "high_exposure_proxy" in diagnostic_tokens or (target_exposure is not None and target_exposure >= 0.75):
+        return "high_exposure"
+    if _parse_bool(proxy.get("proxy_reversal_guard_triggered", False)):
+        return "guarded_exposure"
+    if target_exposure is not None and target_exposure < 0.75:
+        return "scaled_exposure"
+    return "uncategorized_exposure"
+
+
+def _proxy_context_recommended_focus(
+    *,
+    breadth_context: str,
+    high_exposure_loss_count: int,
+    gain_participation_count: int,
+    guard_triggered_count: int,
+    loss_count: int,
+) -> str:
+    if breadth_context == "neutral_breadth" and high_exposure_loss_count > 0:
+        return "test_neutral_breadth_loss_discriminator"
+    if breadth_context == "strong_breadth" and gain_participation_count > 0 and loss_count == 0:
+        return "preserve_strong_breadth_recovery"
+    if guard_triggered_count > 0 and gain_participation_count > 0:
+        return "inspect_guard_recovery_drag"
+    if high_exposure_loss_count > 0:
+        return "tighten_loss_discriminator_without_broad_cash_drag"
+    return "review_proxy_context"
+
+
+def _proxy_context_diagnostic(
+    *,
+    high_exposure_loss_count: int,
+    gain_participation_count: int,
+    guard_triggered_count: int,
+    loss_count: int,
+    gain_count: int,
+) -> str:
+    diagnostics: list[str] = []
+    if high_exposure_loss_count:
+        diagnostics.append("high_exposure_loss_context")
+    if gain_participation_count:
+        diagnostics.append("gain_participation_context")
+    if guard_triggered_count:
+        diagnostics.append("guard_triggered_context")
+    if loss_count and gain_count:
+        diagnostics.append("mixed_return_context")
+    elif loss_count:
+        diagnostics.append("loss_only_context")
+    elif gain_count:
+        diagnostics.append("gain_only_context")
+    return ";".join(diagnostics) if diagnostics else "review_proxy_context"
 
 
 def analyze_monthly_proxy_guard_outcomes(proxy_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
