@@ -849,6 +849,59 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["carryover_exit_loss_symbols"], "CCC:-150")
         self.assertEqual(rows[0]["paper_only"], "true")
 
+    def test_monthly_position_loss_controls_cli_writes_threshold_diagnostics(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data_dir = root / "prices"
+            data_dir.mkdir()
+            pressure_input = root / "guarded_loss_pressure.csv"
+            output = root / "position_loss_controls.csv"
+            pressure_input.write_text(
+                "scenario,month,as_of_date,worst_drawdown_date,selected_loss_symbols,carryover_exit_loss_symbols\n"
+                "regime_sideways,2025-03,2025-03-04,2025-03-17,AAA:-100,CCC:-150\n",
+                encoding="utf-8",
+            )
+            (data_dir / "AAA.csv").write_text(
+                "date,open,high,low,close,volume\n"
+                "2025-03-04,100,103,99,100,1000\n"
+                "2025-03-10,96,98,92,94,1000\n"
+                "2025-03-17,91,93,84,86,1000\n",
+                encoding="utf-8",
+            )
+            (data_dir / "CCC.csv").write_text(
+                "date,open,high,low,close,volume\n"
+                "2025-03-04,200,202,198,200,1000\n"
+                "2025-03-12,184,186,175,180,1000\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-position-loss-controls",
+                    "--pressure-input",
+                    str(pressure_input),
+                    "--data-dir",
+                    str(data_dir),
+                    "--loss-threshold-pct",
+                    "10",
+                    "--output",
+                    str(output),
+                ],
+            )
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("position_loss_control_report", completed.stdout)
+        self.assertIn("triggered_symbols  2", completed.stdout)
+        self.assertEqual(rows[0]["symbol"], "AAA")
+        self.assertEqual(rows[0]["would_trigger"], "true")
+        self.assertEqual(rows[0]["paper_only"], "true")
+
     def test_monthly_proxy_guard_recovery_exits_cli_writes_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

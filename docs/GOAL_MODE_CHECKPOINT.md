@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 guarded loss position pressure loop
+Last updated: 2026-06-24 position loss control diagnostic loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,48 +40,51 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `398e45c Label guarded proxy residual contexts`.
+  `b4f3ac5 Add guarded loss pressure report`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `477` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `480` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=339.71` observed).
+  (`age_hours=339.83` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only guarded-loss position pressure diagnostic for the remaining
+Added a report-only position loss-control diagnostic for the remaining
 `regime_sideways` blocker under `proxy_guard_exit_short_minus5_neutral_loss_guard55`.
 
 Changed behavior:
 
-- New `monthly-guarded-loss-pressure` command reads existing proxy, symbol, and
-  path attribution CSVs and separates guarded-loss selected basket losses from
-  same-month carryover exit losses.
+- New `monthly-position-loss-controls` command reads guarded-loss pressure CSV
+  and OHLCV data, then reports whether each pressure symbol would have hit a
+  paper-only per-position loss threshold before the worst drawdown date.
 - This is diagnostic/report-only. No strategy default, validation gate, order,
   live behavior, Toss API, or baseline behavior changed.
 
 TDD:
 
-- RED: new guarded-loss pressure analyzer/saver imports failed and CLI command
+- RED: new position loss-control analyzer/saver imports failed and CLI command
   was unknown.
-- GREEN: targeted guarded-loss pressure tests PASS, monthly module PASS (`188`
-  tests), CLI module PASS (`50` tests).
-- Final verification: full `unittest` PASS (`477` tests), compile PASS,
+- GREEN: targeted position loss-control tests PASS, monthly module PASS (`190`
+  tests), CLI module PASS (`51` tests).
+- Final verification: full `unittest` PASS (`480` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Generated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_guarded_loss_pressure.csv`.
-- Remaining guarded-loss row: `2025-03`, return `-6.4719%`, target exposure
-  `0.55`, worst drawdown date `2025-03-31`, worst drawdown `-17.4681%`.
-- Selected basket loss count `8`; top selected-loss sum `-270447.2`.
-- Same-month exit-loss sum `-241758.099`; carryover exit loss symbols:
-  `011790:-122843.725;007660:-18984.714;098460:-9902.16`.
-- Next focus: `analyze_position_level_loss_controls_without_broad_stop`.
+- Generated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_position_loss_controls.csv`
+  with `--loss-threshold-pct 12`.
+- Rows: `8` pressure symbols; triggered before worst drawdown: `5`.
+- Triggered symbols: `010120` (`-30.8982%`, `2025-03-07`), `329180`
+  (`-13.6725%`, `2025-03-27`), `079550` (`-18.9329%`,
+  `2025-03-25`), `011790` (`-19.2526%`, `2025-03-28`), `098460`
+  (`-18.8702%`, `2025-03-25`).
+- Not triggered at 12%: `007660`, `064350`, `005380`.
+- Next focus: test a narrow paper-only position-control candidate only for
+  guarded-loss pressure contexts; do not reuse broad `position_stop_12`.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:

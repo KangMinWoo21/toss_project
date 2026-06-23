@@ -1133,6 +1133,30 @@ MONTHLY_GUARDED_LOSS_POSITION_PRESSURE_COLUMNS = [
     "risk_note",
 ]
 
+MONTHLY_POSITION_LOSS_CONTROL_COLUMNS = [
+    "scenario",
+    "month",
+    "symbol",
+    "pressure_source",
+    "loss_realized_pnl",
+    "as_of_date",
+    "worst_drawdown_date",
+    "entry_date",
+    "entry_close",
+    "min_low_date",
+    "min_low",
+    "max_adverse_return_pct",
+    "loss_threshold_pct",
+    "would_trigger",
+    "stop_trigger_date",
+    "triggered_before_worst_drawdown",
+    "close_return_to_worst_drawdown_pct",
+    "recommended_candidate_focus",
+    "diagnostic",
+    "paper_only",
+    "risk_note",
+]
+
 MONTHLY_PROXY_GUARD_OUTCOME_COLUMNS = [
     "scenario",
     "as_of_date",
@@ -3724,6 +3748,10 @@ def save_monthly_guarded_loss_position_pressure(rows: list[dict[str, Any]], outp
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_GUARDED_LOSS_POSITION_PRESSURE_COLUMNS)
 
 
+def save_monthly_position_loss_control_diagnostics(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_POSITION_LOSS_CONTROL_COLUMNS)
+
+
 def analyze_monthly_guarded_loss_position_pressure(
     *,
     proxy_rows: list[dict[str, Any]],
@@ -3828,6 +3856,136 @@ def analyze_monthly_guarded_loss_position_pressure(
             }
         )
     return rows
+
+
+def analyze_monthly_position_loss_control_diagnostics(
+    *,
+    pressure_rows: list[dict[str, Any]],
+    symbol_candles: dict[str, list[Candle]],
+    loss_threshold_pct: float,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for pressure in pressure_rows:
+        selected_losses = _parse_symbol_loss_values(str(pressure.get("selected_loss_symbols", "")))
+        carryover_losses = _parse_symbol_loss_values(str(pressure.get("carryover_exit_loss_symbols", "")))
+        symbols = list(selected_losses)
+        symbols.extend(symbol for symbol in carryover_losses if symbol not in selected_losses)
+        for symbol in symbols:
+            selected = symbol in selected_losses
+            carryover = symbol in carryover_losses
+            if selected and carryover:
+                pressure_source = "selected_and_carryover_exit_loss"
+            elif selected:
+                pressure_source = "selected_loss"
+            else:
+                pressure_source = "carryover_exit_loss"
+            loss_value = selected_losses.get(symbol) if selected else carryover_losses.get(symbol)
+            rows.append(
+                _position_loss_control_row(
+                    pressure,
+                    symbol=symbol,
+                    pressure_source=pressure_source,
+                    loss_realized_pnl=loss_value,
+                    candles=symbol_candles.get(symbol, []),
+                    loss_threshold_pct=loss_threshold_pct,
+                )
+            )
+    return rows
+
+
+def _parse_symbol_loss_values(value: str) -> dict[str, float | None]:
+    parsed: dict[str, float | None] = {}
+    for part in _split_semicolon_values(value):
+        symbol, _, raw_value = part.partition(":")
+        symbol = symbol.strip()
+        if symbol:
+            parsed[symbol] = _float_or_none(raw_value) if raw_value else None
+    return parsed
+
+
+def _position_loss_control_row(
+    pressure: dict[str, Any],
+    *,
+    symbol: str,
+    pressure_source: str,
+    loss_realized_pnl: float | None,
+    candles: list[Candle],
+    loss_threshold_pct: float,
+) -> dict[str, str]:
+    month = str(pressure.get("month", "")).strip()
+    as_of_date = str(pressure.get("as_of_date", "")).strip()
+    worst_drawdown_date = str(pressure.get("worst_drawdown_date", "")).strip()
+    window = [
+        candle
+        for candle in sorted(candles, key=lambda candle: candle.date)
+        if (not as_of_date or candle.date >= as_of_date)
+        and (not worst_drawdown_date or candle.date <= worst_drawdown_date)
+        and (not month or candle.date.startswith(month))
+    ]
+    diagnostics: list[str] = []
+    if not window:
+        diagnostics.append("missing_price_window")
+        return {
+            "scenario": str(pressure.get("scenario", "")).strip(),
+            "month": month,
+            "symbol": symbol,
+            "pressure_source": pressure_source,
+            "loss_realized_pnl": _format_optional_float(loss_realized_pnl),
+            "as_of_date": as_of_date,
+            "worst_drawdown_date": worst_drawdown_date,
+            "loss_threshold_pct": _format_optional_float(loss_threshold_pct),
+            "would_trigger": "false",
+            "triggered_before_worst_drawdown": "false",
+            "recommended_candidate_focus": "insufficient_price_history_for_position_control",
+            "diagnostic": ";".join(diagnostics),
+            "paper_only": "true",
+            "risk_note": "Diagnostic summary only; do not create or transmit live orders from this report.",
+        }
+
+    entry = window[0]
+    entry_close = entry.close
+    min_low_candle = min(window, key=lambda candle: candle.low)
+    max_adverse_return_pct = ((min_low_candle.low / entry_close) - 1.0) * 100 if entry_close else None
+    stop_price = entry_close * (1.0 - max(0.0, loss_threshold_pct) / 100.0)
+    trigger = next((candle for candle in window if candle.low <= stop_price), None)
+    close_candle = window[-1]
+    close_return_pct = ((close_candle.close / entry_close) - 1.0) * 100 if entry_close else None
+    if trigger:
+        diagnostics.append("position_threshold_hit")
+    else:
+        diagnostics.append("position_threshold_not_hit")
+    if trigger and worst_drawdown_date and trigger.date <= worst_drawdown_date:
+        diagnostics.append("trigger_before_worst_drawdown")
+    recommended_focus = (
+        "paper_position_stop_candidate_before_worst_drawdown"
+        if trigger and (not worst_drawdown_date or trigger.date <= worst_drawdown_date)
+        else "review_position_loss_without_stop_trigger"
+    )
+    return {
+        "scenario": str(pressure.get("scenario", "")).strip(),
+        "month": month,
+        "symbol": symbol,
+        "pressure_source": pressure_source,
+        "loss_realized_pnl": _format_optional_float(loss_realized_pnl),
+        "as_of_date": as_of_date,
+        "worst_drawdown_date": worst_drawdown_date,
+        "entry_date": entry.date,
+        "entry_close": _format_optional_float(entry_close),
+        "min_low_date": min_low_candle.date,
+        "min_low": _format_optional_float(min_low_candle.low),
+        "max_adverse_return_pct": _format_optional_float(max_adverse_return_pct),
+        "loss_threshold_pct": _format_optional_float(loss_threshold_pct),
+        "would_trigger": "true" if trigger else "false",
+        "stop_trigger_date": trigger.date if trigger else "",
+        "triggered_before_worst_drawdown": (
+            "true" if trigger and (not worst_drawdown_date or trigger.date <= worst_drawdown_date) else "false"
+        ),
+        "close_return_to_worst_drawdown_pct": _format_optional_float(close_return_pct),
+        "recommended_candidate_focus": recommended_focus,
+        "diagnostic": ";".join(diagnostics),
+        "paper_only": "true",
+        "risk_note": "Diagnostic summary only; do not create or transmit live orders from this report.",
+    }
 
 
 def analyze_monthly_proxy_decision_context_summary(proxy_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

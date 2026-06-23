@@ -34,6 +34,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_proxy_decision_context_summary,
     analyze_monthly_recovery_attribution,
+    analyze_monthly_position_loss_control_diagnostics,
     analyze_monthly_stress_drawdown_pressure,
     analyze_monthly_validation_failures,
     analyze_monthly_train_decision_path,
@@ -121,6 +122,7 @@ from backtester.monthly_rebalance import (
     save_monthly_proxy_decision_diagnostics,
     save_monthly_proxy_decision_context_summary,
     save_monthly_recovery_attribution,
+    save_monthly_position_loss_control_diagnostics,
     save_monthly_stress_drawdown_pressure,
     save_monthly_train_decision_path,
     save_monthly_train_stability_summary,
@@ -2584,6 +2586,69 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("selected_loss_symbols", text.splitlines()[0])
         self.assertIn("analyze_position_level_loss_controls_without_broad_stop", text)
+
+    def test_analyze_monthly_position_loss_control_diagnostics_flags_threshold_hits_before_worst_drawdown(self):
+        rows = analyze_monthly_position_loss_control_diagnostics(
+            pressure_rows=[
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-03",
+                    "as_of_date": "2025-03-04",
+                    "worst_drawdown_date": "2025-03-17",
+                    "selected_loss_symbols": "AAA:-100",
+                    "carryover_exit_loss_symbols": "CCC:-150",
+                }
+            ],
+            symbol_candles={
+                "AAA": [
+                    Candle("2025-03-04", 100, 103, 99, 100, 1_000),
+                    Candle("2025-03-10", 96, 98, 92, 94, 1_000),
+                    Candle("2025-03-17", 91, 93, 84, 86, 1_000),
+                ],
+                "CCC": [
+                    Candle("2025-03-04", 200, 202, 198, 200, 1_000),
+                    Candle("2025-03-12", 184, 186, 175, 180, 1_000),
+                    Candle("2025-03-17", 178, 181, 176, 179, 1_000),
+                ],
+                "DDD": [
+                    Candle("2025-03-04", 50, 51, 49, 50, 1_000),
+                ],
+            },
+            loss_threshold_pct=10.0,
+        )
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["AAA"]["pressure_source"], "selected_loss")
+        self.assertEqual(by_symbol["AAA"]["max_adverse_return_pct"], "-16")
+        self.assertEqual(by_symbol["AAA"]["would_trigger"], "true")
+        self.assertEqual(by_symbol["AAA"]["stop_trigger_date"], "2025-03-17")
+        self.assertEqual(by_symbol["AAA"]["triggered_before_worst_drawdown"], "true")
+        self.assertEqual(by_symbol["AAA"]["recommended_candidate_focus"], "paper_position_stop_candidate_before_worst_drawdown")
+        self.assertEqual(by_symbol["CCC"]["pressure_source"], "carryover_exit_loss")
+        self.assertEqual(by_symbol["CCC"]["stop_trigger_date"], "2025-03-12")
+        self.assertEqual(by_symbol["CCC"]["loss_realized_pnl"], "-150")
+        self.assertEqual(by_symbol["CCC"]["paper_only"], "true")
+
+    def test_save_monthly_position_loss_control_diagnostics_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "position_loss_controls.csv"
+            saved = save_monthly_position_loss_control_diagnostics(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "month": "2025-03",
+                        "symbol": "AAA",
+                        "would_trigger": "true",
+                        "recommended_candidate_focus": "paper_position_stop_candidate_before_worst_drawdown",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("would_trigger", text.splitlines()[0])
+        self.assertIn("paper_position_stop_candidate_before_worst_drawdown", text)
 
     def test_analyze_symbol_realized_pnl_attribution_uses_fifo(self):
         result = MonthlyBacktestResult(

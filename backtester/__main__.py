@@ -65,6 +65,7 @@ from .monthly_rebalance import (
     analyze_monthly_proxy_guard_recovery_exits,
     analyze_monthly_proxy_guard_outcomes,
     analyze_monthly_recovery_attribution,
+    analyze_monthly_position_loss_control_diagnostics,
     analyze_monthly_stress_drawdown_pressure,
     analyze_monthly_train_decision_path,
     analyze_monthly_train_stability_summary,
@@ -137,6 +138,7 @@ from .monthly_rebalance import (
     save_monthly_proxy_guard_recovery_exits,
     save_monthly_proxy_guard_outcomes,
     save_monthly_recovery_attribution,
+    save_monthly_position_loss_control_diagnostics,
     save_monthly_stress_drawdown_pressure,
     save_monthly_train_decision_path,
     save_monthly_train_stability_summary,
@@ -947,6 +949,22 @@ def main() -> int:
         default="data/reports/monthly_guarded_loss_position_pressure.csv",
     )
 
+    monthly_position_loss_controls_parser = subparsers.add_parser(
+        "monthly-position-loss-controls",
+        help="Diagnose paper-only per-position loss-control thresholds for guarded loss symbols",
+    )
+    monthly_position_loss_controls_parser.add_argument(
+        "--pressure-input",
+        default="data/reports/monthly_guarded_loss_position_pressure.csv",
+        help="CSV written by monthly-guarded-loss-pressure",
+    )
+    monthly_position_loss_controls_parser.add_argument("--data-dir", default="data/krx_expanded")
+    monthly_position_loss_controls_parser.add_argument("--loss-threshold-pct", type=float, default=12.0)
+    monthly_position_loss_controls_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_position_loss_control_diagnostics.csv",
+    )
+
     monthly_proxy_guard_recovery_parser = subparsers.add_parser(
         "monthly-proxy-guard-recovery-exits",
         help="Classify paper-only proxy guard recovery drag after guarded loss months",
@@ -1649,6 +1667,25 @@ def main() -> int:
         print(f"guarded_loss_pressure_rows  {saved}")
         print(f"selected_loss_rows  {len(selected_loss_rows)}")
         print(f"carryover_exit_loss_rows  {len(carryover_rows)}")
+        return 0
+
+    if args.command == "monthly-position-loss-controls":
+        pressure_rows = _read_csv_dicts(Path(args.pressure_input))
+        symbol_candles = load_symbol_candles(args.data_dir)
+        rows = analyze_monthly_position_loss_control_diagnostics(
+            pressure_rows=pressure_rows,
+            symbol_candles=symbol_candles,
+            loss_threshold_pct=args.loss_threshold_pct,
+        )
+        saved = save_monthly_position_loss_control_diagnostics(rows, args.output)
+        triggered_rows = [row for row in rows if str(row.get("would_trigger", "")) == "true"]
+        before_worst_rows = [
+            row for row in rows if str(row.get("triggered_before_worst_drawdown", "")) == "true"
+        ]
+        print(f"position_loss_control_report  {args.output}")
+        print(f"position_loss_control_rows  {saved}")
+        print(f"triggered_symbols  {len(triggered_rows)}")
+        print(f"before_worst_drawdown_triggers  {len(before_worst_rows)}")
         return 0
 
     if args.command == "monthly-proxy-guard-recovery-exits":
