@@ -61,6 +61,7 @@ from .monthly_rebalance import (
     analyze_monthly_performance_concentration,
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_proxy_decision_context_summary,
+    analyze_monthly_guarded_loss_position_pressure,
     analyze_monthly_proxy_guard_recovery_exits,
     analyze_monthly_proxy_guard_outcomes,
     analyze_monthly_recovery_attribution,
@@ -132,6 +133,7 @@ from .monthly_rebalance import (
     save_monthly_path_attribution_comparison_summary,
     save_monthly_proxy_decision_diagnostics,
     save_monthly_proxy_decision_context_summary,
+    save_monthly_guarded_loss_position_pressure,
     save_monthly_proxy_guard_recovery_exits,
     save_monthly_proxy_guard_outcomes,
     save_monthly_recovery_attribution,
@@ -919,6 +921,32 @@ def main() -> int:
         default="data/reports/monthly_proxy_decision_context_summary.csv",
     )
 
+    monthly_guarded_loss_pressure_parser = subparsers.add_parser(
+        "monthly-guarded-loss-pressure",
+        help="Summarize paper-only guarded proxy loss pressure by selected and exited symbols",
+    )
+    monthly_guarded_loss_pressure_parser.add_argument(
+        "--proxy-input",
+        default="data/reports/monthly_proxy_decision_diagnostics.csv",
+        help="CSV written by monthly-attribution --proxy-output",
+    )
+    monthly_guarded_loss_pressure_parser.add_argument(
+        "--symbol-input",
+        default="data/reports/monthly_symbol_attribution.csv",
+        help="CSV written by monthly-attribution --symbol-output",
+    )
+    monthly_guarded_loss_pressure_parser.add_argument(
+        "--path-input",
+        default="data/reports/monthly_path_attribution.csv",
+        help="CSV written by monthly-attribution --path-output",
+    )
+    monthly_guarded_loss_pressure_parser.add_argument("--scenario", default="")
+    monthly_guarded_loss_pressure_parser.add_argument("--top-symbol-count", type=int, default=5)
+    monthly_guarded_loss_pressure_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_guarded_loss_position_pressure.csv",
+    )
+
     monthly_proxy_guard_recovery_parser = subparsers.add_parser(
         "monthly-proxy-guard-recovery-exits",
         help="Classify paper-only proxy guard recovery drag after guarded loss months",
@@ -1597,6 +1625,30 @@ def main() -> int:
         print(f"proxy_context_summary_rows  {saved}")
         print(f"neutral_high_exposure_loss_contexts  {len(neutral_high_loss_contexts)}")
         print(f"gain_participation_contexts  {len(recovery_contexts)}")
+        return 0
+
+    if args.command == "monthly-guarded-loss-pressure":
+        proxy_rows = _read_csv_dicts(Path(args.proxy_input))
+        symbol_rows = _read_csv_dicts(Path(args.symbol_input))
+        path_rows = _read_csv_dicts(Path(args.path_input))
+        rows = analyze_monthly_guarded_loss_position_pressure(
+            proxy_rows=proxy_rows,
+            symbol_rows=symbol_rows,
+            path_rows=path_rows,
+            scenario=args.scenario,
+            top_symbol_count=args.top_symbol_count,
+        )
+        saved = save_monthly_guarded_loss_position_pressure(rows, args.output)
+        carryover_rows = [
+            row for row in rows if str(row.get("carryover_exit_loss_symbols", "")).strip()
+        ]
+        selected_loss_rows = [
+            row for row in rows if _safe_cli_float(row.get("selected_loss_symbol_count")) > 0
+        ]
+        print(f"guarded_loss_pressure_report  {args.output}")
+        print(f"guarded_loss_pressure_rows  {saved}")
+        print(f"selected_loss_rows  {len(selected_loss_rows)}")
+        print(f"carryover_exit_loss_rows  {len(carryover_rows)}")
         return 0
 
     if args.command == "monthly-proxy-guard-recovery-exits":

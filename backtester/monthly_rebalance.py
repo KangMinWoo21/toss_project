@@ -1103,6 +1103,36 @@ MONTHLY_PROXY_DECISION_CONTEXT_SUMMARY_COLUMNS = [
     "risk_note",
 ]
 
+MONTHLY_GUARDED_LOSS_POSITION_PRESSURE_COLUMNS = [
+    "scenario",
+    "month",
+    "as_of_date",
+    "signal_date",
+    "month_return_pct",
+    "target_exposure",
+    "cash_weight",
+    "guard_reason",
+    "guard_medium_return_pct",
+    "guard_short_return_pct",
+    "guard_medium_drawdown_pct",
+    "selected_symbol_count",
+    "selected_loss_symbol_count",
+    "selected_loss_symbols",
+    "selected_loss_realized_pnl",
+    "month_exit_loss_symbol_count",
+    "month_exit_loss_symbols",
+    "month_exit_loss_realized_pnl",
+    "carryover_exit_loss_symbols",
+    "worst_drawdown_date",
+    "worst_drawdown_pct",
+    "average_month_path_exposure",
+    "max_month_path_exposure",
+    "diagnostic",
+    "recommended_candidate_focus",
+    "paper_only",
+    "risk_note",
+]
+
 MONTHLY_PROXY_GUARD_OUTCOME_COLUMNS = [
     "scenario",
     "as_of_date",
@@ -3688,6 +3718,116 @@ def save_monthly_proxy_decision_diagnostics(rows: list[dict[str, Any]], output_p
 
 def save_monthly_proxy_decision_context_summary(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_PROXY_DECISION_CONTEXT_SUMMARY_COLUMNS)
+
+
+def save_monthly_guarded_loss_position_pressure(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MONTHLY_GUARDED_LOSS_POSITION_PRESSURE_COLUMNS)
+
+
+def analyze_monthly_guarded_loss_position_pressure(
+    *,
+    proxy_rows: list[dict[str, Any]],
+    symbol_rows: list[dict[str, Any]],
+    path_rows: list[dict[str, Any]],
+    scenario: str = "",
+    top_symbol_count: int = 5,
+) -> list[dict[str, Any]]:
+    loss_symbol_rows = [
+        row
+        for row in sorted(symbol_rows, key=lambda row: _float_or_none(row.get("realized_pnl")) or 0.0)
+        if (_float_or_none(row.get("realized_pnl")) or 0.0) < 0
+    ]
+    rows: list[dict[str, Any]] = []
+    for proxy in proxy_rows:
+        if scenario and str(proxy.get("scenario", "")).strip() not in {"", scenario}:
+            continue
+        if str(proxy.get("mode", "")).strip() != "market_beta_proxy":
+            continue
+        if not _parse_bool(proxy.get("proxy_reversal_guard_triggered", False)):
+            continue
+        month_return = _float_or_none(proxy.get("month_return_pct"))
+        if month_return is None or month_return >= 0:
+            continue
+
+        month = str(proxy.get("month", "")).strip()
+        selected_symbols = _split_semicolon_values(str(proxy.get("selected_symbols", "")))
+        selected_symbol_set = set(selected_symbols)
+        selected_loss_candidates = [
+            row for row in loss_symbol_rows if str(row.get("symbol", "")).strip() in selected_symbol_set
+        ]
+        selected_loss_rows = selected_loss_candidates[: max(1, top_symbol_count)]
+        month_exit_loss_candidates = [
+            row for row in loss_symbol_rows if str(row.get("last_trade_date", "")).startswith(month)
+        ]
+        month_exit_loss_rows = month_exit_loss_candidates[: max(1, top_symbol_count)]
+        carryover_exit_rows = [
+            row for row in month_exit_loss_rows if str(row.get("symbol", "")).strip() not in selected_symbol_set
+        ]
+        month_path_rows = [
+            row for row in path_rows if str(row.get("date", "")).startswith(month)
+        ]
+        worst_path = min(
+            month_path_rows,
+            key=lambda row: _float_or_none(row.get("drawdown_pct")) or 0.0,
+            default={},
+        )
+        diagnostics = ["guarded_loss_month"]
+        if selected_loss_candidates:
+            diagnostics.append("selected_symbol_losses")
+        if month_exit_loss_candidates:
+            diagnostics.append("month_exit_losses")
+        if carryover_exit_rows:
+            diagnostics.append("carryover_exit_losses")
+        if month_path_rows:
+            diagnostics.append("month_path_pressure")
+        focus = "review_guarded_loss_position_pressure"
+        if selected_loss_candidates and carryover_exit_rows:
+            focus = "analyze_position_level_loss_controls_without_broad_stop"
+        elif carryover_exit_rows:
+            focus = "analyze_carryover_exit_loss_pressure"
+        elif selected_loss_candidates:
+            focus = "analyze_selected_basket_loss_pressure"
+
+        rows.append(
+            {
+                "scenario": scenario or str(proxy.get("scenario", "")).strip(),
+                "month": month,
+                "as_of_date": proxy.get("as_of_date", ""),
+                "signal_date": proxy.get("signal_date", ""),
+                "month_return_pct": proxy.get("month_return_pct", ""),
+                "target_exposure": proxy.get("target_exposure", ""),
+                "cash_weight": proxy.get("cash_weight", ""),
+                "guard_reason": proxy.get("proxy_reversal_guard_reason", ""),
+                "guard_medium_return_pct": proxy.get("proxy_reversal_guard_medium_return_pct", ""),
+                "guard_short_return_pct": proxy.get("proxy_reversal_guard_short_return_pct", ""),
+                "guard_medium_drawdown_pct": proxy.get("proxy_reversal_guard_medium_drawdown_pct", ""),
+                "selected_symbol_count": str(len(selected_symbols)),
+                "selected_loss_symbol_count": str(len(selected_loss_candidates)),
+                "selected_loss_symbols": _format_loss_symbol_list(selected_loss_rows),
+                "selected_loss_realized_pnl": _format_optional_float(
+                    _sum_numeric(row.get("realized_pnl") for row in selected_loss_rows)
+                ),
+                "month_exit_loss_symbol_count": str(len(month_exit_loss_candidates)),
+                "month_exit_loss_symbols": _format_loss_symbol_list(month_exit_loss_rows),
+                "month_exit_loss_realized_pnl": _format_optional_float(
+                    _sum_numeric(row.get("realized_pnl") for row in month_exit_loss_rows)
+                ),
+                "carryover_exit_loss_symbols": _format_loss_symbol_list(carryover_exit_rows),
+                "worst_drawdown_date": worst_path.get("date", ""),
+                "worst_drawdown_pct": _format_optional_float(_float_or_none(worst_path.get("drawdown_pct"))),
+                "average_month_path_exposure": _format_optional_float(
+                    _average_numeric(row.get("exposure") for row in month_path_rows)
+                ),
+                "max_month_path_exposure": _format_optional_float(
+                    _max_numeric(row.get("exposure") for row in month_path_rows)
+                ),
+                "diagnostic": ";".join(diagnostics),
+                "recommended_candidate_focus": focus,
+                "paper_only": "true",
+                "risk_note": "Diagnostic summary only; do not create or transmit live orders from this report.",
+            }
+        )
+    return rows
 
 
 def analyze_monthly_proxy_decision_context_summary(proxy_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

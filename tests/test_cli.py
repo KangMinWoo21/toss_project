@@ -796,6 +796,59 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["breadth_context"], "neutral_breadth")
         self.assertEqual(rows[0]["recommended_candidate_focus"], "test_neutral_breadth_loss_discriminator")
 
+    def test_monthly_guarded_loss_pressure_cli_writes_position_pressure_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            proxy_input = root / "proxy_diagnostics.csv"
+            symbol_input = root / "symbol_attribution.csv"
+            path_input = root / "path_attribution.csv"
+            output = root / "guarded_loss_pressure.csv"
+            proxy_input.write_text(
+                "scenario,as_of_date,signal_date,month,month_return_pct,mode,target_exposure,cash_weight,"
+                "selected_symbols,proxy_reversal_guard_triggered,proxy_reversal_guard_reason,diagnostic\n"
+                "regime_sideways,2025-03-04,2025-02-28,2025-03,-6.4,market_beta_proxy,0.55,0.45,"
+                "AAA;BBB,true,proxy_reversal_guard_capped,market_beta_proxy;strong_breadth\n",
+                encoding="utf-8",
+            )
+            symbol_input.write_text(
+                "symbol,realized_pnl,first_trade_date,last_trade_date\n"
+                "CCC,-150,2025-02-03,2025-03-04\n"
+                "AAA,-100,2025-03-04,2025-03-31\n",
+                encoding="utf-8",
+            )
+            path_input.write_text(
+                "date,drawdown_pct,exposure\n"
+                "2025-03-04,-12,0.53\n"
+                "2025-03-17,-17.5,0.55\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-guarded-loss-pressure",
+                    "--proxy-input",
+                    str(proxy_input),
+                    "--symbol-input",
+                    str(symbol_input),
+                    "--path-input",
+                    str(path_input),
+                    "--output",
+                    str(output),
+                ],
+            )
+            if output.exists():
+                with output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("guarded_loss_pressure_report", completed.stdout)
+        self.assertIn("guarded_loss_pressure_rows  1", completed.stdout)
+        self.assertEqual(rows[0]["carryover_exit_loss_symbols"], "CCC:-150")
+        self.assertEqual(rows[0]["paper_only"], "true")
+
     def test_monthly_proxy_guard_recovery_exits_cli_writes_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

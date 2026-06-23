@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 guarded residual proxy context loop
+Last updated: 2026-06-24 guarded loss position pressure loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,46 +40,48 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `3caf0e3 Add neutral proxy loss guard`.
+  `398e45c Label guarded proxy residual contexts`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `474` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `477` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=339.58` observed).
+  (`age_hours=339.71` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only proxy context refinement for the remaining
+Added a report-only guarded-loss position pressure diagnostic for the remaining
 `regime_sideways` blocker under `proxy_guard_exit_short_minus5_neutral_loss_guard55`.
 
 Changed behavior:
 
-- `monthly-proxy-context-summary` now flags strong-breadth guarded proxy loss
-  residuals as `analyze_guarded_loss_position_pressure`.
+- New `monthly-guarded-loss-pressure` command reads existing proxy, symbol, and
+  path attribution CSVs and separates guarded-loss selected basket losses from
+  same-month carryover exit losses.
 - This is diagnostic/report-only. No strategy default, validation gate, order,
   live behavior, Toss API, or baseline behavior changed.
 
 TDD:
 
-- RED: proxy context-summary test failed because guarded loss residuals were
-  still labeled `review_proxy_context`.
-- GREEN: targeted context-summary test PASS, monthly module PASS (`186`
-  tests), CLI module PASS (`49` tests).
-- Final verification: full `unittest` PASS (`474` tests), compile PASS,
+- RED: new guarded-loss pressure analyzer/saver imports failed and CLI command
+  was unknown.
+- GREEN: targeted guarded-loss pressure tests PASS, monthly module PASS (`188`
+  tests), CLI module PASS (`50` tests).
+- Final verification: full `unittest` PASS (`477` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Re-generated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_proxy_context_summary.csv`.
-- Remaining residual context: `strong_breadth/guarded_exposure`, month
-  `2025-03`, avg return `-6.4719%`, avg exposure `0.55`, guard triggers `1`,
-  diagnostic `guarded_loss_residual`.
-- Neutral high-exposure loss contexts are now `0`; strong-breadth recovery
-  contexts remain preserved.
+- Generated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_guarded_loss_pressure.csv`.
+- Remaining guarded-loss row: `2025-03`, return `-6.4719%`, target exposure
+  `0.55`, worst drawdown date `2025-03-31`, worst drawdown `-17.4681%`.
+- Selected basket loss count `8`; top selected-loss sum `-270447.2`.
+- Same-month exit-loss sum `-241758.099`; carryover exit loss symbols:
+  `011790:-122843.725;007660:-18984.714;098460:-9902.16`.
+- Next focus: `analyze_position_level_loss_controls_without_broad_stop`.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:

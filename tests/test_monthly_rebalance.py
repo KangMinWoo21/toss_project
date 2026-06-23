@@ -30,6 +30,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_execution_gap,
     analyze_monthly_proxy_guard_recovery_exits,
     analyze_monthly_proxy_guard_outcomes,
+    analyze_monthly_guarded_loss_position_pressure,
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_proxy_decision_context_summary,
     analyze_monthly_recovery_attribution,
@@ -116,6 +117,7 @@ from backtester.monthly_rebalance import (
     save_monthly_execution_gap,
     save_monthly_proxy_guard_outcomes,
     save_monthly_proxy_guard_recovery_exits,
+    save_monthly_guarded_loss_position_pressure,
     save_monthly_proxy_decision_diagnostics,
     save_monthly_proxy_decision_context_summary,
     save_monthly_recovery_attribution,
@@ -2503,6 +2505,85 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("scenario,worst_drawdown_date", text.splitlines()[0])
         self.assertIn("recommended_candidate_focus", text.splitlines()[0])
         self.assertIn("stress_unit", text)
+
+    def test_analyze_monthly_guarded_loss_position_pressure_links_selected_and_exit_losses(self):
+        rows = analyze_monthly_guarded_loss_position_pressure(
+            proxy_rows=[
+                {
+                    "scenario": "regime_sideways",
+                    "as_of_date": "2025-03-04",
+                    "signal_date": "2025-02-28",
+                    "month": "2025-03",
+                    "month_return_pct": "-6.4",
+                    "mode": "market_beta_proxy",
+                    "target_exposure": "0.55",
+                    "cash_weight": "0.45",
+                    "selected_symbols": "AAA;BBB",
+                    "proxy_reversal_guard_triggered": "true",
+                    "proxy_reversal_guard_reason": "proxy_reversal_guard_capped",
+                    "diagnostic": "market_beta_proxy;strong_breadth",
+                },
+                {
+                    "scenario": "regime_sideways",
+                    "as_of_date": "2025-04-01",
+                    "signal_date": "2025-03-31",
+                    "month": "2025-04",
+                    "month_return_pct": "2.1",
+                    "mode": "market_beta_proxy",
+                    "target_exposure": "0.7425",
+                    "selected_symbols": "AAA;CCC",
+                    "proxy_reversal_guard_triggered": "false",
+                },
+            ],
+            symbol_rows=[
+                {"symbol": "CCC", "realized_pnl": "-150", "first_trade_date": "2025-02-03", "last_trade_date": "2025-03-04"},
+                {"symbol": "AAA", "realized_pnl": "-100", "first_trade_date": "2025-03-04", "last_trade_date": "2025-03-31"},
+                {"symbol": "DDD", "realized_pnl": "-50", "first_trade_date": "2025-01-02", "last_trade_date": "2025-02-03"},
+                {"symbol": "BBB", "realized_pnl": "20", "first_trade_date": "2025-03-04", "last_trade_date": "2025-03-31"},
+            ],
+            path_rows=[
+                {"date": "2025-03-04", "drawdown_pct": "-12", "exposure": "0.53"},
+                {"date": "2025-03-17", "drawdown_pct": "-17.5", "exposure": "0.55"},
+                {"date": "2025-04-01", "drawdown_pct": "-15", "exposure": "0.70"},
+            ],
+            top_symbol_count=3,
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "regime_sideways")
+        self.assertEqual(row["month"], "2025-03")
+        self.assertEqual(row["selected_loss_symbols"], "AAA:-100")
+        self.assertEqual(row["selected_loss_realized_pnl"], "-100")
+        self.assertEqual(row["month_exit_loss_symbols"], "CCC:-150;AAA:-100")
+        self.assertEqual(row["month_exit_loss_realized_pnl"], "-250")
+        self.assertEqual(row["carryover_exit_loss_symbols"], "CCC:-150")
+        self.assertEqual(row["worst_drawdown_date"], "2025-03-17")
+        self.assertEqual(row["worst_drawdown_pct"], "-17.5")
+        self.assertEqual(row["average_month_path_exposure"], "0.54")
+        self.assertIn("carryover_exit_losses", row["diagnostic"])
+        self.assertEqual(row["recommended_candidate_focus"], "analyze_position_level_loss_controls_without_broad_stop")
+        self.assertEqual(row["paper_only"], "true")
+
+    def test_save_monthly_guarded_loss_position_pressure_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "guarded_loss_pressure.csv"
+            saved = save_monthly_guarded_loss_position_pressure(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "month": "2025-03",
+                        "selected_loss_symbols": "AAA:-100",
+                        "recommended_candidate_focus": "analyze_position_level_loss_controls_without_broad_stop",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("selected_loss_symbols", text.splitlines()[0])
+        self.assertIn("analyze_position_level_loss_controls_without_broad_stop", text)
 
     def test_analyze_symbol_realized_pnl_attribution_uses_fifo(self):
         result = MonthlyBacktestResult(
