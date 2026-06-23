@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-23 21:15 KST
+Last updated: 2026-06-23 21:25 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 434 tests.
+- `python -m unittest discover -s tests`: PASS, 436 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,93 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only path-drift experiment candidate diagnostic:
+
+- Added `analyze_monthly_train_stability_path_drift_experiments`.
+- Added `save_monthly_train_stability_path_drift_experiments`.
+- Extended `python -m backtester monthly-train-decision-diagnostics` with:
+  - `--path-drift-experiment-output`
+  - default: `data/reports/monthly_direct_alpha_path_drift_experiment_diagnostics.csv`
+- The report uses stability symbol-attribution rows to summarize each active negative path-drift window with:
+  - actual traded contribution,
+  - selected snapshot contribution,
+  - path-drift delta,
+  - estimated target-persistence delta,
+  - selected-not-traded / traded-not-selected / overlap counts,
+  - paper-only experiment recommendation,
+  - `paper_only=true`,
+  - `candidate_status=paper_only_needs_full_validation`.
+- This is diagnostic-only and paper-only.
+- Existing strategy behavior, train gates, validation gates, execution planning, and Toss/API behavior are unchanged.
+
+Regenerated reports:
+
+- `data/reports/monthly_train_decision_path_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_stability_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_stability_symbol_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_path_drift_experiment_diagnostics.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Current path-drift experiment findings:
+
+- `monthly_direct_alpha_path_drift_experiment_diagnostics.csv` has `6` rows.
+- All rows are `paper_only=true`.
+- All rows are `paper_only_needs_full_validation`.
+- Recommendation counts:
+  - `walk_forward_003`: `test_stricter_target_persistence=3`.
+  - `walk_forward_004`: `test_stricter_target_persistence=2`, `test_slower_rebalance_cadence=1`.
+- Estimated target-persistence deltas:
+  - `walk_forward_003`, `2025-05-02`: `22.0023`.
+  - `walk_forward_003`, `2025-06-02`: `45.3043`.
+  - `walk_forward_003`, `2025-07-01`: `12.5508`.
+  - `walk_forward_004`, `2025-08-01`: `34.3112`.
+  - `walk_forward_004`, `2025-09-01`: `35.4377`.
+  - `walk_forward_004`, `2025-10-01`: `1.0945`.
+- Scenario sums:
+  - `walk_forward_003`: `79.8574`.
+  - `walk_forward_004`: `70.8434`.
+  - total across active windows: `150.7008`.
+
+Interpretation:
+
+- The six active negative stability windows are now mapped to conservative paper-only experiment directions.
+- Five of six windows point first to stricter target persistence, not delayed entry.
+- One low-delta `walk_forward_004` window points to slower rebalance cadence review.
+- These are diagnostic estimates from attribution rows, not a validated strategy change.
+- Keep `min_train_positive_ratio` strict.
+- Do not adopt rejected direct-alpha candidates or loosen train gates from this evidence alone.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `434` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_path_drift_experiments_summarizes_paper_only_candidates tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_path_drift_experiments_writes_csv tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report`: failed because the new path-drift experiment functions and `--path-drift-experiment-output` did not exist.
+- Targeted GREEN:
+  - same command: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `198` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `436` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=332.59` observed).
+
+Next recommended action:
+
+- Keep direct-alpha train gates strict.
+- Convert the new paper-only recommendation evidence into one isolated full-validation candidate:
+  - start with stricter target persistence,
+  - optionally compare one slower-cadence variant only after the persistence candidate is measured,
+  - require no new required-scenario failures,
+  - keep production/risk gates as hard stops.
+
+Previous loop:
 
 Added a paper-only stability symbol-attribution diagnostic:
 

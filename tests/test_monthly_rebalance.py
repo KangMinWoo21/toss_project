@@ -31,6 +31,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_recovery_attribution,
     analyze_monthly_validation_failures,
     analyze_monthly_train_decision_path,
+    analyze_monthly_train_stability_path_drift_experiments,
     analyze_monthly_train_stability_symbol_attribution,
     analyze_monthly_train_stability_windows,
     analyze_monthly_validation_failure_drilldown,
@@ -105,6 +106,7 @@ from backtester.monthly_rebalance import (
     save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
     save_monthly_train_decision_path,
+    save_monthly_train_stability_path_drift_experiments,
     save_monthly_train_stability_symbol_attribution,
     save_monthly_train_stability_windows,
     save_order_plan,
@@ -3549,6 +3551,103 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("scenario,walk_forward_preset,as_of_date", text.splitlines()[0])
         self.assertIn("stability_symbol_role", text.splitlines()[0])
         self.assertIn("walk_forward_unit", text)
+
+    def test_analyze_monthly_train_stability_path_drift_experiments_summarizes_paper_only_candidates(self):
+        stability_rows = [
+            {
+                "scenario": "walk_forward_unit",
+                "walk_forward_preset": "balanced",
+                "as_of_date": "2024-01-20",
+                "signal_date": "2024-01-19",
+                "category": "walk_forward",
+                "decision_mode": "market_beta_proxy",
+                "alpha_block_reason": "no_eligible_direct_candidate",
+                "candidate_rejection_reasons": "low_positive_ratio",
+                "candidate_positive_ratio": "0.0",
+                "subwindow_counted_flag": "true",
+                "stability_window_start": "2024-01-01",
+                "stability_window_end": "2024-01-20",
+                "stability_excess_return_pct": "-12.0",
+                "stability_trade_count": "4",
+                "stability_failed_reason": "nonpositive_excess",
+                "stability_underperformance_driver": "holding_path_differs_from_selection_snapshot",
+            }
+        ]
+        symbol_rows = [
+            {
+                "scenario": "walk_forward_unit",
+                "as_of_date": "2024-01-20",
+                "stability_window_start": "2024-01-01",
+                "stability_window_end": "2024-01-20",
+                "stability_symbol_role": "selected_not_traded",
+                "selected_contribution_pct": "20.0",
+                "traded_contribution_pct": "0.0",
+                "benchmark_contribution_pct": "5.0",
+                "traded_vs_selected_contribution_delta_pct": "-20.0",
+            },
+            {
+                "scenario": "walk_forward_unit",
+                "as_of_date": "2024-01-20",
+                "stability_window_start": "2024-01-01",
+                "stability_window_end": "2024-01-20",
+                "stability_symbol_role": "traded_not_selected",
+                "selected_contribution_pct": "0.0",
+                "traded_contribution_pct": "6.0",
+                "benchmark_contribution_pct": "2.0",
+                "traded_vs_selected_contribution_delta_pct": "6.0",
+            },
+            {
+                "scenario": "walk_forward_unit",
+                "as_of_date": "2024-01-20",
+                "stability_window_start": "2024-01-01",
+                "stability_window_end": "2024-01-20",
+                "stability_symbol_role": "selected_and_traded",
+                "selected_contribution_pct": "10.0",
+                "traded_contribution_pct": "10.0",
+                "benchmark_contribution_pct": "3.0",
+                "traded_vs_selected_contribution_delta_pct": "0.0",
+            },
+        ]
+
+        rows = analyze_monthly_train_stability_path_drift_experiments(stability_rows, symbol_rows)
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["scenario"], "walk_forward_unit")
+        self.assertEqual(row["experiment_family"], "path_drift_reduction")
+        self.assertEqual(row["paper_only"], "true")
+        self.assertEqual(row["target_persistence_candidate"], "true")
+        self.assertEqual(row["slower_rebalance_candidate"], "true")
+        self.assertEqual(row["delayed_entry_candidate"], "false")
+        self.assertEqual(row["experiment_recommendation"], "test_stricter_target_persistence")
+        self.assertEqual(row["candidate_status"], "paper_only_needs_full_validation")
+        self.assertAlmostEqual(float(row["actual_traded_contribution_pct"]), 16.0)
+        self.assertAlmostEqual(float(row["selected_snapshot_contribution_pct"]), 30.0)
+        self.assertAlmostEqual(float(row["estimated_target_persistence_delta_pct"]), 14.0)
+        self.assertAlmostEqual(float(row["selected_not_traded_contribution_pct"]), 20.0)
+        self.assertAlmostEqual(float(row["traded_not_selected_contribution_pct"]), 6.0)
+
+    def test_save_monthly_train_stability_path_drift_experiments_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "path_drift_experiments.csv"
+            saved = save_monthly_train_stability_path_drift_experiments(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "as_of_date": "2024-01-20",
+                        "experiment_family": "path_drift_reduction",
+                        "paper_only": "true",
+                        "experiment_recommendation": "test_stricter_target_persistence",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("experiment_family", text.splitlines()[0])
+        self.assertIn("paper_only", text.splitlines()[0])
+        self.assertIn("test_stricter_target_persistence", text)
 
     def test_save_monthly_train_stability_windows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

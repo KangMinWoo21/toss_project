@@ -61,6 +61,7 @@ from .monthly_rebalance import (
     analyze_monthly_proxy_decision_diagnostics,
     analyze_monthly_recovery_attribution,
     analyze_monthly_train_decision_path,
+    analyze_monthly_train_stability_path_drift_experiments,
     analyze_monthly_train_stability_symbol_attribution,
     analyze_monthly_train_stability_windows,
     analyze_monthly_validation_failures,
@@ -123,6 +124,7 @@ from .monthly_rebalance import (
     save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
     save_monthly_train_decision_path,
+    save_monthly_train_stability_path_drift_experiments,
     save_monthly_train_stability_symbol_attribution,
     save_monthly_train_stability_windows,
     save_monthly_performance_audit_rows,
@@ -1279,6 +1281,11 @@ def main() -> int:
         default="data/reports/monthly_direct_alpha_stability_symbol_diagnostics.csv",
         help="Write paper-only symbol attribution for stability selected/traded path differences.",
     )
+    monthly_train_decision_parser.add_argument(
+        "--path-drift-experiment-output",
+        default="data/reports/monthly_direct_alpha_path_drift_experiment_diagnostics.csv",
+        help="Write paper-only path-drift reduction experiment candidates from stability attribution.",
+    )
 
     production_check_parser = subparsers.add_parser(
         "production-check",
@@ -1857,11 +1864,19 @@ def main() -> int:
             stability_rows,
             symbol_candles,
         )
+        path_drift_experiment_rows = analyze_monthly_train_stability_path_drift_experiments(
+            stability_rows,
+            stability_symbol_rows,
+        )
         saved = save_monthly_train_decision_path(rows, args.output)
         stability_saved = save_monthly_train_stability_windows(stability_rows, args.stability_output)
         stability_symbol_saved = save_monthly_train_stability_symbol_attribution(
             stability_symbol_rows,
             args.stability_symbol_output,
+        )
+        path_drift_experiment_saved = save_monthly_train_stability_path_drift_experiments(
+            path_drift_experiment_rows,
+            args.path_drift_experiment_output,
         )
         print("Monthly train decision diagnostics")
         _print_data_quality_exclusions(data_quality_exclusions)
@@ -1872,6 +1887,8 @@ def main() -> int:
         print(f"train_stability_report  {args.stability_output}")
         print(f"train_stability_symbol_rows  {stability_symbol_saved}")
         print(f"train_stability_symbol_report  {args.stability_symbol_output}")
+        print(f"train_path_drift_experiment_rows  {path_drift_experiment_saved}")
+        print(f"train_path_drift_experiment_report  {args.path_drift_experiment_output}")
         return 0
 
     if args.command == "production-check":

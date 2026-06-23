@@ -1351,6 +1351,7 @@ class CliTests(unittest.TestCase):
             output = root / "train_decisions.csv"
             stability_output = root / "train_stability.csv"
             stability_symbol_output = root / "train_stability_symbols.csv"
+            path_drift_experiment_output = root / "path_drift_experiments.csv"
 
             completed = self._run_backtester_in_cwd(
                 root,
@@ -1386,6 +1387,8 @@ class CliTests(unittest.TestCase):
                     str(stability_output),
                     "--stability-symbol-output",
                     str(stability_symbol_output),
+                    "--path-drift-experiment-output",
+                    str(path_drift_experiment_output),
                 ],
             )
             if output.exists():
@@ -1403,11 +1406,17 @@ class CliTests(unittest.TestCase):
                     stability_symbol_rows = list(csv.DictReader(f))
             else:
                 stability_symbol_rows = []
+            if path_drift_experiment_output.exists():
+                with path_drift_experiment_output.open(encoding="utf-8") as f:
+                    path_drift_experiment_rows = list(csv.DictReader(f))
+            else:
+                path_drift_experiment_rows = []
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("train_decision_path_report", completed.stdout)
         self.assertIn("train_stability_report", completed.stdout)
         self.assertIn("train_stability_symbol_report", completed.stdout)
+        self.assertIn("train_path_drift_experiment_report", completed.stdout)
         self.assertTrue(rows)
         self.assertTrue(any(row["direct_candidate_rejection_reasons"] or row["filter_error"] for row in rows))
         self.assertTrue(stability_rows)
@@ -1419,6 +1428,9 @@ class CliTests(unittest.TestCase):
         self.assertTrue(stability_symbol_rows)
         self.assertTrue(any("stability_symbol_role" in row for row in stability_symbol_rows))
         self.assertTrue(any("symbol_return_pct" in row for row in stability_symbol_rows))
+        self.assertTrue(path_drift_experiment_rows)
+        self.assertTrue(any("experiment_recommendation" in row for row in path_drift_experiment_rows))
+        self.assertTrue(any(row["paper_only"] == "true" for row in path_drift_experiment_rows))
 
     def test_monthly_compare_validation_cli_writes_comparison(self):
         with TemporaryDirectory() as temp_dir:

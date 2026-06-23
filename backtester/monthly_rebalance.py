@@ -901,6 +901,42 @@ MONTHLY_TRAIN_STABILITY_SYMBOL_ATTRIBUTION_COLUMNS = [
     "train_coverage_removed",
 ]
 
+MONTHLY_TRAIN_STABILITY_PATH_DRIFT_EXPERIMENT_COLUMNS = [
+    "scenario",
+    "walk_forward_preset",
+    "as_of_date",
+    "signal_date",
+    "category",
+    "decision_mode",
+    "alpha_block_reason",
+    "candidate_rejection_reasons",
+    "candidate_positive_ratio",
+    "stability_window_start",
+    "stability_window_end",
+    "stability_excess_return_pct",
+    "stability_trade_count",
+    "stability_failed_reason",
+    "stability_underperformance_driver",
+    "experiment_family",
+    "paper_only",
+    "actual_traded_contribution_pct",
+    "selected_snapshot_contribution_pct",
+    "benchmark_contribution_pct",
+    "path_drift_delta_pct",
+    "estimated_target_persistence_delta_pct",
+    "selected_not_traded_count",
+    "traded_not_selected_count",
+    "selected_and_traded_count",
+    "selected_not_traded_contribution_pct",
+    "traded_not_selected_contribution_pct",
+    "target_persistence_candidate",
+    "slower_rebalance_candidate",
+    "delayed_entry_candidate",
+    "experiment_recommendation",
+    "candidate_status",
+    "risk_note",
+]
+
 PERFORMANCE_CONCENTRATION_COLUMNS = [
     "source",
     "start",
@@ -4298,6 +4334,134 @@ def save_monthly_train_stability_symbol_attribution(rows: list[dict[str, Any]], 
     return len(rows)
 
 
+def analyze_monthly_train_stability_path_drift_experiments(
+    stability_rows: list[dict[str, Any]],
+    symbol_attribution_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    symbol_rows_by_key: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    for row in symbol_attribution_rows:
+        key = (
+            str(row.get("scenario", "")).strip(),
+            str(row.get("as_of_date", "")).strip(),
+            str(row.get("stability_window_start", "")).strip(),
+            str(row.get("stability_window_end", "")).strip(),
+        )
+        if all(key):
+            symbol_rows_by_key.setdefault(key, []).append(row)
+
+    rows: list[dict[str, Any]] = []
+    for stability in stability_rows:
+        if str(stability.get("subwindow_counted_flag", "")).strip().lower() != "true":
+            continue
+        key = (
+            str(stability.get("scenario", "")).strip(),
+            str(stability.get("as_of_date", "")).strip(),
+            str(stability.get("stability_window_start", "")).strip(),
+            str(stability.get("stability_window_end", "")).strip(),
+        )
+        symbol_rows = symbol_rows_by_key.get(key, [])
+        if not symbol_rows:
+            continue
+
+        actual_traded = _sum_numeric_column(symbol_rows, "traded_contribution_pct")
+        selected_snapshot = _sum_numeric_column(symbol_rows, "selected_contribution_pct")
+        benchmark = _sum_numeric_column(symbol_rows, "benchmark_contribution_pct")
+        selected_not_traded = [
+            row
+            for row in symbol_rows
+            if str(row.get("stability_symbol_role", "")).strip() == "selected_not_traded"
+        ]
+        traded_not_selected = [
+            row
+            for row in symbol_rows
+            if str(row.get("stability_symbol_role", "")).strip() == "traded_not_selected"
+        ]
+        selected_and_traded = [
+            row
+            for row in symbol_rows
+            if str(row.get("stability_symbol_role", "")).strip() == "selected_and_traded"
+        ]
+        selected_not_traded_contribution = _sum_numeric_column(selected_not_traded, "selected_contribution_pct")
+        traded_not_selected_contribution = _sum_numeric_column(traded_not_selected, "traded_contribution_pct")
+        path_drift_delta = actual_traded - selected_snapshot
+        target_persistence_delta = selected_snapshot - actual_traded
+        target_persistence_candidate = target_persistence_delta > 0 and bool(selected_not_traded)
+        slower_rebalance_candidate = (
+            target_persistence_candidate
+            and bool(traded_not_selected)
+            and str(stability.get("stability_underperformance_driver", "")).strip()
+            == "holding_path_differs_from_selection_snapshot"
+        )
+        delayed_entry_candidate = bool(traded_not_selected) and traded_not_selected_contribution < 0
+        recommendation = _path_drift_experiment_recommendation(
+            target_persistence_candidate=target_persistence_candidate,
+            slower_rebalance_candidate=slower_rebalance_candidate,
+            delayed_entry_candidate=delayed_entry_candidate,
+            selected_not_traded_contribution=selected_not_traded_contribution,
+            traded_not_selected_contribution=traded_not_selected_contribution,
+        )
+        rows.append(
+            {
+                "scenario": stability.get("scenario", ""),
+                "walk_forward_preset": stability.get("walk_forward_preset", ""),
+                "as_of_date": stability.get("as_of_date", ""),
+                "signal_date": stability.get("signal_date", ""),
+                "category": stability.get("category", ""),
+                "decision_mode": stability.get("decision_mode", ""),
+                "alpha_block_reason": stability.get("alpha_block_reason", ""),
+                "candidate_rejection_reasons": stability.get("candidate_rejection_reasons", ""),
+                "candidate_positive_ratio": stability.get("candidate_positive_ratio", ""),
+                "stability_window_start": stability.get("stability_window_start", ""),
+                "stability_window_end": stability.get("stability_window_end", ""),
+                "stability_excess_return_pct": stability.get("stability_excess_return_pct", ""),
+                "stability_trade_count": stability.get("stability_trade_count", ""),
+                "stability_failed_reason": stability.get("stability_failed_reason", ""),
+                "stability_underperformance_driver": stability.get("stability_underperformance_driver", ""),
+                "experiment_family": "path_drift_reduction",
+                "paper_only": "true",
+                "actual_traded_contribution_pct": _format_optional_float(actual_traded),
+                "selected_snapshot_contribution_pct": _format_optional_float(selected_snapshot),
+                "benchmark_contribution_pct": _format_optional_float(benchmark),
+                "path_drift_delta_pct": _format_optional_float(path_drift_delta),
+                "estimated_target_persistence_delta_pct": _format_optional_float(target_persistence_delta),
+                "selected_not_traded_count": len(selected_not_traded),
+                "traded_not_selected_count": len(traded_not_selected),
+                "selected_and_traded_count": len(selected_and_traded),
+                "selected_not_traded_contribution_pct": _format_optional_float(selected_not_traded_contribution),
+                "traded_not_selected_contribution_pct": _format_optional_float(traded_not_selected_contribution),
+                "target_persistence_candidate": str(target_persistence_candidate).lower(),
+                "slower_rebalance_candidate": str(slower_rebalance_candidate).lower(),
+                "delayed_entry_candidate": str(delayed_entry_candidate).lower(),
+                "experiment_recommendation": recommendation,
+                "candidate_status": "paper_only_needs_full_validation",
+                "risk_note": (
+                    "Diagnostic estimate only; do not change live behavior or loosen train gates "
+                    "without full walk-forward validation."
+                ),
+            }
+        )
+    return rows
+
+
+def save_monthly_train_stability_path_drift_experiments(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MONTHLY_TRAIN_STABILITY_PATH_DRIFT_EXPERIMENT_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    column: row.get(column, "")
+                    for column in MONTHLY_TRAIN_STABILITY_PATH_DRIFT_EXPERIMENT_COLUMNS
+                }
+            )
+    return len(rows)
+
+
 def _monthly_train_decision_path_for_case(
     symbol_candles: dict[str, list[Candle]],
     *,
@@ -4861,6 +5025,34 @@ def _stability_symbol_role(*, in_selected: bool, in_traded: bool) -> str:
     if in_traded:
         return "traded_not_selected"
     return "context_only"
+
+
+def _sum_numeric_column(rows: list[dict[str, Any]], column: str) -> float:
+    values = [
+        _float_or_none(row.get(column))
+        for row in rows
+    ]
+    return sum(value for value in values if value is not None)
+
+
+def _path_drift_experiment_recommendation(
+    *,
+    target_persistence_candidate: bool,
+    slower_rebalance_candidate: bool,
+    delayed_entry_candidate: bool,
+    selected_not_traded_contribution: float,
+    traded_not_selected_contribution: float,
+) -> str:
+    if (
+        target_persistence_candidate
+        and selected_not_traded_contribution > max(traded_not_selected_contribution, 0.0)
+    ):
+        return "test_stricter_target_persistence"
+    if delayed_entry_candidate:
+        return "test_delayed_entry_filter"
+    if slower_rebalance_candidate:
+        return "test_slower_rebalance_cadence"
+    return "monitor_path_drift"
 
 
 def _monthly_train_decision_evidence(
