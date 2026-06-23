@@ -207,6 +207,7 @@ class MonthlyRebalanceConfig:
     market_beta_proxy_reversal_guard_medium_drawdown_pct: float = 0.0
     market_beta_proxy_reversal_guard_recovery_exit_short_return_pct: float = 0.0
     market_beta_proxy_buyable_only: bool = False
+    market_beta_proxy_unbuyable_cash_reserve: bool = False
     event_scores: EventScoreStore | None = None
     event_lookback_days: int = 5
     min_entry_event_score: float = -0.2
@@ -4113,6 +4114,34 @@ def compress_decision_to_buyable_targets(
         selected_preset=decision.selected_preset,
         target_weights=target_weights,
         reason=f"{decision.reason}_buyable_targets_{len(selected)}of{len(ranked_symbols)}",
+    )
+
+
+def reserve_unbuyable_targets_as_cash(
+    decision: MonthlyDecision,
+    *,
+    reference_prices: dict[str, float],
+    portfolio_value: float,
+    min_target_value: float,
+) -> MonthlyDecision:
+    if not decision.target_weights or portfolio_value <= 0:
+        return decision
+    ranked_symbols = list(decision.target_weights.keys())
+    selected = [
+        symbol
+        for symbol in ranked_symbols
+        if _target_is_buyable(symbol, decision.target_weights, reference_prices, portfolio_value, min_target_value)
+    ]
+    if selected == ranked_symbols:
+        return decision
+    target_weights = {symbol: decision.target_weights[symbol] for symbol in selected}
+    return MonthlyDecision(
+        as_of_date=decision.as_of_date,
+        signal_date=decision.signal_date,
+        mode=decision.mode,
+        selected_preset=decision.selected_preset,
+        target_weights=target_weights,
+        reason=f"{decision.reason}_unbuyable_cash_reserve_{len(selected)}of{len(ranked_symbols)}",
     )
 
 
@@ -9562,19 +9591,22 @@ def _market_beta_or_cash_decision(
                 else (proxy_reason if is_proxy else direct_reason)
             ),
         )
-        if (
-            is_proxy
-            and config.market_beta_proxy_buyable_only
-            and reference_prices is not None
-            and portfolio_value is not None
-        ):
-            return compress_decision_to_buyable_targets(
-                decision,
-                reference_prices=reference_prices,
-                portfolio_value=portfolio_value,
-                max_position_weight=config.max_position_weight,
-                min_target_value=config.min_target_value,
-            )
+        if is_proxy and reference_prices is not None and portfolio_value is not None:
+            if config.market_beta_proxy_unbuyable_cash_reserve:
+                return reserve_unbuyable_targets_as_cash(
+                    decision,
+                    reference_prices=reference_prices,
+                    portfolio_value=portfolio_value,
+                    min_target_value=config.min_target_value,
+                )
+            if config.market_beta_proxy_buyable_only:
+                return compress_decision_to_buyable_targets(
+                    decision,
+                    reference_prices=reference_prices,
+                    portfolio_value=portfolio_value,
+                    max_position_weight=config.max_position_weight,
+                    min_target_value=config.min_target_value,
+                )
         return decision
     return MonthlyDecision(
         as_of_date=as_of_date,

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 buyable proxy candidate loop
+Last updated: 2026-06-24 cash-reserve proxy candidate loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,55 +40,59 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `c097d81 Add monthly execution gap diagnostics`.
+  `ae8bc63 Add buyable proxy research switch`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `462` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `463` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=338.14` observed).
+  (`age_hours=338.31` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a default-off paper-only market beta proxy buyability candidate switch.
+Added a default-off paper-only market beta proxy cash-reserve candidate switch.
 
 Changed behavior:
 
-- New config flag: `market_beta_proxy_buyable_only=False`.
+- New config flag: `market_beta_proxy_unbuyable_cash_reserve=False`.
 - New CLI flag on monthly plan/backtest/attribution/validate/train-diagnostics:
-  `--market-beta-proxy-buyable-only`.
-- When enabled, market beta proxy fallback reuses
-  `compress_decision_to_buyable_targets`; direct `market_beta` ETF fallback is
-  unchanged.
+  `--market-beta-proxy-unbuyable-cash-reserve`.
+- When enabled, market beta proxy fallback drops unbuyable proxy targets but
+  keeps their allocation as cash instead of reweighting remaining symbols.
+- Direct `market_beta` ETF fallback is unchanged.
 - Defaults and live/order behavior are unchanged.
 
 TDD:
 
-- RED: config/CLI tests failed on the missing flag; the first fixture also
-  exposed an invalid empty train slice before the intended fallback path.
-- GREEN: targeted tests PASS, `5` tests; monthly+CLI modules PASS, `223`
+- RED: config/CLI tests failed on the missing flag and behavior.
+- GREEN: targeted tests PASS, `5` tests; monthly+CLI modules PASS, `224`
   tests.
 
 Focused `regime_sideways` evidence with current
-`proxy_guard_exit_short_minus5` guard settings plus buyable proxy:
+`proxy_guard_exit_short_minus5` guard settings plus cash-reserve proxy:
 
 - Output prefix:
-  `data/reports/regime_sideways_proxy_guard_exit_short_minus5_buyable_proxy_*`.
-- Headline: total return `-7.87%`, excess `-5.80%`, max DD `-21.84%`.
-- Execution gaps: rows `45`; buyable compression reasons include
-  `buyable_targets_11of12` (`15` rows) and `buyable_targets_9of12` (`9`
-  rows). Prior below-one-share misses are removed.
+  `data/reports/regime_sideways_proxy_guard_exit_short_minus5_cash_reserve_proxy_*`.
+- Headline: total return `-9.21%`, excess `-7.15%`, max DD `-21.78%`.
+- Execution gaps: rows `46`; cash-reserve reasons include
+  `unbuyable_cash_reserve_11of12` (`17` rows),
+  `unbuyable_cash_reserve_10of12` (`7` rows), and
+  `unbuyable_cash_reserve_7of12` (`2` rows).
 - Comparison versus `proxy_guard_exit_short_minus5`: changed decision rows `4`,
-  symbol rotation rows `4`, new drawdown breach months `0`.
-- Path comparison is worse: equity regression days `108/126`,
-  drawdown regression days `101/126`, worst equity delta
-  `2024-12-09 = -172507.1649`.
+  exposure-reduced rows `4`, symbol rotation rows `4`, new drawdown breach
+  months `0`.
+- Path comparison is worse: equity regression days `104/126`,
+  drawdown regression days `68/126`, worst equity delta
+  `2025-01-08 = -271623.8209`.
 - Decision: reject as-is; do not run full validation or promote.
 
-Prior execution-gap context to preserve:
+Prior buyability context to preserve:
 
+- `proxy_guard_exit_short_minus5 + market_beta_proxy_buyable_only`: removed
+  below-one-share gaps but worsened most `regime_sideways` path days
+  (`108/126` equity regression days).
 - `proxy_guard_exit_short_minus5_execution_gap.csv`: rows `55`;
   `target_underfilled_after_rebalance=51`, `target_value_below_one_share=4`.
 - `proxy_guard_exit_short_minus5_neutral_breadth_cap75_execution_gap.csv`:
@@ -133,6 +137,8 @@ Why still blocked:
   paper-review only; improved but still left required failures.
 - `proxy_guard_exit_short_minus5 + market_beta_proxy_buyable_only`: removes
   below-one-share gaps but worsens most `regime_sideways` path days.
+- `proxy_guard_exit_short_minus5 + market_beta_proxy_unbuyable_cash_reserve`:
+  makes cash reserve explicit but worsens `regime_sideways` excess and path.
 
 ## Remaining Blockers
 
@@ -161,9 +167,9 @@ Diagnostic combo remaining failure:
 Pick one narrow loop:
 
 - `regime_sideways`: inspect actual path/position drift in `2024-10`,
-  `2024-11`, `2024-12`. The buyable proxy test worsened December via symbol
-  rotation; inspect removed/added proxy names around `2024-12-09` before
-  changing weighting again. Avoid broad neutral-breadth caps as-is.
+  `2024-11`, `2024-12`, and `2025-01`. Both buyability variants worsened
+  path behavior, so avoid further proxy buyability reweighting/cash-reserve
+  variants unless new evidence isolates a different mechanism.
 - `walk_forward_003`: continue from the new stability summary; inspect the
   negative subwindow symbol/path-drift rows before changing gates.
 

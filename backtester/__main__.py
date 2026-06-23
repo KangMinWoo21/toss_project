@@ -720,6 +720,7 @@ def main() -> int:
     monthly_plan_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
     monthly_plan_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_plan_parser.add_argument("--market-beta-proxy-buyable-only", action="store_true")
+    monthly_plan_parser.add_argument("--market-beta-proxy-unbuyable-cash-reserve", action="store_true")
     _add_market_beta_proxy_reversal_guard_args(monthly_plan_parser)
     monthly_plan_parser.add_argument("--events", default=None, help="CSV with weighted news/SNS/disclosure event scores")
     monthly_plan_parser.add_argument("--event-lookback-days", type=int, default=5)
@@ -804,6 +805,7 @@ def main() -> int:
     monthly_backtest_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
     monthly_backtest_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_backtest_parser.add_argument("--market-beta-proxy-buyable-only", action="store_true")
+    monthly_backtest_parser.add_argument("--market-beta-proxy-unbuyable-cash-reserve", action="store_true")
     _add_market_beta_proxy_reversal_guard_args(monthly_backtest_parser)
     monthly_backtest_parser.add_argument("--events", default=None, help="CSV with weighted news/SNS/disclosure event scores")
     monthly_backtest_parser.add_argument("--event-lookback-days", type=int, default=5)
@@ -846,6 +848,7 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
     monthly_attribution_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_attribution_parser.add_argument("--market-beta-proxy-buyable-only", action="store_true")
+    monthly_attribution_parser.add_argument("--market-beta-proxy-unbuyable-cash-reserve", action="store_true")
     _add_market_beta_proxy_reversal_guard_args(monthly_attribution_parser)
     monthly_attribution_parser.add_argument("--drawdown-guard-trigger-pct", type=float, default=-15.0)
     monthly_attribution_parser.add_argument("--drawdown-guard-scale", type=float, default=0.75)
@@ -984,6 +987,7 @@ def main() -> int:
     monthly_validate_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
     monthly_validate_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_validate_parser.add_argument("--market-beta-proxy-buyable-only", action="store_true")
+    monthly_validate_parser.add_argument("--market-beta-proxy-unbuyable-cash-reserve", action="store_true")
     _add_market_beta_proxy_reversal_guard_args(monthly_validate_parser)
     monthly_validate_parser.add_argument("--events", default=None, help="CSV with weighted news/SNS/disclosure event scores")
     monthly_validate_parser.add_argument("--event-lookback-days", type=int, default=5)
@@ -1320,6 +1324,7 @@ def main() -> int:
     monthly_train_decision_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
     monthly_train_decision_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_train_decision_parser.add_argument("--market-beta-proxy-buyable-only", action="store_true")
+    monthly_train_decision_parser.add_argument("--market-beta-proxy-unbuyable-cash-reserve", action="store_true")
     _add_market_beta_proxy_reversal_guard_args(monthly_train_decision_parser)
     monthly_train_decision_parser.add_argument("--point-in-time-liquidity-top-n", type=int, default=100)
     monthly_train_decision_parser.add_argument("--point-in-time-liquidity-window-days", type=int, default=20)
@@ -1949,6 +1954,7 @@ def main() -> int:
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
             market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
             market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
+            market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
             market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
             market_beta_proxy_reversal_guard_medium_lookback_days=args.market_beta_proxy_reversal_guard_medium_lookback_days,
             market_beta_proxy_reversal_guard_medium_return_pct=args.market_beta_proxy_reversal_guard_medium_return_pct,
@@ -2686,6 +2692,7 @@ def main() -> int:
                 market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
                 market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
                 market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
+                market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
                 market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
                 market_beta_proxy_reversal_guard_medium_lookback_days=args.market_beta_proxy_reversal_guard_medium_lookback_days,
                 market_beta_proxy_reversal_guard_medium_return_pct=args.market_beta_proxy_reversal_guard_medium_return_pct,
@@ -2897,6 +2904,7 @@ def main() -> int:
                 market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
                 market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
                 market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
+                market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
                 market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
                 market_beta_proxy_reversal_guard_medium_lookback_days=args.market_beta_proxy_reversal_guard_medium_lookback_days,
                 market_beta_proxy_reversal_guard_medium_return_pct=args.market_beta_proxy_reversal_guard_medium_return_pct,
@@ -2998,6 +3006,7 @@ def main() -> int:
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
             market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
             market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
+            market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
             market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
             market_beta_proxy_reversal_guard_medium_lookback_days=args.market_beta_proxy_reversal_guard_medium_lookback_days,
             market_beta_proxy_reversal_guard_medium_return_pct=args.market_beta_proxy_reversal_guard_medium_return_pct,
@@ -3198,6 +3207,7 @@ def main() -> int:
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
             market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
             market_beta_proxy_buyable_only=args.market_beta_proxy_buyable_only,
+            market_beta_proxy_unbuyable_cash_reserve=args.market_beta_proxy_unbuyable_cash_reserve,
             market_beta_proxy_reversal_guard_max_exposure=args.market_beta_proxy_reversal_guard_max_exposure,
             market_beta_proxy_reversal_guard_medium_lookback_days=args.market_beta_proxy_reversal_guard_medium_lookback_days,
             market_beta_proxy_reversal_guard_medium_return_pct=args.market_beta_proxy_reversal_guard_medium_return_pct,

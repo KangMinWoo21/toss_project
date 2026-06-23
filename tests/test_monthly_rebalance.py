@@ -295,6 +295,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_medium_drawdown_pct, 0.0)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_recovery_exit_short_return_pct, 0.0)
         self.assertFalse(MonthlyRebalanceConfig().market_beta_proxy_buyable_only)
+        self.assertFalse(MonthlyRebalanceConfig().market_beta_proxy_unbuyable_cash_reserve)
         self.assertEqual(MonthlyRebalanceConfig().direct_alpha_target_persistence_signals, 1)
         self.assertEqual(RiskLimits().max_total_target_weight, 1.0)
         self.assertEqual(RiskLimits().max_total_buy_value, 10_000_000.0)
@@ -794,6 +795,41 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("MID1", decision.target_weights)
         self.assertIn("MID2", decision.target_weights)
         self.assertIn("buyable_targets_2of3", decision.reason)
+
+    def test_market_beta_proxy_cash_reserve_drops_unbuyable_without_reweighting(self):
+        symbol_candles = {
+            "HIGH": _daily_candles_with_volume("2026-01-01", 10, close=600_000, volume=10_000),
+            "MID1": _daily_candles_with_volume("2026-01-01", 10, close=100_000, volume=9_000),
+            "MID2": _daily_candles_with_volume("2026-01-01", 10, close=90_000, volume=8_000),
+        }
+
+        decision = decide_monthly_allocation(
+            symbol_candles,
+            as_of_date="2026-01-10",
+            config=MonthlyRebalanceConfig(
+                train_start="2026-01-01",
+                min_train_trades=999,
+                min_rows_per_window=3,
+                fallback_breadth_days=3,
+                fallback_breadth_threshold=0.4,
+                market_beta_breadth_threshold=0.0,
+                point_in_time_min_history_days=3,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_window_days=3,
+                point_in_time_liquidity_top_n=3,
+                market_beta_symbol="ETF",
+                market_beta_proxy_size=3,
+                market_beta_proxy_unbuyable_cash_reserve=True,
+                max_position_weight=0.4,
+            ),
+            portfolio_value=1_000_000,
+            reference_prices={"HIGH": 600_009, "MID1": 100_009, "MID2": 90_009},
+        )
+
+        self.assertEqual(decision.mode, "market_beta_proxy")
+        self.assertNotIn("HIGH", decision.target_weights)
+        self.assertEqual(decision.target_weights, {"MID1": 0.33, "MID2": 0.33})
+        self.assertIn("unbuyable_cash_reserve_2of3", decision.reason)
 
     def test_risk_exit_code_is_nonzero_for_blocked_plan(self):
         self.assertEqual(risk_exit_code("PASS"), 0)
