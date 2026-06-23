@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 proxy guard recovery-exit loop
+Last updated: 2026-06-24 proxy guard recovery-exit candidate loop
 
 ## Objective
 
@@ -60,15 +60,130 @@ The compaction summary must include:
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 451 tests.
+- `python -m unittest discover -s tests`: PASS, 456 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
-- Candidate follow-up state: latest `proxy_guard_short5_extreme50_mdd10` is `PAPER_REVIEW` / `IMPROVED`; it fixed `stress_exclude_500pct_winners` and `walk_forward_001` without new failures, but still leaves `regime_sideways`, `walk_forward_003`, and `walk_forward_005` failed.
+- Candidate follow-up state: latest `proxy_guard_exit_short_minus5` is `PAPER_REVIEW` / `IMPROVED`; it fixed `stress_exclude_500pct_winners`, `walk_forward_001`, and `walk_forward_005` without new failures, but still leaves `regime_sideways` and `walk_forward_003` failed.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added and fully validated a default-off paper-only proxy guard recovery-exit candidate:
+
+- New config/CLI option:
+  - `market_beta_proxy_reversal_guard_recovery_exit_short_return_pct`
+  - `--market-beta-proxy-reversal-guard-recovery-exit-short-return-pct`
+- Candidate label:
+  - `proxy_guard_exit_short_minus5`
+- Candidate options:
+  - `--market-beta-proxy-reversal-guard-max-exposure 0.55`
+  - `--market-beta-proxy-reversal-guard-medium-lookback-days 40`
+  - `--market-beta-proxy-reversal-guard-medium-return-pct 35`
+  - `--market-beta-proxy-reversal-guard-short-lookback-days 20`
+  - `--market-beta-proxy-reversal-guard-short-max-return-pct 5`
+  - `--market-beta-proxy-reversal-guard-extreme-return-pct 50`
+  - `--market-beta-proxy-reversal-guard-medium-drawdown-pct -10`
+  - `--market-beta-proxy-reversal-guard-recovery-exit-short-return-pct -5`
+- Behavior:
+  - default remains off at `0.0`.
+  - if a non-extreme drawdown-based proxy guard cap would apply, and the short-window proxy basket return is already at or below `-5%`, the guard exits instead of capping.
+  - extreme medium overheat still caps; this preserves the stress loss-cap behavior.
+- This is paper/backtest-only and does not add real order execution.
+
+TDD result:
+
+- RED:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_monthly_config_defaults_to_five_candidate_slots tests.test_monthly_rebalance.MonthlyRebalanceTests.test_market_beta_proxy_reversal_guard_exits_drawdown_cap_after_short_reversal tests.test_monthly_rebalance.MonthlyRebalanceTests.test_market_beta_proxy_reversal_guard_keeps_extreme_cap_despite_recovery_exit`
+  - Failed because the new config field and guard-exit behavior did not exist.
+- GREEN:
+  - Same targeted command: PASS, `3` tests.
+- CLI coverage:
+  - `monthly-backtest`, `monthly-attribution`, and `monthly-validate` help now expose the new option.
+
+Generated reports:
+
+- `data/reports/walk_forward_005_validation_train_proxy_guard_exit_short_minus5_monthly_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_exit_short_minus5_symbol_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_exit_short_minus5_decision_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_exit_short_minus5_recovery_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_exit_short_minus5_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_exit_short_minus5_path_attribution.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_exit_short_minus5_attribution_comparison.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_exit_short_minus5_recovery_exit_diagnostics.csv`
+- `data/reports/walk_forward_005_validation_train_proxy_guard_exit_short_minus5_proxy_guard_outcomes.csv`
+- `data/reports/stress_proxy_guard_exit_short_minus5_monthly_attribution.csv`
+- `data/reports/stress_proxy_guard_exit_short_minus5_symbol_attribution.csv`
+- `data/reports/stress_proxy_guard_exit_short_minus5_decision_attribution.csv`
+- `data/reports/stress_proxy_guard_exit_short_minus5_recovery_attribution.csv`
+- `data/reports/stress_proxy_guard_exit_short_minus5_proxy_decision_diagnostics.csv`
+- `data/reports/stress_proxy_guard_exit_short_minus5_path_attribution.csv`
+- `data/reports/stress_proxy_guard_exit_short_minus5_drawdown_pressure.csv`
+- `data/reports/stress_proxy_guard_exit_short_minus5_proxy_guard_outcomes.csv`
+- `data/reports/walk_forward_002_validation_train_proxy_guard_exit_short_minus5_monthly_attribution.csv`
+- `data/reports/walk_forward_002_validation_train_proxy_guard_exit_short_minus5_symbol_attribution.csv`
+- `data/reports/walk_forward_002_validation_train_proxy_guard_exit_short_minus5_decision_attribution.csv`
+- `data/reports/walk_forward_002_validation_train_proxy_guard_exit_short_minus5_recovery_attribution.csv`
+- `data/reports/walk_forward_002_validation_train_proxy_guard_exit_short_minus5_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_002_validation_train_proxy_guard_exit_short_minus5_path_attribution.csv`
+- `data/reports/monthly_validation_candidate_proxy_guard_exit_short_minus5.csv`
+- `data/reports/monthly_validation_failures_candidate_proxy_guard_exit_short_minus5.csv`
+- `data/reports/monthly_validation_remediation_candidate_proxy_guard_exit_short_minus5.csv`
+- `data/reports/monthly_validation_sweep_plan_candidate_proxy_guard_exit_short_minus5.csv`
+- `data/reports/monthly_deployment_gate_candidate_proxy_guard_exit_short_minus5.csv`
+- `data/reports/monthly_validation_comparison_proxy_guard_exit_short_minus5.csv`
+- `data/reports/monthly_validation_comparison_deltas_proxy_guard_exit_short_minus5.csv`
+- `data/reports/monthly_validation_candidate_decision_proxy_guard_exit_short_minus5.csv`
+
+Key candidate evidence:
+
+- `walk_forward_005` validation-aligned attribution:
+  - total `18.4931%`, buy-hold `14.0817%`, excess `4.4114%`, max DD `-15.2709%`.
+  - `2026-03` stays capped at exposure `0.55`, preserving loss reduction.
+  - `2026-04` changes to `proxy_reversal_guard_recovery_exit`, exposure `0.99`, and return `23.1032%`.
+  - Recovery-exit diagnostic: `recovery_uncapped_after_loss_cap`.
+- `stress_exclude_500pct_winners`:
+  - total `29.4016%`, excess `27.9113%`, max DD `-21.2614%`.
+  - Guarded loss caps remain aligned in `2025-03`, `2026-03`, and `2026-05`.
+- `walk_forward_002` preservation check:
+  - total `15.8455%`, excess `0.8313%`, max DD `-4.4510%`.
+  - `2025-06` profitable continuation remains uncapped.
+
+Full validation result:
+
+- Candidate scenarios: `18`.
+- Candidate failed required: `2`.
+- Candidate deployment gate: `deployable=False`.
+- Failed required:
+  - `regime_sideways`: negative excess `-5.2338`, max DD `-21.7254`.
+  - `walk_forward_003`: `train_window_rejected`, train excess `-0.3002`, test excess `8.7530`.
+- Resolved versus baseline:
+  - `stress_exclude_500pct_winners`
+  - `walk_forward_001`
+  - `walk_forward_005`
+- New failures: none.
+- `monthly-compare-validation`: `IMPROVED`, baseline failed required `5` -> candidate failed required `2`, failed delta `-3`.
+- Candidate decision:
+  - `PAPER_REVIEW`, not adopt/promote because two required blockers remain.
+
+Verification:
+
+- `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `217` tests.
+- `python -m unittest discover -s tests`: PASS, `456` tests.
+- `python -m compileall -q backtester`: PASS.
+- `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+- `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, scalper data stale (`age_hours=336.63` observed).
+
+Next exact task:
+
+- Keep `proxy_guard_exit_short_minus5` as the best current paper-review candidate but do not adopt it.
+- Continue with the two remaining candidate failures:
+  - `regime_sideways`: unchanged negative excess; focus on the earlier unchanged high-exposure loss months `2024-10`, `2024-11`, and `2024-12`, not recovery-exit.
+  - `walk_forward_003`: train window remains rejected; preserve the train gate and return to direct-alpha train ineligibility/stability evidence.
+- Next highest-value loop: design diagnostics or a very narrow candidate for `regime_sideways` early neutral-breadth high-exposure proxy losses, while ensuring no regression in `walk_forward_002`, `walk_forward_004`, and the newly resolved `walk_forward_005`.
+
+## Previous Loop: Proxy Guard Recovery-Exit Diagnostics
 
 Added paper-only proxy guard recovery-exit diagnostics to separate useful guarded loss caps from recovery-month cap drag:
 

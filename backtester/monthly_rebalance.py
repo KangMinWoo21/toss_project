@@ -205,6 +205,7 @@ class MonthlyRebalanceConfig:
     market_beta_proxy_reversal_guard_short_max_return_pct: float = 0.0
     market_beta_proxy_reversal_guard_extreme_return_pct: float = 0.0
     market_beta_proxy_reversal_guard_medium_drawdown_pct: float = 0.0
+    market_beta_proxy_reversal_guard_recovery_exit_short_return_pct: float = 0.0
     event_scores: EventScoreStore | None = None
     event_lookback_days: int = 5
     min_entry_event_score: float = -0.2
@@ -3150,7 +3151,17 @@ def _market_beta_proxy_reversal_guard_diagnostics(
             and medium_drawdown is not None
             and medium_drawdown <= drawdown_trigger
         )
-        if extreme_overheat or short_allows_cap or drawdown_allows_cap:
+        recovery_exit_trigger = config.market_beta_proxy_reversal_guard_recovery_exit_short_return_pct
+        recovery_exit = (
+            not extreme_overheat
+            and drawdown_allows_cap
+            and recovery_exit_trigger < 0
+            and short_return is not None
+            and short_return <= recovery_exit_trigger
+        )
+        if recovery_exit:
+            reason = "proxy_reversal_guard_recovery_exit"
+        elif extreme_overheat or short_allows_cap or drawdown_allows_cap:
             triggered = True
             current_cap = min(current_cap, guard_cap)
             reason = "proxy_reversal_guard_capped"
@@ -9245,18 +9256,29 @@ def market_beta_proxy_reversal_guard_cap(
         and medium_drawdown <= drawdown_trigger
     )
     short_days = int(config.market_beta_proxy_reversal_guard_short_lookback_days)
-    if short_days > 0 and not extreme_overheat and not drawdown_allows_cap:
+    short_return: float | None = None
+    if short_days > 0:
         short_return = _average_symbol_return_pct(
             symbol_candles,
             proxy_symbols,
             signal_date=signal_date,
             lookback_days=short_days,
         )
+    if short_days > 0 and not extreme_overheat and not drawdown_allows_cap:
         if (
             short_return is None
             or short_return > config.market_beta_proxy_reversal_guard_short_max_return_pct
         ):
             return effective_cap, "proxy_exposure_capped"
+    recovery_exit_trigger = config.market_beta_proxy_reversal_guard_recovery_exit_short_return_pct
+    if (
+        not extreme_overheat
+        and drawdown_allows_cap
+        and recovery_exit_trigger < 0
+        and short_return is not None
+        and short_return <= recovery_exit_trigger
+    ):
+        return effective_cap, "proxy_reversal_guard_recovery_exit"
     return min(effective_cap, guard_cap), "proxy_reversal_guard_capped"
 
 

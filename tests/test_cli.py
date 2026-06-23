@@ -601,6 +601,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--market-beta-proxy-reversal-guard-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-medium-lookback-days", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-medium-drawdown-pct", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-recovery-exit-short-return-pct", completed.stdout)
 
     def test_monthly_attribution_help_includes_stress_and_output_options(self):
         completed = subprocess.run(
@@ -628,6 +629,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--market-beta-proxy-reversal-guard-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-medium-lookback-days", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-medium-drawdown-pct", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-recovery-exit-short-return-pct", completed.stdout)
         self.assertIn("--drawdown-guard-deep-trigger-pct", completed.stdout)
         self.assertIn("--drawdown-guard-deep-scale", completed.stdout)
         self.assertIn("--train-start", completed.stdout)
@@ -971,6 +973,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-reversal-guard-medium-lookback-days", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-recovery-exit-short-return-pct", completed.stdout)
         self.assertIn("--direct-alpha-target-persistence-signals", completed.stdout)
 
     def test_monthly_compare_validation_help_includes_delta_output(self):
