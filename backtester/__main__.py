@@ -1317,6 +1317,7 @@ def main() -> int:
     monthly_train_decision_parser.add_argument("--min-rows-per-window", type=int, default=120)
     monthly_train_decision_parser.add_argument("--start-grace-days", type=int, default=14)
     monthly_train_decision_parser.add_argument("--train-stability-years", type=int, default=2)
+    monthly_train_decision_parser.add_argument("--direct-alpha-target-persistence-signals", type=int, default=1)
     monthly_train_decision_parser.add_argument("--fallback-breadth-days", type=int, default=120)
     monthly_train_decision_parser.add_argument("--fallback-breadth-threshold", type=float, default=0.5)
     monthly_train_decision_parser.add_argument("--market-beta-breadth-threshold", type=float, default=0.25)
@@ -1947,6 +1948,7 @@ def main() -> int:
             min_rows_per_window=args.min_rows_per_window,
             start_grace_days=args.start_grace_days,
             train_stability_years=args.train_stability_years,
+            direct_alpha_target_persistence_signals=args.direct_alpha_target_persistence_signals,
             fallback_breadth_days=args.fallback_breadth_days,
             fallback_breadth_threshold=args.fallback_breadth_threshold,
             market_beta_breadth_threshold=args.market_beta_breadth_threshold,

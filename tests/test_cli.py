@@ -983,6 +983,24 @@ class CliTests(unittest.TestCase):
         self.assertIn("--market-beta-proxy-unbuyable-cash-reserve", completed.stdout)
         self.assertIn("--direct-alpha-target-persistence-signals", completed.stdout)
 
+    def test_monthly_train_decision_diagnostics_help_includes_target_persistence_option(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "backtester",
+                "monthly-train-decision-diagnostics",
+                "--help",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--direct-alpha-target-persistence-signals", completed.stdout)
+
     def test_monthly_compare_validation_help_includes_delta_output(self):
         completed = subprocess.run(
             [

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 walk-forward 003 train diagnostics loop
+Last updated: 2026-06-24 train target-persistence diagnostics loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,51 +40,51 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `a8425d7 Add proxy cash reserve research switch`.
+  `3b9244e Clarify empty train diagnostics`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `464` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `465` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=338.47` observed).
+  (`age_hours=338.59` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Improved `walk_forward_003` train decision diagnostics and regenerated focused
-reports for the current best candidate.
+Added target-persistence control to paper-only train diagnostics and tested the
+`walk_forward_003` path-drift recommendation.
 
 Changed behavior:
 
-- Decision-path diagnostics now classify empty train slices as
-  `no_train_symbols` instead of surfacing internal
-  `decision_error:symbol_candles cannot be empty`.
-- No strategy, validation gate, order, or live behavior changed.
+- `monthly-train-decision-diagnostics` now accepts
+  `--direct-alpha-target-persistence-signals`.
+- This only affects diagnostic/report runs; no strategy default, validation
+  gate, order, or live behavior changed.
 
 TDD:
 
-- RED: new train decision-path test failed because early rows did not expose
-  `train_symbols=0`/`no_train_symbols`.
-- GREEN: targeted train diagnostics tests PASS, `3` tests; monthly module
-  PASS, `179` tests.
+- RED: train-diagnostics help/CLI tests failed because the option was missing
+  and unrecognized.
+- GREEN: targeted CLI tests PASS, `2` tests; CLI module PASS, `47` tests.
 
 Focused `walk_forward_003` evidence for `proxy_guard_exit_short_minus5`:
 
-- Regenerated:
-  `data/reports/walk_forward_003_train_decision_proxy_guard_exit_short_minus5.csv`
-  and related stability/path-drift reports.
+- Baseline persistence `1`: avg stability excess `-31.7252%`, worst
+  `-53.3186%`, negative windows `6/6`; drivers include path drift `3`.
+- Persistence `2`: avg `-25.1776%`, worst `-38.1485%`, negative windows
+  still `6/6`; drivers shift to `no_trades=6`, path drift `1`.
+- Persistence `3`: avg `-25.1776%`, worst `-38.1485%`, negative windows
+  still `6/6`; drivers `benchmark_positive_selection_nonpositive=6`,
+  `no_trades=6`; no symbol/path-drift rows.
+- Decision: do not promote stricter target persistence as-is. It suppresses
+  path drift but does not make the train window eligible.
+
+Prior `walk_forward_003` diagnostic context to preserve:
+
 - Train decision rows: `13`; `no_train_symbols=7`,
   `no_eligible_direct_candidate=6`.
-- Stability summary: selected balanced candidate has `0/6` eligible decisions,
-  `6/6` negative counted windows, avg stability excess `-31.7252%`, worst
-  `-53.3186%`.
-- Drivers: `benchmark_positive_selection_nonpositive=3`,
-  `holding_path_differs_from_selection_snapshot=3`, `no_trades=3`.
-- Path-drift experiment recommends `test_stricter_target_persistence` for
-  three paper-only rows, with path drift deltas `-45.3043`, `-22.0023`, and
-  `-12.5508`.
-- Do not loosen train gates: the rejection is evidence-backed.
+- The train rejection is evidence-backed; do not loosen gates.
 
 Prior buyability context to preserve:
 
@@ -170,10 +170,10 @@ Pick one narrow loop:
   `2024-11`, `2024-12`, and `2025-01`. Both buyability variants worsened
   path behavior, so avoid further proxy buyability reweighting/cash-reserve
   variants unless new evidence isolates a different mechanism.
-- `walk_forward_003`: continue from the new stability summary; inspect the
-  target-persistence/path-drift mechanism before changing gates. Existing
-  `target_persistence_2` was not promoted, so any stricter-persistence test
-  must be narrow and paper-only.
+- `walk_forward_003`: target-persistence `2`/`3` reduced path-drift evidence
+  but still left `6/6` negative train windows. Next inspect whether no-trade
+  windows are appropriate risk-off behavior or a separate opportunity cost
+  problem before changing gates.
 
 For code changes, use test-first work and finish with focused tests, full
 `unittest`, `compileall`, production-check, health-check, checkpoint update,
