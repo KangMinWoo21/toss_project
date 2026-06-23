@@ -694,6 +694,7 @@ def main() -> int:
     monthly_plan_parser.add_argument("--daily-drawdown-stop-pct", type=float, default=0.0)
     monthly_plan_parser.add_argument("--daily-drawdown-cooldown-days", type=int, default=20)
     monthly_plan_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
+    monthly_plan_parser.add_argument("--position-trailing-stop-reason-contains", default="")
     monthly_plan_parser.add_argument("--weak-breadth-min-train-avg-excess-pct", type=float, default=10.0)
     monthly_plan_parser.add_argument("--cash-buffer-weight", type=float, default=0.01)
     monthly_plan_parser.add_argument("--max-position-weight", type=float, default=0.15)
@@ -785,6 +786,7 @@ def main() -> int:
     monthly_backtest_parser.add_argument("--daily-drawdown-stop-pct", type=float, default=0.0)
     monthly_backtest_parser.add_argument("--daily-drawdown-cooldown-days", type=int, default=20)
     monthly_backtest_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
+    monthly_backtest_parser.add_argument("--position-trailing-stop-reason-contains", default="")
     monthly_backtest_parser.add_argument("--weak-breadth-min-train-avg-excess-pct", type=float, default=10.0)
     monthly_backtest_parser.add_argument("--cash-buffer-weight", type=float, default=0.01)
     monthly_backtest_parser.add_argument("--max-position-weight", type=float, default=0.15)
@@ -863,6 +865,7 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--drawdown-guard-deep-trigger-pct", type=float, default=0.0)
     monthly_attribution_parser.add_argument("--drawdown-guard-deep-scale", type=float, default=0.5)
     monthly_attribution_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
+    monthly_attribution_parser.add_argument("--position-trailing-stop-reason-contains", default="")
     monthly_attribution_parser.add_argument("--point-in-time-min-history-days", type=int, default=252)
     monthly_attribution_parser.add_argument("--point-in-time-universe", default=None, help="CSV with date,symbol snapshots")
     monthly_attribution_parser.add_argument("--exclude-symbols", default=None, help="CSV or text file of symbols to exclude")
@@ -1022,6 +1025,7 @@ def main() -> int:
     monthly_validate_parser.add_argument("--daily-drawdown-stop-pct", type=float, default=0.0)
     monthly_validate_parser.add_argument("--daily-drawdown-cooldown-days", type=int, default=20)
     monthly_validate_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
+    monthly_validate_parser.add_argument("--position-trailing-stop-reason-contains", default="")
     monthly_validate_parser.add_argument("--weak-breadth-min-train-avg-excess-pct", type=float, default=10.0)
     monthly_validate_parser.add_argument("--cash-buffer-weight", type=float, default=0.01)
     monthly_validate_parser.add_argument("--max-position-weight", type=float, default=0.15)
@@ -2829,6 +2833,7 @@ def main() -> int:
                 daily_drawdown_stop_pct=args.daily_drawdown_stop_pct,
                 daily_drawdown_cooldown_days=args.daily_drawdown_cooldown_days,
                 position_trailing_stop_pct=args.position_trailing_stop_pct,
+                position_trailing_stop_reason_contains=args.position_trailing_stop_reason_contains,
                 weak_breadth_min_train_avg_excess_pct=args.weak_breadth_min_train_avg_excess_pct,
                 cash_buffer_weight=args.cash_buffer_weight,
                 max_position_weight=args.max_position_weight,
@@ -3046,6 +3051,7 @@ def main() -> int:
                 daily_drawdown_stop_pct=args.daily_drawdown_stop_pct,
                 daily_drawdown_cooldown_days=args.daily_drawdown_cooldown_days,
                 position_trailing_stop_pct=args.position_trailing_stop_pct,
+                position_trailing_stop_reason_contains=args.position_trailing_stop_reason_contains,
                 weak_breadth_min_train_avg_excess_pct=args.weak_breadth_min_train_avg_excess_pct,
                 cash_buffer_weight=args.cash_buffer_weight,
                 max_position_weight=args.max_position_weight,
@@ -3169,6 +3175,7 @@ def main() -> int:
             drawdown_guard_deep_trigger_pct=args.drawdown_guard_deep_trigger_pct,
             drawdown_guard_deep_scale=args.drawdown_guard_deep_scale,
             position_trailing_stop_pct=args.position_trailing_stop_pct,
+            position_trailing_stop_reason_contains=args.position_trailing_stop_reason_contains,
             point_in_time_min_history_days=args.point_in_time_min_history_days,
             point_in_time_universe=point_in_time_universe,
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
@@ -3358,6 +3365,7 @@ def main() -> int:
             daily_drawdown_stop_pct=args.daily_drawdown_stop_pct,
             daily_drawdown_cooldown_days=args.daily_drawdown_cooldown_days,
             position_trailing_stop_pct=args.position_trailing_stop_pct,
+            position_trailing_stop_reason_contains=args.position_trailing_stop_reason_contains,
             weak_breadth_min_train_avg_excess_pct=args.weak_breadth_min_train_avg_excess_pct,
             cash_buffer_weight=args.cash_buffer_weight,
             max_position_weight=args.max_position_weight,

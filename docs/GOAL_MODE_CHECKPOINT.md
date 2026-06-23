@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 position loss control holding-window fix
+Last updated: 2026-06-24 guarded stop filter rejection loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,55 +40,58 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `43961b2 Add position loss control diagnostics`.
+  `d462d06 Respect holding windows in loss control diagnostics`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `481` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `482` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=342.40` observed).
+  (`age_hours=342.86` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Corrected the report-only position loss-control diagnostic for the remaining
-`regime_sideways` blocker under `proxy_guard_exit_short_minus5_neutral_loss_guard55`.
+Added and rejected a narrow guarded-loss position stop candidate for the
+remaining `regime_sideways` blocker under
+`proxy_guard_exit_short_minus5_neutral_loss_guard55`.
 
 Changed behavior:
 
-- Guarded-loss pressure rows now include selected/month-exit/carryover holding
-  windows for loss symbols.
-- `monthly-position-loss-controls` now respects those explicit holding windows
-  instead of analyzing prices after a symbol was already exited.
-- This remains diagnostic/report-only. No strategy default, validation gate, order,
-  live behavior, Toss API, or baseline behavior changed.
+- New opt-in config/CLI field:
+  `position_trailing_stop_reason_contains`.
+- When `position_trailing_stop_pct < 0` and this filter is set, the stop applies
+  only to positions entered by decisions whose reason contains the marker.
+- Empty default preserves the existing broad stop behavior. No live default,
+  order execution, Toss API, or baseline behavior changed.
+- Sweep plans can now describe `guarded_loss_position_stop_12` explicitly.
 
 TDD:
 
-- RED: pressure rows lacked `carryover_exit_loss_windows`; carryover diagnostics
-  incorrectly used post-exit prices (`-12.5%` max adverse instead of `-1%`).
-- GREEN: targeted holding-window tests PASS, monthly module PASS (`191`
-  tests), CLI module PASS (`51` tests).
-- Final verification: full `unittest` PASS (`481` tests), compile PASS,
+- RED: `MonthlyRebalanceConfig` rejected
+  `position_trailing_stop_reason_contains`; scoped stop behavior was missing.
+- GREEN: targeted scoped-stop tests PASS, monthly module PASS (`192` tests),
+  CLI module PASS (`51` tests).
+- Final verification: full `unittest` PASS (`482` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Regenerated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_guarded_loss_pressure.csv`.
-- Regenerated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_position_loss_controls.csv`
-  with `--loss-threshold-pct 12`.
-- Rows: `8` pressure symbols; triggered before worst drawdown: `6`.
-- Triggered symbols: `064350` (`-29.5968%`, `2024-11-26`), `010120`
-  (`-22.7664%`, `2025-03-21`), `329180` (`-12.8411%`,
-  `2025-03-28`), `005380` (`-20.6036%`, `2024-10-31`), `079550`
-  (`-18.9329%`, `2025-03-25`), `011790` (`-13.7974%`,
-  `2025-03-04` carryover exit date).
-- Not triggered at 12%: `007660`, `098460`.
-- Prior post-exit interpretation was invalid. Next focus remains a narrow
-  paper-only position-control candidate for guarded-loss pressure contexts; do
-  not reuse broad `position_stop_12`.
+- Reproduced best-candidate `regime_sideways` metrics exactly:
+  total `-6.12%`, excess `-4.05%`, max DD `-21.79%`, trades `70`.
+- Added `--position-trailing-stop-pct -12
+  --position-trailing-stop-reason-contains proxy_neutral_loss_guard_capped`.
+- Result worsened: total `-6.70%`, excess `-4.64%`, max DD `-21.87%`,
+  trades `84`.
+- Decision: reject `guarded_loss_position_stop_12` as-is; do not promote.
+- Operational repair: a single-scenario `monthly-backtest` temporarily
+  overwrote default gate/concentration reports. Canonical
+  `monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end
+  2026-06-18` was rerun and restored default reports.
+- Prior holding-window diagnostic remains valid: `8` pressure symbols, `6`
+  trigger at 12% within actual holding windows; previous post-exit
+  interpretation was invalid.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -148,9 +151,10 @@ validated paper-review candidate.
 
 Result:
 
-- Baseline required failures: `5`.
-- Candidate required failures: `1`.
-- Failed delta: `-4`.
+- Existing full candidate report has candidate required failures: `1`.
+- Historical comparison was baseline `5` -> candidate `1`; current canonical
+  baseline rerun now has `4` required failures, so rerun candidate comparison
+  before relying on the old failed-delta value.
 - Decision: `PAPER_REVIEW`, not adopt/promote.
 
 Why useful:
@@ -172,7 +176,8 @@ Why still blocked:
 - `proxy_guard_exit_short_minus5_neutral_breadth_cap75`: diagnostic-only;
   reduced failures to `1` but worsened `regime_sideways`; path summary shows
   `107/126` equity-regression days versus `proxy_guard_exit_short_minus5`.
-- `position_stop_12`, `weak_cash_10_position_stop_12`,
+- `guarded_loss_position_stop_12`, `position_stop_12`,
+  `weak_cash_10_position_stop_12`,
   `weak_defense_cash_10`: unresolved blockers/regressions.
 - `neutral_breadth_proxy_cap_75`, `target_persistence_2`: held/unchanged.
 - `proxy_reversal_guard_55_extreme60`, `proxy_guard_short5_extreme50_mdd10`:
@@ -188,11 +193,10 @@ Why still blocked:
 
 Production baseline required failures:
 
-- `stress_exclude_500pct_winners`: max DD about `-28.0835%`.
-- `regime_sideways`: excess about `-7.1648%`.
-- `walk_forward_001`: excess about `-0.7420%`.
+- `regime_sideways`: excess about `-7.1648%`, max DD about `-23.9059%`.
+- `walk_forward_001`: excess about `-0.7420%`, max DD about `-25.1309%`.
 - `walk_forward_003`: train rejected; train excess about `-1.3447%`.
-- `walk_forward_005`: excess about `-5.5812%`.
+- `walk_forward_005`: excess about `-5.2167%`, max DD about `-20.2645%`.
 
 Best candidate remaining failure:
 

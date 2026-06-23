@@ -596,6 +596,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--drawdown-guard-deep-trigger-pct", completed.stdout)
         self.assertIn("--drawdown-guard-deep-scale", completed.stdout)
         self.assertIn("--position-trailing-stop-pct", completed.stdout)
+        self.assertIn("--position-trailing-stop-reason-contains", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-neutral-loss-guard-max-exposure", completed.stdout)

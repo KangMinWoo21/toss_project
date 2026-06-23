@@ -177,6 +177,7 @@ class MonthlyRebalanceConfig:
     daily_drawdown_stop_pct: float = 0.0
     daily_drawdown_cooldown_days: int = 20
     position_trailing_stop_pct: float = 0.0
+    position_trailing_stop_reason_contains: str = ""
     weak_breadth_min_train_avg_excess_pct: float = 10.0
     cash_buffer_weight: float = 0.01
     max_position_weight: float = 0.15
@@ -328,6 +329,7 @@ VALIDATION_SWEEP_PLAN_COLUMNS = [
     "drawdown_guard_deep_scale",
     "market_volatility_min_scale",
     "position_trailing_stop_pct",
+    "position_trailing_stop_reason_contains",
     "expected_effect",
     "risk_note",
 ]
@@ -8239,6 +8241,18 @@ def build_monthly_validation_sweep_plan(
                     position_trailing_stop_pct=-12.0,
                     expected_effect="Test a next-open per-position trailing stop to cap single-name drawdowns without selling at same-day closes.",
                 ),
+                _sweep_plan_row(
+                    drawdown_row,
+                    experiment_id="guarded_loss_position_stop_12",
+                    target_scenarios=target_scenarios,
+                    base_config=base_config,
+                    position_trailing_stop_pct=-12.0,
+                    position_trailing_stop_reason_contains="proxy_neutral_loss_guard_capped",
+                    expected_effect=(
+                        "Scope the next-open per-position stop to neutral loss-guard proxy "
+                        "decisions so broad recovery-month proxy exposure is not stopped."
+                    ),
+                ),
             ]
         )
 
@@ -9495,6 +9509,7 @@ def _sweep_plan_row(
     drawdown_guard_deep_scale: float | None = None,
     market_volatility_min_scale: float | None = None,
     position_trailing_stop_pct: float | None = None,
+    position_trailing_stop_reason_contains: str | None = None,
     expected_effect: str,
     risk_note: str = "Plan only; run monthly validation before adopting any parameter change.",
 ) -> dict[str, Any]:
@@ -9531,6 +9546,12 @@ def _sweep_plan_row(
         "position_trailing_stop_pct": _sweep_value(
             position_trailing_stop_pct,
             base_config.position_trailing_stop_pct,
+        ),
+        "position_trailing_stop_reason_contains": (
+            ""
+            if position_trailing_stop_reason_contains is None
+            or position_trailing_stop_reason_contains == base_config.position_trailing_stop_reason_contains
+            else position_trailing_stop_reason_contains
         ),
         "expected_effect": expected_effect,
         "risk_note": risk_note,
@@ -9607,6 +9628,9 @@ def _apply_sweep_plan_config(
             updates[field_name] = converter(float(raw_value)) if converter is int else converter(raw_value)
         except ValueError:
             continue
+    reason_filter = str(plan_row.get("position_trailing_stop_reason_contains", "")).strip()
+    if reason_filter:
+        updates["position_trailing_stop_reason_contains"] = reason_filter
     return replace(base_config, **updates) if updates else base_config
 
 
@@ -9624,6 +9648,7 @@ def _sweep_config_changes(plan_row: dict[str, Any]) -> str:
         "drawdown_guard_deep_scale",
         "market_volatility_min_scale",
         "position_trailing_stop_pct",
+        "position_trailing_stop_reason_contains",
     ):
         value = str(plan_row.get(field_name, "")).strip()
         if value:
@@ -9665,6 +9690,7 @@ _SWEEP_CONFIG_CLI_FLAGS = {
     "drawdown_guard_deep_scale": "--drawdown-guard-deep-scale",
     "market_volatility_min_scale": "--market-volatility-min-scale",
     "position_trailing_stop_pct": "--position-trailing-stop-pct",
+    "position_trailing_stop_reason_contains": "--position-trailing-stop-reason-contains",
 }
 
 
@@ -10821,6 +10847,14 @@ def _has_nonpositive_price(candle: Candle) -> bool:
     return candle.open <= 0 or candle.high <= 0 or candle.low <= 0 or candle.close <= 0
 
 
+def _position_trailing_stop_decision_matches(
+    decision: MonthlyDecision,
+    config: MonthlyRebalanceConfig,
+) -> bool:
+    reason_filter = config.position_trailing_stop_reason_contains.strip()
+    return not reason_filter or reason_filter in decision.reason
+
+
 def run_monthly_rebalance_backtest(
     symbol_candles: dict[str, list[Candle]],
     *,
@@ -10868,6 +10902,7 @@ def run_monthly_rebalance_backtest(
     drawdown_stop_cooldown_remaining = 0
     position_peak_prices: dict[str, float] = {}
     position_stop_pending: set[str] = set()
+    position_stop_eligible_symbols: set[str] = set()
 
     for current_date in dates:
         day_candles = {
@@ -10891,6 +10926,7 @@ def run_monthly_rebalance_backtest(
             position_stop_pending.difference_update(stopped_symbols)
             for symbol in stopped_symbols:
                 position_peak_prices.pop(symbol, None)
+                position_stop_eligible_symbols.discard(symbol)
 
         if drawdown_stop_pending:
             cash, stop_trades = _execute_full_liquidation(
@@ -10981,6 +11017,17 @@ def run_monthly_rebalance_backtest(
                 )
                 decisions.append(decision)
                 trades.extend(executed)
+                if cfg.position_trailing_stop_pct < 0:
+                    target_symbols = set(decision.target_weights)
+                    if _position_trailing_stop_decision_matches(decision, cfg):
+                        position_stop_eligible_symbols.update(
+                            symbol for symbol in target_symbols if positions.get(symbol, 0) > 0
+                        )
+                    elif cfg.position_trailing_stop_reason_contains.strip():
+                        position_stop_eligible_symbols.difference_update(target_symbols)
+                    position_stop_eligible_symbols = {
+                        symbol for symbol in position_stop_eligible_symbols if positions.get(symbol, 0) > 0
+                    }
 
         for symbol, candle in day_candles.items():
             if candle.close > 0:
@@ -10993,6 +11040,11 @@ def run_monthly_rebalance_backtest(
         if cfg.position_trailing_stop_pct < 0:
             for symbol, quantity in positions.items():
                 if quantity <= 0:
+                    continue
+                if (
+                    cfg.position_trailing_stop_reason_contains.strip()
+                    and symbol not in position_stop_eligible_symbols
+                ):
                     continue
                 candle = day_candles.get(symbol)
                 close_price = candle.close if candle and candle.close > 0 else last_prices.get(symbol, 0.0)

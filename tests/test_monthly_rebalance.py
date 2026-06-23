@@ -287,6 +287,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(MonthlyRebalanceConfig().drawdown_guard_deep_scale, 0.5)
         self.assertEqual(MonthlyRebalanceConfig().daily_drawdown_stop_pct, 0.0)
         self.assertEqual(MonthlyRebalanceConfig().cash_buffer_weight, 0.01)
+        self.assertEqual(MonthlyRebalanceConfig().position_trailing_stop_reason_contains, "")
         self.assertEqual(MonthlyRebalanceConfig().max_position_weight, 0.15)
         self.assertEqual(MonthlyRebalanceConfig().point_in_time_liquidity_top_n, 100)
         self.assertEqual(MonthlyRebalanceConfig().liquidity_risk_reference_top_n, 100)
@@ -1346,6 +1347,13 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(by_id["drawdown_cash_buffer_05"]["max_position_weight"], "0.1")
         self.assertIn("position_stop_12", by_id)
         self.assertEqual(by_id["position_stop_12"]["position_trailing_stop_pct"], "-12")
+        self.assertIn("guarded_loss_position_stop_12", by_id)
+        guarded_stop = by_id["guarded_loss_position_stop_12"]
+        self.assertEqual(guarded_stop["position_trailing_stop_pct"], "-12")
+        self.assertEqual(
+            guarded_stop["position_trailing_stop_reason_contains"],
+            "proxy_neutral_loss_guard_capped",
+        )
         self.assertIn("weak_cash_10_position_stop_12", by_id)
         combo = by_id["weak_cash_10_position_stop_12"]
         self.assertEqual(combo["cash_buffer_weight"], "0.1")
@@ -6490,6 +6498,50 @@ class MonthlyRebalanceTests(unittest.TestCase):
             ("2024-02-05", "SELL", "position_trailing_stop"),
         ])
         self.assertAlmostEqual(result.final_equity, 800)
+
+    def test_position_trailing_stop_reason_filter_limits_eligible_positions(self):
+        def run_with_reason(reason: str):
+            def decision_provider(symbol_candles, *, as_of_date, config):
+                latest_seen = max(candle.date for candles in symbol_candles.values() for candle in candles)
+                return MonthlyDecision(
+                    as_of_date=as_of_date,
+                    signal_date=latest_seen,
+                    mode="market_beta_proxy",
+                    selected_preset="unit",
+                    target_weights={"111111": 1.0},
+                    reason=reason,
+                )
+
+            return run_monthly_rebalance_backtest(
+                {
+                    "111111": [
+                        _candle("2024-01-31", 100, 100),
+                        _candle("2024-02-01", 100, 100),
+                        _candle("2024-02-02", 85, 85),
+                        _candle("2024-02-05", 80, 80),
+                    ]
+                },
+                start="2024-02-01",
+                end="2024-02-05",
+                initial_cash=1_000,
+                fee_rate=0.0,
+                tax_rate=0.0,
+                slippage_rate=0.0,
+                min_trade_value=0.0,
+                config=MonthlyRebalanceConfig(
+                    position_trailing_stop_pct=-10.0,
+                    position_trailing_stop_reason_contains="proxy_neutral_loss_guard_capped",
+                ),
+                decision_provider=decision_provider,
+            )
+
+        unguarded = run_with_reason("no_train_candidate_strong_breadth_proxy")
+        guarded = run_with_reason(
+            "no_train_candidate_neutral_breadth_proxy_proxy_neutral_loss_guard_capped"
+        )
+
+        self.assertNotIn("position_trailing_stop", [trade.reason for trade in unguarded.trades])
+        self.assertIn("position_trailing_stop", [trade.reason for trade in guarded.trades])
 
     def test_deep_drawdown_guard_uses_stronger_scale_on_monthly_rebalance(self):
         def decision_provider(symbol_candles, *, as_of_date, config):
