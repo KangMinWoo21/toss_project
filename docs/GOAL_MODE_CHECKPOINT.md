@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 position loss control diagnostic loop
+Last updated: 2026-06-24 position loss control holding-window fix
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,51 +40,55 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `b4f3ac5 Add guarded loss pressure report`.
+  `43961b2 Add position loss control diagnostics`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `480` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `481` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=339.83` observed).
+  (`age_hours=342.40` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only position loss-control diagnostic for the remaining
+Corrected the report-only position loss-control diagnostic for the remaining
 `regime_sideways` blocker under `proxy_guard_exit_short_minus5_neutral_loss_guard55`.
 
 Changed behavior:
 
-- New `monthly-position-loss-controls` command reads guarded-loss pressure CSV
-  and OHLCV data, then reports whether each pressure symbol would have hit a
-  paper-only per-position loss threshold before the worst drawdown date.
-- This is diagnostic/report-only. No strategy default, validation gate, order,
+- Guarded-loss pressure rows now include selected/month-exit/carryover holding
+  windows for loss symbols.
+- `monthly-position-loss-controls` now respects those explicit holding windows
+  instead of analyzing prices after a symbol was already exited.
+- This remains diagnostic/report-only. No strategy default, validation gate, order,
   live behavior, Toss API, or baseline behavior changed.
 
 TDD:
 
-- RED: new position loss-control analyzer/saver imports failed and CLI command
-  was unknown.
-- GREEN: targeted position loss-control tests PASS, monthly module PASS (`190`
+- RED: pressure rows lacked `carryover_exit_loss_windows`; carryover diagnostics
+  incorrectly used post-exit prices (`-12.5%` max adverse instead of `-1%`).
+- GREEN: targeted holding-window tests PASS, monthly module PASS (`191`
   tests), CLI module PASS (`51` tests).
-- Final verification: full `unittest` PASS (`480` tests), compile PASS,
+- Final verification: full `unittest` PASS (`481` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Generated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_position_loss_controls.csv`
+- Regenerated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_guarded_loss_pressure.csv`.
+- Regenerated `regime_sideways_proxy_guard_exit_short_minus5_neutral_loss_guard55_position_loss_controls.csv`
   with `--loss-threshold-pct 12`.
-- Rows: `8` pressure symbols; triggered before worst drawdown: `5`.
-- Triggered symbols: `010120` (`-30.8982%`, `2025-03-07`), `329180`
-  (`-13.6725%`, `2025-03-27`), `079550` (`-18.9329%`,
-  `2025-03-25`), `011790` (`-19.2526%`, `2025-03-28`), `098460`
-  (`-18.8702%`, `2025-03-25`).
-- Not triggered at 12%: `007660`, `064350`, `005380`.
-- Next focus: test a narrow paper-only position-control candidate only for
-  guarded-loss pressure contexts; do not reuse broad `position_stop_12`.
+- Rows: `8` pressure symbols; triggered before worst drawdown: `6`.
+- Triggered symbols: `064350` (`-29.5968%`, `2024-11-26`), `010120`
+  (`-22.7664%`, `2025-03-21`), `329180` (`-12.8411%`,
+  `2025-03-28`), `005380` (`-20.6036%`, `2024-10-31`), `079550`
+  (`-18.9329%`, `2025-03-25`), `011790` (`-13.7974%`,
+  `2025-03-04` carryover exit date).
+- Not triggered at 12%: `007660`, `098460`.
+- Prior post-exit interpretation was invalid. Next focus remains a narrow
+  paper-only position-control candidate for guarded-loss pressure contexts; do
+  not reuse broad `position_stop_12`.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:

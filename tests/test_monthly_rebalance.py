@@ -2560,6 +2560,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(row["month_exit_loss_symbols"], "CCC:-150;AAA:-100")
         self.assertEqual(row["month_exit_loss_realized_pnl"], "-250")
         self.assertEqual(row["carryover_exit_loss_symbols"], "CCC:-150")
+        self.assertEqual(row["carryover_exit_loss_windows"], "CCC:2025-02-03..2025-03-04")
         self.assertEqual(row["worst_drawdown_date"], "2025-03-17")
         self.assertEqual(row["worst_drawdown_pct"], "-17.5")
         self.assertEqual(row["average_month_path_exposure"], "0.54")
@@ -2628,6 +2629,36 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(by_symbol["CCC"]["stop_trigger_date"], "2025-03-12")
         self.assertEqual(by_symbol["CCC"]["loss_realized_pnl"], "-150")
         self.assertEqual(by_symbol["CCC"]["paper_only"], "true")
+
+    def test_analyze_monthly_position_loss_control_diagnostics_respects_carryover_exit_window(self):
+        rows = analyze_monthly_position_loss_control_diagnostics(
+            pressure_rows=[
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-03",
+                    "as_of_date": "2025-03-04",
+                    "worst_drawdown_date": "2025-03-17",
+                    "carryover_exit_loss_symbols": "CCC:-150",
+                    "carryover_exit_loss_windows": "CCC:2025-03-04..2025-03-04",
+                }
+            ],
+            symbol_candles={
+                "CCC": [
+                    Candle("2025-03-04", 200, 202, 198, 200, 1_000),
+                    Candle("2025-03-12", 184, 186, 175, 180, 1_000),
+                ],
+            },
+            loss_threshold_pct=10.0,
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["symbol"], "CCC")
+        self.assertEqual(row["entry_date"], "2025-03-04")
+        self.assertEqual(row["max_adverse_return_pct"], "-1")
+        self.assertEqual(row["would_trigger"], "false")
+        self.assertEqual(row["stop_trigger_date"], "")
+        self.assertIn("explicit_holding_window", row["diagnostic"])
 
     def test_save_monthly_position_loss_control_diagnostics_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

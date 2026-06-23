@@ -1118,11 +1118,14 @@ MONTHLY_GUARDED_LOSS_POSITION_PRESSURE_COLUMNS = [
     "selected_symbol_count",
     "selected_loss_symbol_count",
     "selected_loss_symbols",
+    "selected_loss_windows",
     "selected_loss_realized_pnl",
     "month_exit_loss_symbol_count",
     "month_exit_loss_symbols",
+    "month_exit_loss_windows",
     "month_exit_loss_realized_pnl",
     "carryover_exit_loss_symbols",
+    "carryover_exit_loss_windows",
     "worst_drawdown_date",
     "worst_drawdown_pct",
     "average_month_path_exposure",
@@ -3832,15 +3835,18 @@ def analyze_monthly_guarded_loss_position_pressure(
                 "selected_symbol_count": str(len(selected_symbols)),
                 "selected_loss_symbol_count": str(len(selected_loss_candidates)),
                 "selected_loss_symbols": _format_loss_symbol_list(selected_loss_rows),
+                "selected_loss_windows": _format_loss_symbol_windows(selected_loss_rows),
                 "selected_loss_realized_pnl": _format_optional_float(
                     _sum_numeric(row.get("realized_pnl") for row in selected_loss_rows)
                 ),
                 "month_exit_loss_symbol_count": str(len(month_exit_loss_candidates)),
                 "month_exit_loss_symbols": _format_loss_symbol_list(month_exit_loss_rows),
+                "month_exit_loss_windows": _format_loss_symbol_windows(month_exit_loss_rows),
                 "month_exit_loss_realized_pnl": _format_optional_float(
                     _sum_numeric(row.get("realized_pnl") for row in month_exit_loss_rows)
                 ),
                 "carryover_exit_loss_symbols": _format_loss_symbol_list(carryover_exit_rows),
+                "carryover_exit_loss_windows": _format_loss_symbol_windows(carryover_exit_rows),
                 "worst_drawdown_date": worst_path.get("date", ""),
                 "worst_drawdown_pct": _format_optional_float(_float_or_none(worst_path.get("drawdown_pct"))),
                 "average_month_path_exposure": _format_optional_float(
@@ -3868,6 +3874,8 @@ def analyze_monthly_position_loss_control_diagnostics(
     for pressure in pressure_rows:
         selected_losses = _parse_symbol_loss_values(str(pressure.get("selected_loss_symbols", "")))
         carryover_losses = _parse_symbol_loss_values(str(pressure.get("carryover_exit_loss_symbols", "")))
+        selected_windows = _parse_symbol_windows(str(pressure.get("selected_loss_windows", "")))
+        carryover_windows = _parse_symbol_windows(str(pressure.get("carryover_exit_loss_windows", "")))
         symbols = list(selected_losses)
         symbols.extend(symbol for symbol in carryover_losses if symbol not in selected_losses)
         for symbol in symbols:
@@ -3880,6 +3888,7 @@ def analyze_monthly_position_loss_control_diagnostics(
             else:
                 pressure_source = "carryover_exit_loss"
             loss_value = selected_losses.get(symbol) if selected else carryover_losses.get(symbol)
+            window = selected_windows.get(symbol) if selected else carryover_windows.get(symbol)
             rows.append(
                 _position_loss_control_row(
                     pressure,
@@ -3888,6 +3897,7 @@ def analyze_monthly_position_loss_control_diagnostics(
                     loss_realized_pnl=loss_value,
                     candles=symbol_candles.get(symbol, []),
                     loss_threshold_pct=loss_threshold_pct,
+                    holding_window=window,
                 )
             )
     return rows
@@ -3903,6 +3913,28 @@ def _parse_symbol_loss_values(value: str) -> dict[str, float | None]:
     return parsed
 
 
+def _format_loss_symbol_windows(rows: list[dict[str, Any]]) -> str:
+    parts = []
+    for row in rows:
+        symbol = str(row.get("symbol", "")).strip()
+        first_trade_date = str(row.get("first_trade_date", "")).strip()
+        last_trade_date = str(row.get("last_trade_date", "")).strip()
+        if symbol and (first_trade_date or last_trade_date):
+            parts.append(f"{symbol}:{first_trade_date}..{last_trade_date}")
+    return ";".join(parts)
+
+
+def _parse_symbol_windows(value: str) -> dict[str, tuple[str, str]]:
+    windows: dict[str, tuple[str, str]] = {}
+    for part in _split_semicolon_values(value):
+        symbol, _, raw_window = part.partition(":")
+        start, _, end = raw_window.partition("..")
+        symbol = symbol.strip()
+        if symbol:
+            windows[symbol] = (start.strip(), end.strip())
+    return windows
+
+
 def _position_loss_control_row(
     pressure: dict[str, Any],
     *,
@@ -3911,18 +3943,25 @@ def _position_loss_control_row(
     loss_realized_pnl: float | None,
     candles: list[Candle],
     loss_threshold_pct: float,
+    holding_window: tuple[str, str] | None = None,
 ) -> dict[str, str]:
     month = str(pressure.get("month", "")).strip()
-    as_of_date = str(pressure.get("as_of_date", "")).strip()
+    pressure_as_of_date = str(pressure.get("as_of_date", "")).strip()
     worst_drawdown_date = str(pressure.get("worst_drawdown_date", "")).strip()
+    window_start, window_end = holding_window or ("", "")
+    as_of_date = window_start or pressure_as_of_date
+    end_date = window_end or worst_drawdown_date
+    explicit_window = bool(window_start or window_end)
     window = [
         candle
         for candle in sorted(candles, key=lambda candle: candle.date)
         if (not as_of_date or candle.date >= as_of_date)
-        and (not worst_drawdown_date or candle.date <= worst_drawdown_date)
-        and (not month or candle.date.startswith(month))
+        and (not end_date or candle.date <= end_date)
+        and (explicit_window or not month or candle.date.startswith(month))
     ]
     diagnostics: list[str] = []
+    if explicit_window:
+        diagnostics.append("explicit_holding_window")
     if not window:
         diagnostics.append("missing_price_window")
         return {
