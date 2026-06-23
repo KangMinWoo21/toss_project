@@ -2405,6 +2405,207 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(rows[0]["recommended_next_action"], "test_conditional_proxy_entry_guard")
         self.assertEqual(rows[1]["recommended_next_action"], "preserve_scaled_recovery_participation")
 
+    def test_analyze_monthly_proxy_decision_diagnostics_includes_reversal_guard_evidence(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000,
+            final_equity=980,
+            total_return_pct=-2.0,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=-2.0,
+            max_drawdown_pct=-2.0,
+            trade_count=0,
+            decisions=[
+                MonthlyDecision(
+                    as_of_date="2025-01-05",
+                    signal_date="2025-01-05",
+                    mode="market_beta_proxy",
+                    selected_preset="market_beta_proxy",
+                    target_weights={"AAA": 0.275, "BBB": 0.275},
+                    reason="no_train_candidate_strong_breadth_proxy_proxy_reversal_guard_capped",
+                )
+            ],
+            trades=[],
+            dates=["2025-01-05"],
+            equity_curve=[980],
+        )
+        config = MonthlyRebalanceConfig(
+            market_beta_proxy_size=2,
+            point_in_time_min_history_days=1,
+            point_in_time_min_reference_price=0.0,
+            point_in_time_liquidity_window_days=2,
+            market_beta_proxy_reversal_guard_max_exposure=0.55,
+            market_beta_proxy_reversal_guard_medium_lookback_days=4,
+            market_beta_proxy_reversal_guard_medium_return_pct=35.0,
+            market_beta_proxy_reversal_guard_short_lookback_days=2,
+            market_beta_proxy_reversal_guard_short_max_return_pct=10.0,
+            market_beta_proxy_reversal_guard_extreme_return_pct=0.0,
+        )
+        symbol_candles = {
+            "AAA": [
+                Candle("2025-01-01", 100, 100, 100, 100, 10_000),
+                Candle("2025-01-02", 125, 125, 125, 125, 10_000),
+                Candle("2025-01-03", 145, 145, 145, 145, 10_000),
+                Candle("2025-01-04", 148, 148, 148, 148, 10_000),
+                Candle("2025-01-05", 150, 150, 150, 150, 10_000),
+            ],
+            "BBB": [
+                Candle("2025-01-01", 100, 100, 100, 100, 9_000),
+                Candle("2025-01-02", 125, 125, 125, 125, 9_000),
+                Candle("2025-01-03", 145, 145, 145, 145, 9_000),
+                Candle("2025-01-04", 148, 148, 148, 148, 9_000),
+                Candle("2025-01-05", 150, 150, 150, 150, 9_000),
+            ],
+        }
+
+        rows = analyze_monthly_proxy_decision_diagnostics(
+            result,
+            symbol_candles=symbol_candles,
+            config=config,
+            scenario="unit_proxy_guard",
+            evidence_provider=lambda _candles, *, as_of_date, config: {
+                "prior_breadth": "0.72",
+                "fallback_breadth_threshold": "0.5",
+                "market_beta_breadth_threshold": "0.25",
+                "eligible_direct_candidate_count": 0,
+            },
+        )
+
+        self.assertEqual(rows[0]["proxy_reversal_guard_triggered"], "true")
+        self.assertEqual(rows[0]["proxy_reversal_guard_cap"], "0.55")
+        self.assertEqual(rows[0]["proxy_reversal_guard_medium_return_pct"], "50")
+        self.assertEqual(rows[0]["proxy_reversal_guard_reason"], "proxy_reversal_guard_capped")
+        self.assertNotEqual(rows[0]["proxy_reversal_guard_short_return_pct"], "")
+
+    def test_analyze_monthly_proxy_decision_diagnostics_uses_decision_universe_for_guard_evidence(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000,
+            final_equity=990,
+            total_return_pct=-1.0,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=-1.0,
+            max_drawdown_pct=-1.0,
+            trade_count=0,
+            decisions=[
+                MonthlyDecision(
+                    as_of_date="2025-01-05",
+                    signal_date="2025-01-05",
+                    mode="market_beta_proxy",
+                    selected_preset="market_beta_proxy",
+                    target_weights={"AAA": 0.99},
+                    reason="no_train_candidate_strong_breadth_proxy",
+                )
+            ],
+            trades=[],
+            dates=["2025-01-05"],
+            equity_curve=[990],
+        )
+        config = MonthlyRebalanceConfig(
+            market_beta_proxy_size=2,
+            point_in_time_min_history_days=1,
+            point_in_time_min_reference_price=0.0,
+            point_in_time_liquidity_top_n=1,
+            point_in_time_liquidity_window_days=2,
+            market_beta_proxy_reversal_guard_max_exposure=0.55,
+            market_beta_proxy_reversal_guard_medium_lookback_days=4,
+            market_beta_proxy_reversal_guard_medium_return_pct=35.0,
+            market_beta_proxy_reversal_guard_short_lookback_days=2,
+            market_beta_proxy_reversal_guard_short_max_return_pct=300.0,
+        )
+        symbol_candles = {
+            "AAA": [
+                Candle("2025-01-01", 100, 100, 100, 100, 10_000),
+                Candle("2025-01-02", 100, 100, 100, 100, 10_000),
+                Candle("2025-01-03", 101, 101, 101, 101, 10_000),
+                Candle("2025-01-04", 101, 101, 101, 101, 10_000),
+                Candle("2025-01-05", 102, 102, 102, 102, 10_000),
+            ],
+            "HOT": [
+                Candle("2025-01-01", 100, 100, 100, 100, 1),
+                Candle("2025-01-02", 150, 150, 150, 150, 1),
+                Candle("2025-01-03", 200, 200, 200, 200, 1),
+                Candle("2025-01-04", 250, 250, 250, 250, 1),
+                Candle("2025-01-05", 300, 300, 300, 300, 1),
+            ],
+        }
+
+        rows = analyze_monthly_proxy_decision_diagnostics(
+            result,
+            symbol_candles=symbol_candles,
+            config=config,
+            scenario="unit_proxy_guard_liquidity",
+            evidence_provider=lambda _candles, *, as_of_date, config: {
+                "prior_breadth": "0.72",
+                "fallback_breadth_threshold": "0.5",
+                "market_beta_breadth_threshold": "0.25",
+                "eligible_direct_candidate_count": 0,
+            },
+        )
+
+        self.assertEqual(rows[0]["proxy_reversal_guard_triggered"], "false")
+        self.assertEqual(rows[0]["proxy_reversal_guard_medium_return_pct"], "2")
+        self.assertEqual(rows[0]["proxy_reversal_guard_reason"], "proxy_exposure_capped")
+
+    def test_analyze_monthly_proxy_decision_diagnostics_marks_reversal_guard_not_applicable_for_alpha(self):
+        result = MonthlyBacktestResult(
+            initial_cash=1_000,
+            final_equity=990,
+            total_return_pct=-1.0,
+            buy_hold_return_pct=0.0,
+            excess_return_pct=-1.0,
+            max_drawdown_pct=-1.0,
+            trade_count=0,
+            decisions=[
+                MonthlyDecision(
+                    as_of_date="2025-01-05",
+                    signal_date="2025-01-05",
+                    mode="alpha",
+                    selected_preset="balanced",
+                    target_weights={"AAA": 0.99},
+                    reason="selected_monthly_alpha",
+                )
+            ],
+            trades=[],
+            dates=["2025-01-05"],
+            equity_curve=[990],
+        )
+        config = MonthlyRebalanceConfig(
+            market_beta_proxy_size=1,
+            point_in_time_min_history_days=1,
+            point_in_time_min_reference_price=0.0,
+            point_in_time_liquidity_window_days=2,
+            market_beta_proxy_reversal_guard_max_exposure=0.55,
+            market_beta_proxy_reversal_guard_medium_lookback_days=4,
+            market_beta_proxy_reversal_guard_medium_return_pct=35.0,
+            market_beta_proxy_reversal_guard_short_lookback_days=2,
+            market_beta_proxy_reversal_guard_short_max_return_pct=30.0,
+        )
+        symbol_candles = {
+            "AAA": [
+                Candle("2025-01-01", 100, 100, 100, 100, 10_000),
+                Candle("2025-01-02", 125, 125, 125, 125, 10_000),
+                Candle("2025-01-03", 145, 145, 145, 145, 10_000),
+                Candle("2025-01-04", 148, 148, 148, 148, 10_000),
+                Candle("2025-01-05", 150, 150, 150, 150, 10_000),
+            ],
+        }
+
+        rows = analyze_monthly_proxy_decision_diagnostics(
+            result,
+            symbol_candles=symbol_candles,
+            config=config,
+            scenario="unit_alpha_guard",
+            evidence_provider=lambda _candles, *, as_of_date, config: {
+                "prior_breadth": "0.72",
+                "fallback_breadth_threshold": "0.5",
+                "market_beta_breadth_threshold": "0.25",
+                "eligible_direct_candidate_count": 1,
+            },
+        )
+
+        self.assertEqual(rows[0]["proxy_reversal_guard_triggered"], "false")
+        self.assertEqual(rows[0]["proxy_reversal_guard_reason"], "not_market_beta_proxy")
+        self.assertEqual(rows[0]["proxy_reversal_guard_medium_return_pct"], "")
+
     def test_save_monthly_proxy_decision_diagnostics_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "proxy.csv"

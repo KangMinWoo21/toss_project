@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-23 22:55 KST
+Last updated: 2026-06-23 23:27 KST
 
 ## Objective
 
@@ -27,15 +27,137 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 442 tests.
+- `python -m unittest discover -s tests`: PASS, 445 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
-- Candidate follow-up state: latest `proxy_reversal_guard_55_extreme60` is `PAPER_REVIEW` / `IMPROVED`; it is not adopted as a default.
+- Candidate follow-up state: latest `proxy_chase_guard_55_med35_short30` is `REJECT`; it fixed stress drawdown and `walk_forward_001`, but created a new `walk_forward_002` failure and did not fix `regime_sideways`, `walk_forward_003`, or `walk_forward_005`.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Tested a narrow paper-only conditional proxy chase guard candidate and improved proxy decision diagnostics:
+
+- Candidate label: `proxy_chase_guard_55_med35_short30`.
+- Candidate options:
+  - `--market-beta-proxy-reversal-guard-max-exposure 0.55`
+  - `--market-beta-proxy-reversal-guard-medium-lookback-days 40`
+  - `--market-beta-proxy-reversal-guard-medium-return-pct 35`
+  - `--market-beta-proxy-reversal-guard-short-lookback-days 20`
+  - `--market-beta-proxy-reversal-guard-short-max-return-pct 30`
+  - `--market-beta-proxy-reversal-guard-extreme-return-pct 0`
+- This used existing default-off paper/backtest parameters.
+- No production defaults were changed.
+- No real order execution, Toss API test call, production gate bypass, or live default change was added.
+
+Candidate result:
+
+- `monthly-compare-validation`: `REJECT`.
+- Baseline failed required scenarios: `5`.
+- Candidate failed required scenarios: `4`.
+- Failed delta: `-1`.
+- Resolved failures:
+  - `stress_exclude_500pct_winners`
+  - `walk_forward_001`
+- New failure:
+  - `walk_forward_002`
+- Unchanged failures:
+  - `regime_sideways`
+  - `walk_forward_003`
+  - `walk_forward_005`
+
+Important deltas:
+
+- `stress_exclude_500pct_winners`: resolved; excess delta `+14.9548`, max drawdown delta `+6.8221`.
+- Stress drawdown pressure for the candidate:
+  - total return `29.40%`
+  - excess return `27.91%`
+  - max drawdown `-21.2614%`
+  - hard drawdown breach days `0`
+  - worst loss month `2026-03`
+  - worst month target exposure `0.55`
+- `walk_forward_001`: resolved; excess delta `+3.7458`, max drawdown delta `+3.5520`.
+- `walk_forward_002`: new failure; excess delta `-3.9020`, candidate excess `-3.0707`.
+- `walk_forward_005`: still failed and worsened; excess delta `-5.7811`.
+- `regime_sideways`: still failed, though improved by excess delta `+1.9310`.
+- `walk_forward_003`: still failed due to train-window rejection.
+
+Report improvement:
+
+- Extended `monthly-attribution --proxy-output` proxy decision diagnostics with guard evidence columns:
+  - `proxy_reversal_guard_triggered`
+  - `proxy_reversal_guard_cap`
+  - `proxy_reversal_guard_medium_return_pct`
+  - `proxy_reversal_guard_short_return_pct`
+  - `proxy_reversal_guard_reason`
+- The guard evidence now uses the same point-in-time, reference-price, and liquidity-filtered decision universe as `decide_monthly_allocation`.
+- Non-`market_beta_proxy` decisions are marked `not_market_beta_proxy` so alpha rows do not look like proxy guard caps.
+
+Key diagnostic finding:
+
+- Stress candidate capped the intended proxy loss months:
+  - `2025-03`: medium `35.3344`, short `4.9253`, target exposure `0.55`
+  - `2026-03`: medium `56.0832`, short `26.0636`, target exposure `0.55`
+  - `2026-05`: medium `36.5887`, short `29.1252`, target exposure `0.55`
+- The new `walk_forward_002` regression came from capping a profitable `2025-06` proxy month:
+  - medium `38.5407`
+  - short `8.6214`
+  - target exposure `0.55`
+  - month return `7.4531%`, versus baseline `11.2376%`
+- This means the next candidate should not simply lower medium/short thresholds. It needs an additional condition that distinguishes profitable continuation months like `2025-06` from stress loss months like `2026-03` and `2026-05`.
+
+Regenerated reports:
+
+- `data/reports/stress_proxy_chase_guard_55_med35_short30_monthly_attribution.csv`
+- `data/reports/stress_proxy_chase_guard_55_med35_short30_symbol_attribution.csv`
+- `data/reports/stress_proxy_chase_guard_55_med35_short30_decision_attribution.csv`
+- `data/reports/stress_proxy_chase_guard_55_med35_short30_recovery_attribution.csv`
+- `data/reports/stress_proxy_chase_guard_55_med35_short30_proxy_decision_diagnostics.csv`
+- `data/reports/stress_proxy_chase_guard_55_med35_short30_path_attribution.csv`
+- `data/reports/stress_proxy_chase_guard_55_med35_short30_drawdown_pressure.csv`
+- `data/reports/walk_forward_002_proxy_chase_guard_55_med35_short30_monthly_attribution.csv`
+- `data/reports/walk_forward_002_proxy_chase_guard_55_med35_short30_symbol_attribution.csv`
+- `data/reports/walk_forward_002_proxy_chase_guard_55_med35_short30_decision_attribution.csv`
+- `data/reports/walk_forward_002_proxy_chase_guard_55_med35_short30_recovery_attribution.csv`
+- `data/reports/walk_forward_002_proxy_chase_guard_55_med35_short30_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_002_proxy_chase_guard_55_med35_short30_path_attribution.csv`
+- `data/reports/monthly_validation_candidate_proxy_chase_guard_55_med35_short30.csv`
+- `data/reports/monthly_validation_failures_candidate_proxy_chase_guard_55_med35_short30.csv`
+- `data/reports/monthly_validation_comparison_proxy_chase_guard_55_med35_short30.csv`
+- `data/reports/monthly_validation_comparison_deltas_proxy_chase_guard_55_med35_short30.csv`
+- `data/reports/monthly_validation_candidate_decision_proxy_chase_guard_55_med35_short30.csv`
+- `data/reports/monthly_validation_failure_patterns.csv`
+- `data/reports/monthly_validation_failure_drilldown.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Verification in this loop:
+
+- RED checks:
+  - New proxy diagnostics test failed because guard evidence columns did not exist.
+  - Decision-universe guard evidence test failed because the diagnostic initially used the unfiltered input universe.
+  - Alpha not-applicable test failed because guard conditions were initially shown on alpha rows.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_decision_diagnostics_flags_loss_and_recovery_context tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_decision_diagnostics_includes_reversal_guard_evidence tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_decision_diagnostics_uses_decision_universe_for_guard_evidence tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_proxy_decision_diagnostics_marks_reversal_guard_not_applicable_for_alpha tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_proxy_decision_diagnostics_writes_csv tests.test_cli.CliTests.test_monthly_attribution_cli_writes_recovery_summary_report`: PASS, `6` tests.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `206` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `445` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=334.69` observed).
+
+Next recommended action:
+
+- Do not adopt `proxy_chase_guard_55_med35_short30`.
+- Design a narrower paper-only proxy risk overlay that preserves the stress fix but avoids capping profitable continuation months like `walk_forward_002` `2025-06`.
+- Use the new guard evidence columns to compare candidate-trigger months before running another full validation.
+- Keep `proxy_reversal_guard_55_extreme60` as paper-review evidence only; do not make it default.
+
+## Previous Loop: Stress Drawdown Pressure Diagnostic
 
 Added a paper-only stress drawdown pressure diagnostic for the remaining `stress_exclude_500pct_winners` blocker:
 

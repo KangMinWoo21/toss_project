@@ -1031,6 +1031,11 @@ MONTHLY_PROXY_DECISION_DIAGNOSTIC_COLUMNS = [
     "best_direct_excess_return_pct",
     "best_direct_train_positive_ratio",
     "direct_candidate_rejection_reasons",
+    "proxy_reversal_guard_triggered",
+    "proxy_reversal_guard_cap",
+    "proxy_reversal_guard_medium_return_pct",
+    "proxy_reversal_guard_short_return_pct",
+    "proxy_reversal_guard_reason",
     "diagnostic",
     "recommended_next_action",
 ]
@@ -2867,6 +2872,21 @@ def analyze_monthly_proxy_decision_diagnostics(
         monthly_row = _monthly_attribution_for_decision(monthly_rows, decision.as_of_date)
         evidence = provider(symbol_candles, as_of_date=decision.as_of_date, config=config)
         diagnostics = _monthly_proxy_decision_diagnostic_tokens(decision, decision_row, monthly_row, evidence)
+        if decision.mode == "market_beta_proxy":
+            guard_evidence = _market_beta_proxy_reversal_guard_diagnostics(
+                symbol_candles,
+                signal_date=decision.signal_date,
+                config=config,
+                prior_breadth=_float_or_none(evidence.get("prior_breadth")),
+            )
+        else:
+            guard_evidence = {
+                "triggered": "false",
+                "cap": "",
+                "medium_return_pct": "",
+                "short_return_pct": "",
+                "reason": "not_market_beta_proxy",
+            }
         rows.append(
             {
                 "scenario": scenario,
@@ -2894,6 +2914,11 @@ def analyze_monthly_proxy_decision_diagnostics(
                 "best_direct_excess_return_pct": str(evidence.get("best_direct_excess_return_pct", "")),
                 "best_direct_train_positive_ratio": str(evidence.get("best_direct_train_positive_ratio", "")),
                 "direct_candidate_rejection_reasons": str(evidence.get("direct_candidate_rejection_reasons", "")),
+                "proxy_reversal_guard_triggered": guard_evidence["triggered"],
+                "proxy_reversal_guard_cap": guard_evidence["cap"],
+                "proxy_reversal_guard_medium_return_pct": guard_evidence["medium_return_pct"],
+                "proxy_reversal_guard_short_return_pct": guard_evidence["short_return_pct"],
+                "proxy_reversal_guard_reason": guard_evidence["reason"],
                 "diagnostic": ";".join(diagnostics) if diagnostics else "no_proxy_issue_detected",
                 "recommended_next_action": _monthly_proxy_decision_recommended_action(diagnostics),
             }
@@ -2969,6 +2994,95 @@ def _monthly_proxy_decision_recommended_action(diagnostics: list[str]) -> str:
     if "no_eligible_direct_candidate" in diagnostic_set:
         return "preserve_train_gate_and_improve_alpha_candidates"
     return "review_proxy_context"
+
+
+def _market_beta_proxy_reversal_guard_diagnostics(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    signal_date: str,
+    config: MonthlyRebalanceConfig,
+    prior_breadth: float | None,
+) -> dict[str, str]:
+    current_cap = max(0.0, config.market_beta_proxy_max_exposure)
+    if prior_breadth is not None and prior_breadth < config.fallback_breadth_threshold:
+        current_cap = min(current_cap, max(0.0, config.market_beta_proxy_neutral_breadth_max_exposure))
+
+    guard_cap = max(0.0, config.market_beta_proxy_reversal_guard_max_exposure)
+    medium_days = int(config.market_beta_proxy_reversal_guard_medium_lookback_days)
+    if medium_days <= 0 or guard_cap >= current_cap:
+        return {
+            "triggered": "false",
+            "cap": _format_optional_float(current_cap),
+            "medium_return_pct": "",
+            "short_return_pct": "",
+            "reason": "proxy_exposure_capped",
+        }
+
+    universe_candles = filter_symbol_candles_by_universe(
+        symbol_candles,
+        config.point_in_time_universe,
+        signal_date=signal_date,
+        min_history_days=config.point_in_time_min_history_days,
+    )
+    point_in_time_candles = select_point_in_time_universe(
+        universe_candles,
+        signal_date=signal_date,
+        min_history_days=config.point_in_time_min_history_days,
+        min_reference_price=config.point_in_time_min_reference_price,
+        max_trailing_return_pct=config.point_in_time_max_trailing_return_pct,
+        trailing_return_days=config.point_in_time_trailing_return_days,
+    )
+    decision_candles = (
+        select_liquid_universe(
+            point_in_time_candles,
+            signal_date=signal_date,
+            top_n=config.point_in_time_liquidity_top_n,
+            window_days=config.point_in_time_liquidity_window_days,
+        )
+        if config.point_in_time_liquidity_top_n > 0
+        else point_in_time_candles
+    )
+    proxy_symbols = rank_symbols_by_average_trading_value(
+        decision_candles,
+        signal_date=signal_date,
+        window_days=max(1, config.point_in_time_liquidity_window_days),
+    )[: max(0, config.market_beta_proxy_size)]
+    medium_return = _average_symbol_return_pct(
+        decision_candles,
+        proxy_symbols,
+        signal_date=signal_date,
+        lookback_days=medium_days,
+    )
+    short_return: float | None = None
+    short_days = int(config.market_beta_proxy_reversal_guard_short_lookback_days)
+    if short_days > 0:
+        short_return = _average_symbol_return_pct(
+            decision_candles,
+            proxy_symbols,
+            signal_date=signal_date,
+            lookback_days=short_days,
+        )
+
+    reason = "proxy_exposure_capped"
+    triggered = False
+    if medium_return is not None and medium_return >= config.market_beta_proxy_reversal_guard_medium_return_pct:
+        extreme_trigger = config.market_beta_proxy_reversal_guard_extreme_return_pct
+        extreme_overheat = extreme_trigger > 0 and medium_return >= extreme_trigger
+        short_allows_cap = short_days <= 0 or (
+            short_return is not None and short_return <= config.market_beta_proxy_reversal_guard_short_max_return_pct
+        )
+        if extreme_overheat or short_allows_cap:
+            triggered = True
+            current_cap = min(current_cap, guard_cap)
+            reason = "proxy_reversal_guard_capped"
+
+    return {
+        "triggered": "true" if triggered else "false",
+        "cap": _format_optional_float(current_cap),
+        "medium_return_pct": _format_optional_float(medium_return),
+        "short_return_pct": _format_optional_float(short_return),
+        "reason": reason,
+    }
 
 
 def analyze_monthly_recovery_attribution(
