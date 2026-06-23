@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-22 22:21 KST
+Last updated: 2026-06-23 21:15 KST
 
 ## Objective
 
@@ -27,7 +27,7 @@ Do not implement real order execution.
 
 ## Current Status
 
-- `python -m unittest discover -s tests`: PASS, 432 tests.
+- `python -m unittest discover -s tests`: PASS, 434 tests.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
@@ -36,6 +36,97 @@ Do not implement real order execution.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added a paper-only stability symbol-attribution diagnostic:
+
+- Added `analyze_monthly_train_stability_symbol_attribution`.
+- Added `save_monthly_train_stability_symbol_attribution`.
+- Extended `python -m backtester monthly-train-decision-diagnostics` with:
+  - `--stability-symbol-output`
+  - default: `data/reports/monthly_direct_alpha_stability_symbol_diagnostics.csv`
+- The report expands counted stability-window rows into per-symbol rows and compares:
+  - stability selected symbols,
+  - stability traded symbols,
+  - selected/traded role (`selected_and_traded`, `selected_not_traded`, `traded_not_selected`),
+  - symbol return over the stability window,
+  - selected/traded/benchmark equal-weight contribution,
+  - selected-vs-benchmark contribution delta,
+  - traded-vs-selected contribution delta,
+  - train-decision and stability failure context.
+- This is diagnostic-only and paper-only.
+- Existing strategy behavior, train gates, validation gates, execution planning, and Toss/API behavior are unchanged.
+
+Regenerated reports:
+
+- `data/reports/monthly_train_decision_path_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_stability_diagnostics.csv`
+- `data/reports/monthly_direct_alpha_stability_symbol_diagnostics.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Current stability symbol-attribution findings:
+
+- `monthly_direct_alpha_stability_symbol_diagnostics.csv` has `48` rows.
+- Role counts:
+  - `walk_forward_003`: `selected_and_traded=10`, `selected_not_traded=5`, `traded_not_selected=5`.
+  - `walk_forward_004`: `selected_and_traded=6`, `selected_not_traded=9`, `traded_not_selected=13`.
+- Dated traded-vs-selected contribution delta sums:
+  - `walk_forward_003`, `2025-05-02`: `-22.0023`.
+  - `walk_forward_003`, `2025-06-02`: `-45.3043`.
+  - `walk_forward_003`, `2025-07-01`: `-12.5508`.
+  - `walk_forward_004`, `2025-08-01`: `-34.3112`.
+  - `walk_forward_004`, `2025-09-01`: `-35.4377`.
+  - `walk_forward_004`, `2025-10-01`: `-1.0946`.
+- Largest selected-but-not-traded missed contributors:
+  - `042660`: `selected_not_traded` rows sum to `-136.6828` traded-vs-selected contribution delta.
+  - `071970`: `-119.6962`.
+  - `083650`: `-102.4518`.
+  - `044490`: `-37.3654`.
+  - `214450`: `-33.2532`.
+  - `108490`: `-32.0016`.
+- `traded_not_selected` names often still had positive returns, but did not fully offset the selected-not-traded contribution gap:
+  - `walk_forward_003`: `selected_not_traded=-200.3766`, `traded_not_selected=120.5192`.
+  - `walk_forward_004`: `selected_not_traded=-359.7407`, `traded_not_selected=341.5000`.
+
+Interpretation:
+
+- The active stability-window underperformance is now traceable to symbol-level path drift, not only aggregate candidate excess.
+- The most damaging pattern is not simply bad traded names:
+  - many traded-not-selected names made money,
+  - but several high-return selected names were not traded and created larger opportunity gaps.
+- This reinforces the current safety posture:
+  - keep `min_train_positive_ratio` strict,
+  - do not adopt rejected direct-alpha candidates,
+  - do not loosen train gates until path drift is reduced in validation without introducing new failures.
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `432` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_analyze_monthly_train_stability_symbol_attribution_expands_selected_and_traded_roles tests.test_monthly_rebalance.MonthlyRebalanceTests.test_save_monthly_train_stability_symbol_attribution_writes_csv tests.test_cli.CliTests.test_monthly_train_decision_diagnostics_cli_writes_path_report`: failed because the new symbol-attribution functions and `--stability-symbol-output` did not exist.
+- Targeted GREEN:
+  - same command: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `196` tests.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `434` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=332.43` observed).
+
+Next recommended action:
+
+- Keep direct-alpha train gates strict.
+- Use the new symbol-attribution rows to design a narrow paper-only experiment that reduces path drift, then validate it:
+  - compare slower rebalance cadence, delayed entry, or stricter target persistence rules against the six active negative dated windows,
+  - require no new required-scenario failures,
+  - keep production/risk gates as hard stops.
+
+Previous loop:
 
 Improved the paper-only direct-alpha stability-window diagnostics:
 

@@ -1350,6 +1350,7 @@ class CliTests(unittest.TestCase):
             )
             output = root / "train_decisions.csv"
             stability_output = root / "train_stability.csv"
+            stability_symbol_output = root / "train_stability_symbols.csv"
 
             completed = self._run_backtester_in_cwd(
                 root,
@@ -1383,6 +1384,8 @@ class CliTests(unittest.TestCase):
                     str(output),
                     "--stability-output",
                     str(stability_output),
+                    "--stability-symbol-output",
+                    str(stability_symbol_output),
                 ],
             )
             if output.exists():
@@ -1395,10 +1398,16 @@ class CliTests(unittest.TestCase):
                     stability_rows = list(csv.DictReader(f))
             else:
                 stability_rows = []
+            if stability_symbol_output.exists():
+                with stability_symbol_output.open(encoding="utf-8") as f:
+                    stability_symbol_rows = list(csv.DictReader(f))
+            else:
+                stability_symbol_rows = []
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("train_decision_path_report", completed.stdout)
         self.assertIn("train_stability_report", completed.stdout)
+        self.assertIn("train_stability_symbol_report", completed.stdout)
         self.assertTrue(rows)
         self.assertTrue(any(row["direct_candidate_rejection_reasons"] or row["filter_error"] for row in rows))
         self.assertTrue(stability_rows)
@@ -1407,6 +1416,9 @@ class CliTests(unittest.TestCase):
         self.assertTrue(any("stability_failed_reason" in row for row in stability_rows))
         self.assertTrue(any("stability_underperformance_driver" in row for row in stability_rows))
         self.assertTrue(any(row["candidate_rejection_reasons"] for row in stability_rows))
+        self.assertTrue(stability_symbol_rows)
+        self.assertTrue(any("stability_symbol_role" in row for row in stability_symbol_rows))
+        self.assertTrue(any("symbol_return_pct" in row for row in stability_symbol_rows))
 
     def test_monthly_compare_validation_cli_writes_comparison(self):
         with TemporaryDirectory() as temp_dir:

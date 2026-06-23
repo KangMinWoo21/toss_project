@@ -31,6 +31,7 @@ from backtester.monthly_rebalance import (
     analyze_monthly_recovery_attribution,
     analyze_monthly_validation_failures,
     analyze_monthly_train_decision_path,
+    analyze_monthly_train_stability_symbol_attribution,
     analyze_monthly_train_stability_windows,
     analyze_monthly_validation_failure_drilldown,
     analyze_monthly_validation_failure_patterns,
@@ -104,6 +105,7 @@ from backtester.monthly_rebalance import (
     save_monthly_proxy_decision_diagnostics,
     save_monthly_recovery_attribution,
     save_monthly_train_decision_path,
+    save_monthly_train_stability_symbol_attribution,
     save_monthly_train_stability_windows,
     save_order_plan,
     save_order_plan_summary,
@@ -3476,6 +3478,77 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertFalse(any(row["filter_error"] == "symbol_candles_cannot_be_empty" for row in early_rows))
         self.assertTrue(any(row["stability_failed_reason"] == "no_train_symbols" for row in early_rows))
         self.assertTrue(any(row["stability_underperformance_driver"] == "no_train_symbols" for row in early_rows))
+
+    def test_analyze_monthly_train_stability_symbol_attribution_expands_selected_and_traded_roles(self):
+        symbol_candles = {
+            "AAA": _trend_candles_with_volume("2024-01-01", 20, close=100, step=2.0, volume=3_000),
+            "BBB": _trend_candles_with_volume("2024-01-01", 20, close=100, step=1.0, volume=2_000),
+            "CCC": _trend_candles_with_volume("2024-01-01", 20, close=100, step=-0.5, volume=1_000),
+        }
+        stability_rows = [
+            {
+                "scenario": "walk_forward_unit",
+                "walk_forward_preset": "balanced",
+                "as_of_date": "2024-01-20",
+                "signal_date": "2024-01-19",
+                "category": "walk_forward",
+                "decision_mode": "market_beta_proxy",
+                "alpha_block_reason": "no_eligible_direct_candidate",
+                "candidate_rejection_reasons": "low_positive_ratio",
+                "candidate_positive_ratio": "0.0",
+                "subwindow_counted_flag": "true",
+                "stability_window_start": "2024-01-01",
+                "stability_window_end": "2024-01-20",
+                "stability_excess_return_pct": "-3.2",
+                "stability_trade_count": "2",
+                "stability_failed_reason": "nonpositive_excess",
+                "stability_selected_symbols": "AAA;BBB",
+                "stability_traded_symbols": "BBB;CCC",
+                "stability_underperformance_driver": "holding_path_differs_from_selection_snapshot",
+                "train_symbols": "3",
+            }
+        ]
+
+        rows = analyze_monthly_train_stability_symbol_attribution(stability_rows, symbol_candles)
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["AAA"]["stability_symbol_role"], "selected_not_traded")
+        self.assertEqual(by_symbol["BBB"]["stability_symbol_role"], "selected_and_traded")
+        self.assertEqual(by_symbol["CCC"]["stability_symbol_role"], "traded_not_selected")
+        self.assertEqual(by_symbol["AAA"]["in_stability_selected"], "true")
+        self.assertEqual(by_symbol["AAA"]["in_stability_traded"], "false")
+        self.assertEqual(by_symbol["CCC"]["in_stability_selected"], "false")
+        self.assertEqual(by_symbol["CCC"]["in_stability_traded"], "true")
+        self.assertIn("symbol_return_pct", by_symbol["AAA"])
+        self.assertIn("selected_contribution_pct", by_symbol["AAA"])
+        self.assertIn("traded_contribution_pct", by_symbol["CCC"])
+        self.assertIn("benchmark_contribution_pct", by_symbol["BBB"])
+        self.assertIn("traded_vs_selected_contribution_delta_pct", by_symbol["CCC"])
+        self.assertEqual(by_symbol["AAA"]["stability_underperformance_driver"], "holding_path_differs_from_selection_snapshot")
+        self.assertGreater(float(by_symbol["AAA"]["selected_contribution_pct"]), 0)
+
+    def test_save_monthly_train_stability_symbol_attribution_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "train_stability_symbols.csv"
+            saved = save_monthly_train_stability_symbol_attribution(
+                [
+                    {
+                        "scenario": "walk_forward_unit",
+                        "walk_forward_preset": "balanced",
+                        "as_of_date": "2024-01-20",
+                        "symbol": "AAA",
+                        "stability_symbol_role": "selected_not_traded",
+                        "symbol_return_pct": "12.3",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("scenario,walk_forward_preset,as_of_date", text.splitlines()[0])
+        self.assertIn("stability_symbol_role", text.splitlines()[0])
+        self.assertIn("walk_forward_unit", text)
 
     def test_save_monthly_train_stability_windows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

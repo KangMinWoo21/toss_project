@@ -861,6 +861,46 @@ MONTHLY_TRAIN_STABILITY_WINDOW_COLUMNS = [
     "filter_error",
 ]
 
+MONTHLY_TRAIN_STABILITY_SYMBOL_ATTRIBUTION_COLUMNS = [
+    "scenario",
+    "walk_forward_preset",
+    "as_of_date",
+    "signal_date",
+    "category",
+    "decision_mode",
+    "alpha_block_reason",
+    "candidate_rejection_reasons",
+    "candidate_positive_ratio",
+    "stability_window_start",
+    "stability_window_end",
+    "stability_excess_return_pct",
+    "stability_trade_count",
+    "stability_failed_reason",
+    "stability_underperformance_driver",
+    "symbol",
+    "stability_symbol_role",
+    "in_stability_selected",
+    "in_stability_traded",
+    "symbol_return_pct",
+    "selected_weight",
+    "traded_weight",
+    "benchmark_weight",
+    "selected_contribution_pct",
+    "traded_contribution_pct",
+    "benchmark_contribution_pct",
+    "selected_vs_benchmark_contribution_delta_pct",
+    "traded_vs_selected_contribution_delta_pct",
+    "selected_symbol_count",
+    "traded_symbol_count",
+    "train_symbols",
+    "raw_symbols",
+    "universe_symbols",
+    "pit_symbols",
+    "liquid_symbols",
+    "liquidity_removed",
+    "train_coverage_removed",
+]
+
 PERFORMANCE_CONCENTRATION_COLUMNS = [
     "source",
     "start",
@@ -4160,6 +4200,104 @@ def save_monthly_train_stability_windows(rows: list[dict[str, Any]], output_path
     return len(rows)
 
 
+def analyze_monthly_train_stability_symbol_attribution(
+    stability_rows: list[dict[str, Any]],
+    symbol_candles: dict[str, list[Candle]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stability in stability_rows:
+        if str(stability.get("subwindow_counted_flag", "")).strip().lower() != "true":
+            continue
+        selected_symbols = _split_semicolon_values(str(stability.get("stability_selected_symbols", "")))
+        traded_symbols = _split_semicolon_values(str(stability.get("stability_traded_symbols", "")))
+        selected_set = set(selected_symbols)
+        traded_set = set(traded_symbols)
+        symbols = sorted(selected_set | traded_set)
+        if not symbols:
+            continue
+        start = str(stability.get("stability_window_start", "")).strip()
+        end = str(stability.get("stability_window_end", "")).strip()
+        symbol_returns = dict(_period_symbol_returns(symbol_candles, start=start, end=end))
+        selected_weight = 1 / len(selected_symbols) if selected_symbols else 0.0
+        traded_weight = 1 / len(traded_symbols) if traded_symbols else 0.0
+        train_symbol_count = _safe_int(stability.get("train_symbols"), default=0)
+        benchmark_weight = 1 / train_symbol_count if train_symbol_count > 0 else 0.0
+        for symbol in symbols:
+            in_selected = symbol in selected_set
+            in_traded = symbol in traded_set
+            symbol_return = symbol_returns.get(symbol)
+            selected_contribution = symbol_return * selected_weight if symbol_return is not None and in_selected else 0.0
+            traded_contribution = symbol_return * traded_weight if symbol_return is not None and in_traded else 0.0
+            benchmark_contribution = symbol_return * benchmark_weight if symbol_return is not None else None
+            selected_vs_benchmark = (
+                selected_contribution - benchmark_contribution
+                if benchmark_contribution is not None
+                else None
+            )
+            traded_vs_selected = traded_contribution - selected_contribution
+            rows.append(
+                {
+                    "scenario": stability.get("scenario", ""),
+                    "walk_forward_preset": stability.get("walk_forward_preset", ""),
+                    "as_of_date": stability.get("as_of_date", ""),
+                    "signal_date": stability.get("signal_date", ""),
+                    "category": stability.get("category", ""),
+                    "decision_mode": stability.get("decision_mode", ""),
+                    "alpha_block_reason": stability.get("alpha_block_reason", ""),
+                    "candidate_rejection_reasons": stability.get("candidate_rejection_reasons", ""),
+                    "candidate_positive_ratio": stability.get("candidate_positive_ratio", ""),
+                    "stability_window_start": start,
+                    "stability_window_end": end,
+                    "stability_excess_return_pct": stability.get("stability_excess_return_pct", ""),
+                    "stability_trade_count": stability.get("stability_trade_count", ""),
+                    "stability_failed_reason": stability.get("stability_failed_reason", ""),
+                    "stability_underperformance_driver": stability.get("stability_underperformance_driver", ""),
+                    "symbol": symbol,
+                    "stability_symbol_role": _stability_symbol_role(
+                        in_selected=in_selected,
+                        in_traded=in_traded,
+                    ),
+                    "in_stability_selected": str(in_selected).lower(),
+                    "in_stability_traded": str(in_traded).lower(),
+                    "symbol_return_pct": _format_optional_float(symbol_return),
+                    "selected_weight": _format_optional_float(selected_weight if in_selected else 0.0),
+                    "traded_weight": _format_optional_float(traded_weight if in_traded else 0.0),
+                    "benchmark_weight": _format_optional_float(benchmark_weight),
+                    "selected_contribution_pct": _format_optional_float(selected_contribution),
+                    "traded_contribution_pct": _format_optional_float(traded_contribution),
+                    "benchmark_contribution_pct": _format_optional_float(benchmark_contribution),
+                    "selected_vs_benchmark_contribution_delta_pct": _format_optional_float(selected_vs_benchmark),
+                    "traded_vs_selected_contribution_delta_pct": _format_optional_float(traded_vs_selected),
+                    "selected_symbol_count": len(selected_symbols),
+                    "traded_symbol_count": len(traded_symbols),
+                    "train_symbols": stability.get("train_symbols", ""),
+                    "raw_symbols": stability.get("raw_symbols", ""),
+                    "universe_symbols": stability.get("universe_symbols", ""),
+                    "pit_symbols": stability.get("pit_symbols", ""),
+                    "liquid_symbols": stability.get("liquid_symbols", ""),
+                    "liquidity_removed": stability.get("liquidity_removed", ""),
+                    "train_coverage_removed": stability.get("train_coverage_removed", ""),
+                }
+            )
+    return rows
+
+
+def save_monthly_train_stability_symbol_attribution(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MONTHLY_TRAIN_STABILITY_SYMBOL_ATTRIBUTION_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    column: row.get(column, "")
+                    for column in MONTHLY_TRAIN_STABILITY_SYMBOL_ATTRIBUTION_COLUMNS
+                }
+            )
+    return len(rows)
+
+
 def _monthly_train_decision_path_for_case(
     symbol_candles: dict[str, list[Candle]],
     *,
@@ -4713,6 +4851,16 @@ def _empty_monthly_train_stability_window_row(
         "stability_underperformance_driver": reason,
         **counts,
     }
+
+
+def _stability_symbol_role(*, in_selected: bool, in_traded: bool) -> str:
+    if in_selected and in_traded:
+        return "selected_and_traded"
+    if in_selected:
+        return "selected_not_traded"
+    if in_traded:
+        return "traded_not_selected"
+    return "context_only"
 
 
 def _monthly_train_decision_evidence(
