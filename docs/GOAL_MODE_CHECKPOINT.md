@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 guarded stop filter rejection loop
+Last updated: 2026-06-24 refreshed best-candidate comparison
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,58 +40,48 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `d462d06 Respect holding windows in loss control diagnostics`.
+  `78aedd2 Add scoped guarded loss stop filter`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
 - Latest full tests: `python -m unittest discover -s tests` PASS, `482` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=342.86` observed).
+  (`age_hours=343.08` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added and rejected a narrow guarded-loss position stop candidate for the
-remaining `regime_sideways` blocker under
-`proxy_guard_exit_short_minus5_neutral_loss_guard55`.
+Refreshed the full validation and comparison for the current best candidate
+against the restored canonical baseline.
 
 Changed behavior:
 
-- New opt-in config/CLI field:
-  `position_trailing_stop_reason_contains`.
-- When `position_trailing_stop_pct < 0` and this filter is set, the stop applies
-  only to positions entered by decisions whose reason contains the marker.
-- Empty default preserves the existing broad stop behavior. No live default,
-  order execution, Toss API, or baseline behavior changed.
-- Sweep plans can now describe `guarded_loss_position_stop_12` explicitly.
+- No source behavior changed in this loop.
+- Wrote separate candidate report paths with `_current` suffix so canonical
+  baseline reports were not overwritten.
+- Data remained fixed to `2024-01-01..2026-06-18`.
 
-TDD:
+Verification:
 
-- RED: `MonthlyRebalanceConfig` rejected
-  `position_trailing_stop_reason_contains`; scoped stop behavior was missing.
-- GREEN: targeted scoped-stop tests PASS, monthly module PASS (`192` tests),
-  CLI module PASS (`51` tests).
+- Candidate validation PASS as a command run but deployment gate BLOCK:
+  `failed_required=1`, only `regime_sideways`.
+- Comparison to current canonical baseline:
+  baseline `4` required failures -> candidate `1`, failed delta `-3`.
+- Candidate decision: `IMPROVED` / `PAPER_REVIEW`; no new failures.
 - Final verification: full `unittest` PASS (`482` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Reproduced best-candidate `regime_sideways` metrics exactly:
-  total `-6.12%`, excess `-4.05%`, max DD `-21.79%`, trades `70`.
-- Added `--position-trailing-stop-pct -12
-  --position-trailing-stop-reason-contains proxy_neutral_loss_guard_capped`.
-- Result worsened: total `-6.70%`, excess `-4.64%`, max DD `-21.87%`,
-  trades `84`.
-- Decision: reject `guarded_loss_position_stop_12` as-is; do not promote.
-- Operational repair: a single-scenario `monthly-backtest` temporarily
-  overwrote default gate/concentration reports. Canonical
-  `monthly-validate --data-dir data/krx_expanded --start 2024-01-01 --end
-  2026-06-18` was rerun and restored default reports.
-- Prior holding-window diagnostic remains valid: `8` pressure symbols, `6`
-  trigger at 12% within actual holding windows; previous post-exit
-  interpretation was invalid.
+- Resolved current baseline blockers: `walk_forward_001`, `walk_forward_003`,
+  `walk_forward_005`.
+- Remaining candidate blocker: `regime_sideways`, excess `-4.0548%`, max DD
+  `-21.7902%`, trades `70`.
+- Current baseline failures remain: `regime_sideways`, `walk_forward_001`,
+  `walk_forward_003`, `walk_forward_005`.
+- Keep candidate paper-only; production target scale remains `0`.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -151,16 +141,15 @@ validated paper-review candidate.
 
 Result:
 
-- Existing full candidate report has candidate required failures: `1`.
-- Historical comparison was baseline `5` -> candidate `1`; current canonical
-  baseline rerun now has `4` required failures, so rerun candidate comparison
-  before relying on the old failed-delta value.
+- Current canonical baseline required failures: `4`.
+- Candidate required failures: `1`.
+- Failed delta: `-3`.
 - Decision: `PAPER_REVIEW`, not adopt/promote.
 
 Why useful:
 
-- Fixed `stress_exclude_500pct_winners`, `walk_forward_001`,
-  `walk_forward_003`, and `walk_forward_005` without new failures.
+- Fixed current `walk_forward_001`, `walk_forward_003`, and
+  `walk_forward_005` blockers without new failures.
 - Preserved useful strong-breadth recovery participation while reducing the
   neutral-breadth high-exposure loss cluster in `regime_sideways`.
 
