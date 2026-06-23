@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-23 21:46 KST
+Last updated: 2026-06-23 22:00 KST
 
 ## Objective
 
@@ -31,11 +31,110 @@ Do not implement real order execution.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
-- Candidate follow-up state: all completed full-validation candidates remain rejected or held; latest `target_persistence_2` is `HOLD` / `UNCHANGED`.
+- Candidate follow-up state: all completed full-validation candidates remain rejected or held; latest `neutral_breadth_proxy_cap_75` is `HOLD` / `UNCHANGED`.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Validated an isolated neutral-breadth proxy exposure candidate:
+
+- Candidate label: `neutral_breadth_proxy_cap_75`.
+- Candidate option:
+  - `--market-beta-proxy-neutral-breadth-max-exposure 0.75`
+- This used an existing paper/backtest parameter only.
+- No production defaults changed.
+- No real order execution, Toss API test call, production gate bypass, or live default change was added.
+- This candidate was chosen because:
+  - global `market_beta_proxy_cap_75` was already rejected after creating `walk_forward_002` and `walk_forward_004` failures,
+  - `neutral_breadth_proxy_cap_50` resolved `walk_forward_003` but created `full_period` and `stress_slippage_x3` drawdown failures,
+  - a softer neutral-only cap tested whether there was a safer middle point.
+
+Candidate result:
+
+- `monthly-compare-validation`: `UNCHANGED`.
+- Candidate decision: `HOLD`.
+- `baseline_failed_required=5`.
+- `candidate_failed_required=5`.
+- `failed_delta=0`.
+- `resolved_count=0`.
+- `new_failure_count=0`.
+- `unchanged_failure_count=5`.
+- Unchanged failures:
+  - `regime_sideways`
+  - `stress_exclude_500pct_winners`
+  - `walk_forward_001`
+  - `walk_forward_003`
+  - `walk_forward_005`
+
+Important deltas:
+
+- `full_period`: excess delta `+0.3259`, drawdown delta `+0.04`, still pass.
+- `stress_slippage_x3`: excess delta `+3.1906`, drawdown delta `-0.0983`, still pass.
+- `regime_sideways`: excess delta `-0.4001`, drawdown delta `+0.0913`, failure persists.
+- `stress_exclude_500pct_winners`: excess delta `-0.6036`, drawdown delta `-0.1355`, max-drawdown breach persists.
+- `walk_forward_003`: unchanged, train-window rejection persists.
+- `walk_forward_005`: unchanged, negative excess persists.
+- `walk_forward_002` and `walk_forward_004`: stayed pass, so this softer neutral cap avoided the major new failures from the global cap and the harsher neutral cap, but it did not solve any required blocker.
+
+Interpretation:
+
+- `neutral_breadth_proxy_cap_75` is safer than previously rejected proxy-cap variants but not useful enough to adopt.
+- It did not create new required failures.
+- It also did not resolve any required failure.
+- Because the decision report is `HOLD` and required blockers remain unchanged, do not adopt this as a default.
+- The bottleneck is still not a simple proxy exposure scalar.
+- Keep direct-alpha train gates strict and keep production/risk gates as hard stops.
+
+Regenerated reports:
+
+- `data/reports/monthly_validation_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_validation_data_quality_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_universe_price_coverage_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_performance_audit_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_performance_concentration_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_validation_failures_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_validation_remediation_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_validation_sweep_plan_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_validation_sweep_results_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/universe_filter_report_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_deployment_gate_candidate_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_validation_comparison_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_validation_comparison_deltas_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_validation_candidate_decision_neutral_breadth_proxy_cap_75.csv`
+- `data/reports/monthly_validation_failure_patterns.csv`
+- `data/reports/monthly_validation_failure_drilldown.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Verification in this loop:
+
+- Baseline before candidate run:
+  - `python -m unittest discover -s tests`: PASS, `437` tests.
+  - `python -m compileall -q backtester`: PASS.
+- Candidate validation:
+  - `python -m backtester monthly-validate ... --market-beta-proxy-neutral-breadth-max-exposure 0.75`: PASS, generated candidate reports; `failed_required=5`.
+  - `python -m backtester monthly-compare-validation ... neutral_breadth_proxy_cap_75`: `UNCHANGED`, `failed_delta=0`.
+  - `python -m backtester monthly-failure-patterns ...`: PASS, rows `10`, delta reports `7`.
+  - `python -m backtester monthly-failure-drilldown ...`: PASS, rows `10`, attribution reports `20`.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `437` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=333.17` observed).
+
+Next recommended action:
+
+- Do not adopt `neutral_breadth_proxy_cap_75`.
+- Avoid further scalar-only proxy cap sweeps unless paired with a clearer trigger.
+- Next highest-value work should explain the weak-window failures more directly:
+  - compare `regime_sideways` and `walk_forward_005` recovery attribution by decision family and month,
+  - identify whether loss/recovery drag is from proxy exposure timing, alpha absence, or symbol-level rotation,
+  - design the next candidate from that attribution rather than another broad exposure scalar.
+
+Previous loop:
 
 Added and validated an isolated target-persistence candidate:
 
