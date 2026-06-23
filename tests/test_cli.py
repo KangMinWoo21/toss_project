@@ -598,6 +598,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("--position-trailing-stop-pct", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-max-exposure", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-medium-lookback-days", completed.stdout)
 
     def test_monthly_attribution_help_includes_stress_and_output_options(self):
         completed = subprocess.run(
@@ -622,6 +624,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("--summary-output", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
         self.assertIn("--market-beta-proxy-neutral-breadth-max-exposure", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-max-exposure", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-medium-lookback-days", completed.stdout)
         self.assertIn("--proxy-output", completed.stdout)
 
     def test_monthly_attribution_cli_writes_recovery_summary_report(self):
@@ -844,6 +848,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("--sweep-experiment-id", completed.stdout)
         self.assertIn("--sweep-limit", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-max-exposure", completed.stdout)
+        self.assertIn("--market-beta-proxy-reversal-guard-medium-lookback-days", completed.stdout)
         self.assertIn("--direct-alpha-target-persistence-signals", completed.stdout)
 
     def test_monthly_compare_validation_help_includes_delta_output(self):

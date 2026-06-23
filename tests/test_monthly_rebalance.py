@@ -69,6 +69,7 @@ from backtester.monthly_rebalance import (
     load_point_in_time_universe,
     liquidity_universe_exposure_scale,
     mark_order_plan_execution,
+    market_beta_proxy_reversal_guard_cap,
     market_volatility_exposure_scale,
     risk_exit_code,
     risk_status,
@@ -232,6 +233,23 @@ def _piecewise_candles_with_volume(
     return rows
 
 
+def _priced_candles(start_day: str, prices: list[float], *, volume: float = 1_000) -> list[Candle]:
+    start = date.fromisoformat(start_day)
+    rows: list[Candle] = []
+    for index, price in enumerate(prices):
+        rows.append(
+            Candle(
+                date=(start + timedelta(days=index)).isoformat(),
+                open=price,
+                high=price + 1,
+                low=max(1, price - 1),
+                close=price,
+                volume=volume,
+            )
+        )
+    return rows
+
+
 class MonthlyRebalanceTests(unittest.TestCase):
     def test_monthly_config_defaults_to_five_candidate_slots(self):
         self.assertEqual(MonthlyRebalanceConfig().train_years, 5)
@@ -258,10 +276,118 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_size, 12)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_max_exposure, 1.0)
         self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_neutral_breadth_max_exposure, 1.0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_max_exposure, 1.0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_medium_lookback_days, 0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_medium_return_pct, 0.0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_short_lookback_days, 0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_short_max_return_pct, 0.0)
+        self.assertEqual(MonthlyRebalanceConfig().market_beta_proxy_reversal_guard_extreme_return_pct, 0.0)
         self.assertEqual(MonthlyRebalanceConfig().direct_alpha_target_persistence_signals, 1)
         self.assertEqual(RiskLimits().max_total_target_weight, 1.0)
         self.assertEqual(RiskLimits().max_total_buy_value, 10_000_000.0)
         self.assertEqual(RiskLimits().max_order_count, 15)
+
+    def test_market_beta_proxy_reversal_guard_caps_rollover_after_medium_overheat(self):
+        config = MonthlyRebalanceConfig(
+            market_beta_proxy_reversal_guard_max_exposure=0.55,
+            market_beta_proxy_reversal_guard_medium_lookback_days=40,
+            market_beta_proxy_reversal_guard_medium_return_pct=40.0,
+            market_beta_proxy_reversal_guard_short_lookback_days=20,
+            market_beta_proxy_reversal_guard_short_max_return_pct=10.0,
+            market_beta_proxy_reversal_guard_extreme_return_pct=70.0,
+            market_beta_proxy_size=2,
+            point_in_time_liquidity_window_days=1,
+        )
+        symbol_candles = {
+            "AAA": _priced_candles(
+                "2025-01-01",
+                [100.0] * 21 + [160.0] * 20 + [165.0] * 20,
+                volume=10_000,
+            ),
+            "BBB": _priced_candles(
+                "2025-01-01",
+                [100.0] * 21 + [150.0] * 20 + [154.0] * 20,
+                volume=9_000,
+            ),
+        }
+
+        cap, reason = market_beta_proxy_reversal_guard_cap(
+            symbol_candles,
+            signal_date="2025-03-02",
+            current_cap=1.0,
+            config=config,
+        )
+
+        self.assertAlmostEqual(cap, 0.55)
+        self.assertEqual(reason, "proxy_reversal_guard_capped")
+
+    def test_market_beta_proxy_reversal_guard_preserves_strong_short_momentum_below_extreme(self):
+        config = MonthlyRebalanceConfig(
+            market_beta_proxy_reversal_guard_max_exposure=0.55,
+            market_beta_proxy_reversal_guard_medium_lookback_days=40,
+            market_beta_proxy_reversal_guard_medium_return_pct=40.0,
+            market_beta_proxy_reversal_guard_short_lookback_days=20,
+            market_beta_proxy_reversal_guard_short_max_return_pct=10.0,
+            market_beta_proxy_reversal_guard_extreme_return_pct=70.0,
+            market_beta_proxy_size=2,
+            point_in_time_liquidity_window_days=1,
+        )
+        symbol_candles = {
+            "AAA": _priced_candles(
+                "2025-01-01",
+                [100.0] * 21 + [140.0] * 20 + [165.0] * 20,
+                volume=10_000,
+            ),
+            "BBB": _priced_candles(
+                "2025-01-01",
+                [100.0] * 21 + [145.0] * 20 + [168.0] * 20,
+                volume=9_000,
+            ),
+        }
+
+        cap, reason = market_beta_proxy_reversal_guard_cap(
+            symbol_candles,
+            signal_date="2025-03-02",
+            current_cap=1.0,
+            config=config,
+        )
+
+        self.assertAlmostEqual(cap, 1.0)
+        self.assertEqual(reason, "proxy_exposure_capped")
+
+    def test_market_beta_proxy_reversal_guard_caps_extreme_medium_overheat(self):
+        config = MonthlyRebalanceConfig(
+            market_beta_proxy_reversal_guard_max_exposure=0.55,
+            market_beta_proxy_reversal_guard_medium_lookback_days=40,
+            market_beta_proxy_reversal_guard_medium_return_pct=40.0,
+            market_beta_proxy_reversal_guard_short_lookback_days=20,
+            market_beta_proxy_reversal_guard_short_max_return_pct=10.0,
+            market_beta_proxy_reversal_guard_extreme_return_pct=70.0,
+            market_beta_proxy_size=2,
+            point_in_time_liquidity_window_days=1,
+        )
+        symbol_candles = {
+            "AAA": _priced_candles(
+                "2025-01-01",
+                [100.0] * 21 + [150.0] * 20 + [190.0] * 20,
+                volume=10_000,
+            ),
+            "BBB": _priced_candles(
+                "2025-01-01",
+                [100.0] * 21 + [148.0] * 20 + [186.0] * 20,
+                volume=9_000,
+            ),
+        }
+
+        cap, reason = market_beta_proxy_reversal_guard_cap(
+            symbol_candles,
+            signal_date="2025-03-02",
+            current_cap=1.0,
+            config=config,
+        )
+
+        self.assertAlmostEqual(cap, 0.55)
+        self.assertEqual(reason, "proxy_reversal_guard_capped")
 
     def test_risk_gate_blocks_kill_switch_file(self):
         with TemporaryDirectory() as temp_dir:

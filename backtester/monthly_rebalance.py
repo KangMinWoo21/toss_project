@@ -198,6 +198,12 @@ class MonthlyRebalanceConfig:
     market_beta_proxy_size: int = 12
     market_beta_proxy_max_exposure: float = 1.0
     market_beta_proxy_neutral_breadth_max_exposure: float = 1.0
+    market_beta_proxy_reversal_guard_max_exposure: float = 1.0
+    market_beta_proxy_reversal_guard_medium_lookback_days: int = 0
+    market_beta_proxy_reversal_guard_medium_return_pct: float = 0.0
+    market_beta_proxy_reversal_guard_short_lookback_days: int = 0
+    market_beta_proxy_reversal_guard_short_max_return_pct: float = 0.0
+    market_beta_proxy_reversal_guard_extreme_return_pct: float = 0.0
     event_scores: EventScoreStore | None = None
     event_lookback_days: int = 5
     min_entry_event_score: float = -0.2
@@ -1365,7 +1371,12 @@ def decide_monthly_allocation(
         liquidity_scale=liquidity_scale,
     )
     target_budget = max(0.0, 1.0 - cfg.cash_buffer_weight) * exposure_scale
-    proxy_max_exposure, proxy_cap_reason = _market_beta_proxy_effective_cap(cfg, prior_breadth)
+    proxy_max_exposure, proxy_cap_reason = _market_beta_proxy_effective_cap(
+        cfg,
+        prior_breadth,
+        symbol_candles=decision_candles,
+        signal_date=signal_date,
+    )
     if selected is None:
         if prior_breadth is not None and prior_breadth >= cfg.market_beta_breadth_threshold:
             return _market_beta_or_cash_decision(
@@ -8609,13 +8620,98 @@ def _market_beta_or_cash_decision(
 def _market_beta_proxy_effective_cap(
     config: MonthlyRebalanceConfig,
     prior_breadth: float | None,
+    *,
+    symbol_candles: dict[str, list[Candle]] | None = None,
+    signal_date: str | None = None,
 ) -> tuple[float, str]:
     broad_cap = max(0.0, config.market_beta_proxy_max_exposure)
+    effective_cap = broad_cap
+    reason = "proxy_exposure_capped"
     if prior_breadth is not None and prior_breadth < config.fallback_breadth_threshold:
         neutral_cap = max(0.0, config.market_beta_proxy_neutral_breadth_max_exposure)
-        if neutral_cap < broad_cap:
-            return neutral_cap, "proxy_neutral_breadth_capped"
-    return broad_cap, "proxy_exposure_capped"
+        if neutral_cap < effective_cap:
+            effective_cap = neutral_cap
+            reason = "proxy_neutral_breadth_capped"
+    if symbol_candles is not None and signal_date:
+        reversal_cap, reversal_reason = market_beta_proxy_reversal_guard_cap(
+            symbol_candles,
+            signal_date=signal_date,
+            current_cap=effective_cap,
+            config=config,
+        )
+        if reversal_cap < effective_cap:
+            return reversal_cap, reversal_reason
+    return effective_cap, reason
+
+
+def market_beta_proxy_reversal_guard_cap(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    signal_date: str,
+    current_cap: float,
+    config: MonthlyRebalanceConfig,
+) -> tuple[float, str]:
+    effective_cap = max(0.0, current_cap)
+    guard_cap = max(0.0, config.market_beta_proxy_reversal_guard_max_exposure)
+    medium_days = int(config.market_beta_proxy_reversal_guard_medium_lookback_days)
+    if medium_days <= 0 or guard_cap >= effective_cap:
+        return effective_cap, "proxy_exposure_capped"
+
+    proxy_symbols = rank_symbols_by_average_trading_value(
+        symbol_candles,
+        signal_date=signal_date,
+        window_days=max(1, config.point_in_time_liquidity_window_days),
+    )[: max(0, config.market_beta_proxy_size)]
+    medium_return = _average_symbol_return_pct(
+        symbol_candles,
+        proxy_symbols,
+        signal_date=signal_date,
+        lookback_days=medium_days,
+    )
+    if medium_return is None or medium_return < config.market_beta_proxy_reversal_guard_medium_return_pct:
+        return effective_cap, "proxy_exposure_capped"
+
+    extreme_trigger = config.market_beta_proxy_reversal_guard_extreme_return_pct
+    extreme_overheat = extreme_trigger > 0 and medium_return >= extreme_trigger
+    short_days = int(config.market_beta_proxy_reversal_guard_short_lookback_days)
+    if short_days > 0 and not extreme_overheat:
+        short_return = _average_symbol_return_pct(
+            symbol_candles,
+            proxy_symbols,
+            signal_date=signal_date,
+            lookback_days=short_days,
+        )
+        if (
+            short_return is None
+            or short_return > config.market_beta_proxy_reversal_guard_short_max_return_pct
+        ):
+            return effective_cap, "proxy_exposure_capped"
+    return min(effective_cap, guard_cap), "proxy_reversal_guard_capped"
+
+
+def _average_symbol_return_pct(
+    symbol_candles: dict[str, list[Candle]],
+    symbols: list[str],
+    *,
+    signal_date: str,
+    lookback_days: int,
+) -> float | None:
+    returns: list[float] = []
+    if lookback_days <= 0:
+        return None
+    for symbol in symbols:
+        history = [
+            candle
+            for candle in sorted(symbol_candles.get(symbol, []), key=lambda candle: candle.date)
+            if candle.date <= signal_date and candle.close > 0
+        ]
+        if len(history) <= lookback_days:
+            continue
+        start_price = history[-lookback_days - 1].close
+        end_price = history[-1].close
+        if start_price > 0:
+            returns.append((end_price / start_price - 1.0) * 100.0)
+    return sum(returns) / len(returns) if returns else None
 
 
 def select_point_in_time_universe(

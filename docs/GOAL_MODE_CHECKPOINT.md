@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-23 22:00 KST
+Last updated: 2026-06-23 22:24 KST
 
 ## Objective
 
@@ -31,11 +31,135 @@ Do not implement real order execution.
 - `python -m compileall -q backtester`: PASS.
 - `production-check`: BLOCK by design, because 5 required validation scenarios still fail.
 - `health-check`: WARN, only because scalper data is stale.
-- Candidate follow-up state: all completed full-validation candidates remain rejected or held; latest `neutral_breadth_proxy_cap_75` is `HOLD` / `UNCHANGED`.
+- Candidate follow-up state: latest `proxy_reversal_guard_55_extreme60` is `PAPER_REVIEW` / `IMPROVED`; it is not adopted as a default.
 - Failure-pattern and failure-drilldown reports are generated and integrated into `production-check`.
 - `validation_failure_drilldown`: PASS. Evidence gaps are now closed.
 
 ## Latest Loop Results
+
+Added and validated a paper-only proxy reversal guard candidate:
+
+- Added default-off `MonthlyRebalanceConfig` fields:
+  - `market_beta_proxy_reversal_guard_max_exposure`
+  - `market_beta_proxy_reversal_guard_medium_lookback_days`
+  - `market_beta_proxy_reversal_guard_medium_return_pct`
+  - `market_beta_proxy_reversal_guard_short_lookback_days`
+  - `market_beta_proxy_reversal_guard_short_max_return_pct`
+  - `market_beta_proxy_reversal_guard_extreme_return_pct`
+- Added pure helper:
+  - `market_beta_proxy_reversal_guard_cap`
+- Extended monthly CLI surfaces with matching options for paper/backtest/validation diagnostics.
+- Default behavior is unchanged because the guard is off unless lookback/threshold options are set.
+- No production defaults changed.
+- No real order execution, Toss API test call, production gate bypass, or live default change was added.
+
+Candidate tested:
+
+- Candidate label: `proxy_reversal_guard_55_extreme60`.
+- Candidate options:
+  - `--market-beta-proxy-reversal-guard-max-exposure 0.55`
+  - `--market-beta-proxy-reversal-guard-medium-lookback-days 40`
+  - `--market-beta-proxy-reversal-guard-medium-return-pct 40`
+  - `--market-beta-proxy-reversal-guard-short-lookback-days 20`
+  - `--market-beta-proxy-reversal-guard-short-max-return-pct 10`
+  - `--market-beta-proxy-reversal-guard-extreme-return-pct 60`
+- Intent:
+  - cap fallback `market_beta_proxy` only after point-in-time proxy-basket overheat/reversal evidence,
+  - avoid broad cash drag from scalar-only proxy caps,
+  - preserve direct-alpha train gates and failed train-window rejection behavior.
+
+Candidate result:
+
+- `monthly-compare-validation`: `IMPROVED`.
+- Candidate decision: `PAPER_REVIEW`.
+- `baseline_failed_required=5`.
+- `candidate_failed_required=3`.
+- `failed_delta=-2`.
+- `resolved_count=2`.
+- `new_failure_count=0`.
+- `unchanged_failure_count=3`.
+- Resolved failures:
+  - `walk_forward_001`
+  - `walk_forward_005`
+- Unchanged failures:
+  - `regime_sideways`
+  - `stress_exclude_500pct_winners`
+  - `walk_forward_003`
+
+Important deltas:
+
+- `walk_forward_001`: resolved; excess delta `+3.7458`, drawdown delta `+3.5520`.
+- `walk_forward_005`: resolved; excess delta `+9.9926`, drawdown delta `+5.2794`.
+- `regime_sideways`: still fails; excess delta `+1.9310`, drawdown delta `+2.1805`.
+- `stress_exclude_500pct_winners`: unchanged; drawdown breach remains at about `-28.0835`.
+- `walk_forward_003`: unchanged train-window rejection; train excess remains negative.
+- `full_period`: still passes; excess delta `+24.1338`, drawdown delta `+2.8440`.
+- `stress_slippage_x3`: still passes; excess delta `+27.8547`, drawdown delta `+2.6073`.
+
+Interpretation:
+
+- This is the first recent candidate to reduce required failures without introducing a new required failure.
+- It remains paper-review only because production-check is still BLOCK and three required blockers remain.
+- Do not adopt the guard as a default yet.
+- The candidate is worth preserving for follow-up validation, path comparison, and interaction checks.
+- Remaining blockers are now clearer:
+  - `stress_exclude_500pct_winners`: drawdown pressure not touched by this proxy guard.
+  - `regime_sideways`: improved but still insufficient recovery / negative excess.
+  - `walk_forward_003`: direct-alpha train-window rejection persists.
+
+Regenerated reports:
+
+- `data/reports/regime_sideways_proxy_reversal_guard_55_extreme60_recovery_attribution.csv`
+- `data/reports/regime_sideways_proxy_reversal_guard_55_extreme60_proxy_decision_diagnostics.csv`
+- `data/reports/walk_forward_005_proxy_reversal_guard_55_extreme60_recovery_attribution.csv`
+- `data/reports/walk_forward_005_proxy_reversal_guard_55_extreme60_proxy_decision_diagnostics.csv`
+- `data/reports/monthly_validation_candidate_proxy_reversal_guard_55_extreme60.csv`
+- `data/reports/monthly_validation_failures_candidate_proxy_reversal_guard_55_extreme60.csv`
+- `data/reports/monthly_validation_comparison_proxy_reversal_guard_55_extreme60.csv`
+- `data/reports/monthly_validation_comparison_deltas_proxy_reversal_guard_55_extreme60.csv`
+- `data/reports/monthly_validation_candidate_decision_proxy_reversal_guard_55_extreme60.csv`
+- `data/reports/monthly_validation_failure_patterns.csv`
+- `data/reports/monthly_validation_failure_drilldown.csv`
+- `data/reports/production_readiness.csv`
+- `data/reports/production_readiness_report.md`
+- `data/reports/health_status.json`
+- `data/reports/health_status.md`
+
+Verification in this loop:
+
+- Baseline before edits:
+  - `python -m unittest discover -s tests`: PASS, `437` tests.
+  - `python -m compileall -q backtester`: PASS.
+- RED check:
+  - New monthly rebalance and CLI tests failed because `market_beta_proxy_reversal_guard_cap` and CLI options did not exist.
+- Targeted GREEN:
+  - `python -m unittest tests.test_monthly_rebalance.MonthlyRebalanceTests.test_market_beta_proxy_reversal_guard_caps_rollover_after_medium_overheat tests.test_monthly_rebalance.MonthlyRebalanceTests.test_market_beta_proxy_reversal_guard_preserves_strong_short_momentum_below_extreme tests.test_monthly_rebalance.MonthlyRebalanceTests.test_market_beta_proxy_reversal_guard_caps_extreme_medium_overheat tests.test_cli.CliTests.test_monthly_backtest_help_includes_deep_drawdown_guard_options tests.test_cli.CliTests.test_monthly_attribution_help_includes_stress_and_output_options`: PASS.
+  - `python -m unittest tests.test_cli.CliTests.test_monthly_validate_help_includes_failure_diagnostics_output`: PASS.
+- Related regression scope:
+  - `python -m unittest tests.test_monthly_rebalance tests.test_cli`: PASS, `201` tests.
+- Candidate validation:
+  - `python -m backtester monthly-attribution ... regime_sideways ... proxy_reversal_guard_55_extreme60`: PASS; `regime_sideways` improved but still failed.
+  - `python -m backtester monthly-attribution ... walk_forward_005 ... extreme-return-pct 60`: PASS; `walk_forward_005` turned positive.
+  - `python -m backtester monthly-validate ... proxy_reversal_guard_55_extreme60`: PASS; `failed_required=3`.
+  - `python -m backtester monthly-compare-validation ... proxy_reversal_guard_55_extreme60`: `IMPROVED`, `failed_delta=-2`.
+  - `python -m backtester monthly-failure-patterns ...`: PASS, rows `10`, delta reports `8`.
+  - `python -m backtester monthly-failure-drilldown ...`: PASS, rows `10`, delta reports `8`, attribution reports `20`.
+- Full verification:
+  - `python -m unittest discover -s tests`: PASS, `440` tests.
+  - `python -m compileall -q backtester`: PASS.
+  - `python -m backtester production-check --allow-blocked-exit-zero`: `BLOCK`, with `BLOCK=8`, `PASS=31`, `WARN=8`.
+  - `python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero`: `WARN`, with `PASS=7`, `WARN=1`; scalper data is stale (`age_hours=333.54` observed).
+
+Next recommended action:
+
+- Keep `proxy_reversal_guard_55_extreme60` paper-only and not default.
+- Generate path/decision comparison summaries for this candidate before any adoption discussion.
+- Continue from the remaining three blockers:
+  - `stress_exclude_500pct_winners`: drawdown attribution and stress-specific loss-symbol analysis.
+  - `regime_sideways`: isolate why the improved proxy guard still leaves negative excess.
+  - `walk_forward_003`: direct-alpha train-window rejection and stability evidence.
+
+Previous loop:
 
 Validated an isolated neutral-breadth proxy exposure candidate:
 
