@@ -5489,6 +5489,12 @@ def _monthly_train_decision_path_for_case(
                 as_of_date=decision.as_of_date,
                 config=preset_config,
             )
+            decision_reason = decision.reason
+            if (
+                str(evidence.get("filter_error", "")).strip() == "no_train_symbols"
+                and decision_reason.startswith("decision_error:")
+            ):
+                decision_reason = "no_train_symbols"
             target_exposure = sum(weight for weight in decision.target_weights.values() if weight > 0)
             row = {
                 "scenario": case.name,
@@ -5498,7 +5504,7 @@ def _monthly_train_decision_path_for_case(
                 "signal_date": decision.signal_date,
                 "decision_mode": decision.mode,
                 "decision_selected_preset": decision.selected_preset,
-                "decision_reason": decision.reason,
+                "decision_reason": decision_reason,
                 "alpha_block_reason": _monthly_alpha_block_reason(decision, evidence),
                 "decision_family": _monthly_decision_family(decision.mode),
                 "target_symbol_count": len(decision.target_weights),
@@ -6074,6 +6080,37 @@ def _monthly_train_decision_evidence(
             min_rows=config.min_rows_per_window,
             start_grace_days=config.start_grace_days,
         )
+        if not train_candles:
+            return {
+                "inner_train_start": inner_train_start,
+                "inner_train_end": signal_date,
+                "prior_breadth": "",
+                "fallback_breadth_threshold": _format_optional_float(config.fallback_breadth_threshold),
+                "market_beta_breadth_threshold": _format_optional_float(config.market_beta_breadth_threshold),
+                "trend_scale": "",
+                "volatility_scale": "",
+                "liquidity_scale": "",
+                "exposure_scale": "",
+                "direct_candidate_count": 0,
+                "eligible_direct_candidate_count": 0,
+                "direct_candidate_scores": "",
+                "direct_candidate_rejection_reasons": "no_train_symbols=1",
+                "best_direct_preset": "",
+                "best_direct_score": "",
+                "best_direct_excess_return_pct": "",
+                "best_direct_trade_count": "",
+                "best_direct_train_positive_ratio": "",
+                "raw_symbols": raw_symbol_count,
+                "universe_symbols": len(universe_candles),
+                "pit_symbols": len(point_in_time_candles),
+                "liquid_symbols": len(decision_candles),
+                "train_symbols": 0,
+                "universe_removed": max(0, raw_symbol_count - len(universe_candles)),
+                "pit_filter_removed": max(0, len(universe_candles) - len(point_in_time_candles)),
+                "liquidity_removed": max(0, len(point_in_time_candles) - len(decision_candles)),
+                "train_coverage_removed": len(decision_candles),
+                "filter_error": "no_train_symbols",
+            }
         preset_configs = _monthly_preset_configs(config)
         direct_rows = _train_candidate_rows(
             decision_candles,
@@ -6228,7 +6265,10 @@ def _monthly_decision_family(mode: str) -> str:
 def _monthly_alpha_block_reason(decision: MonthlyDecision, evidence: dict[str, Any]) -> str:
     if decision.mode == "alpha":
         return "selected_alpha"
-    if str(evidence.get("filter_error", "")).strip():
+    filter_error = str(evidence.get("filter_error", "")).strip()
+    if filter_error == "no_train_symbols":
+        return "no_train_symbols"
+    if filter_error:
         return "candidate_filter_error"
     eligible_count = int(float(evidence.get("eligible_direct_candidate_count", 0) or 0))
     if eligible_count <= 0:

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 cash-reserve proxy candidate loop
+Last updated: 2026-06-24 walk-forward 003 train diagnostics loop
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,53 +40,51 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit before this loop:
-  `ae8bc63 Add buyable proxy research switch`.
+  `a8425d7 Add proxy cash reserve research switch`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `463` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `464` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=338.31` observed).
+  (`age_hours=338.47` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a default-off paper-only market beta proxy cash-reserve candidate switch.
+Improved `walk_forward_003` train decision diagnostics and regenerated focused
+reports for the current best candidate.
 
 Changed behavior:
 
-- New config flag: `market_beta_proxy_unbuyable_cash_reserve=False`.
-- New CLI flag on monthly plan/backtest/attribution/validate/train-diagnostics:
-  `--market-beta-proxy-unbuyable-cash-reserve`.
-- When enabled, market beta proxy fallback drops unbuyable proxy targets but
-  keeps their allocation as cash instead of reweighting remaining symbols.
-- Direct `market_beta` ETF fallback is unchanged.
-- Defaults and live/order behavior are unchanged.
+- Decision-path diagnostics now classify empty train slices as
+  `no_train_symbols` instead of surfacing internal
+  `decision_error:symbol_candles cannot be empty`.
+- No strategy, validation gate, order, or live behavior changed.
 
 TDD:
 
-- RED: config/CLI tests failed on the missing flag and behavior.
-- GREEN: targeted tests PASS, `5` tests; monthly+CLI modules PASS, `224`
-  tests.
+- RED: new train decision-path test failed because early rows did not expose
+  `train_symbols=0`/`no_train_symbols`.
+- GREEN: targeted train diagnostics tests PASS, `3` tests; monthly module
+  PASS, `179` tests.
 
-Focused `regime_sideways` evidence with current
-`proxy_guard_exit_short_minus5` guard settings plus cash-reserve proxy:
+Focused `walk_forward_003` evidence for `proxy_guard_exit_short_minus5`:
 
-- Output prefix:
-  `data/reports/regime_sideways_proxy_guard_exit_short_minus5_cash_reserve_proxy_*`.
-- Headline: total return `-9.21%`, excess `-7.15%`, max DD `-21.78%`.
-- Execution gaps: rows `46`; cash-reserve reasons include
-  `unbuyable_cash_reserve_11of12` (`17` rows),
-  `unbuyable_cash_reserve_10of12` (`7` rows), and
-  `unbuyable_cash_reserve_7of12` (`2` rows).
-- Comparison versus `proxy_guard_exit_short_minus5`: changed decision rows `4`,
-  exposure-reduced rows `4`, symbol rotation rows `4`, new drawdown breach
-  months `0`.
-- Path comparison is worse: equity regression days `104/126`,
-  drawdown regression days `68/126`, worst equity delta
-  `2025-01-08 = -271623.8209`.
-- Decision: reject as-is; do not run full validation or promote.
+- Regenerated:
+  `data/reports/walk_forward_003_train_decision_proxy_guard_exit_short_minus5.csv`
+  and related stability/path-drift reports.
+- Train decision rows: `13`; `no_train_symbols=7`,
+  `no_eligible_direct_candidate=6`.
+- Stability summary: selected balanced candidate has `0/6` eligible decisions,
+  `6/6` negative counted windows, avg stability excess `-31.7252%`, worst
+  `-53.3186%`.
+- Drivers: `benchmark_positive_selection_nonpositive=3`,
+  `holding_path_differs_from_selection_snapshot=3`, `no_trades=3`.
+- Path-drift experiment recommends `test_stricter_target_persistence` for
+  three paper-only rows, with path drift deltas `-45.3043`, `-22.0023`, and
+  `-12.5508`.
+- Do not loosen train gates: the rejection is evidence-backed.
 
 Prior buyability context to preserve:
 
@@ -98,6 +96,8 @@ Prior buyability context to preserve:
 - `proxy_guard_exit_short_minus5_neutral_breadth_cap75_execution_gap.csv`:
   rows `57`; `target_underfilled_after_rebalance=51`,
   `target_value_below_one_share=6`.
+- `proxy_guard_exit_short_minus5 + market_beta_proxy_unbuyable_cash_reserve`:
+  total `-9.21%`, excess `-7.15%`, max DD `-21.78%`; rejected as-is.
 
 ## Current Best Candidate
 
@@ -171,7 +171,9 @@ Pick one narrow loop:
   path behavior, so avoid further proxy buyability reweighting/cash-reserve
   variants unless new evidence isolates a different mechanism.
 - `walk_forward_003`: continue from the new stability summary; inspect the
-  negative subwindow symbol/path-drift rows before changing gates.
+  target-persistence/path-drift mechanism before changing gates. Existing
+  `target_persistence_2` was not promoted, so any stricter-persistence test
+  must be narrow and paper-only.
 
 For code changes, use test-first work and finish with focused tests, full
 `unittest`, `compileall`, production-check, health-check, checkpoint update,

@@ -4226,6 +4226,42 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("outer_train_alpha_ratio", row)
         self.assertLess(float(row["cash_weight"]), 1.0)
 
+    def test_analyze_monthly_train_decision_path_labels_empty_train_windows_without_internal_error(self):
+        case = MonthlyValidationCase(
+            name="walk_forward_unit",
+            category="walk_forward",
+            train_start="2024-01-01",
+            train_end="2024-04-30",
+            start="2024-05-01",
+            end="2024-05-31",
+        )
+        rows = analyze_monthly_train_decision_path(
+            {
+                "AAA": _trend_candles_with_volume("2024-01-01", 130, close=100, step=0.7, volume=3_000),
+                "BBB": _trend_candles_with_volume("2024-01-01", 130, close=100, step=0.5, volume=2_000),
+                "CCC": _trend_candles_with_volume("2024-01-01", 130, close=180, step=-0.2, volume=1_000),
+            },
+            cases=[case],
+            config=MonthlyRebalanceConfig(
+                train_start="2024-01-01",
+                presets=("balanced",),
+                min_rows_per_window=120,
+                start_grace_days=0,
+                point_in_time_min_history_days=20,
+                point_in_time_min_reference_price=1,
+                point_in_time_liquidity_window_days=20,
+                point_in_time_liquidity_top_n=3,
+                train_stability_years=1,
+            ),
+        )
+
+        self.assertTrue(rows)
+        early_rows = [row for row in rows if row["train_symbols"] == 0]
+        self.assertTrue(early_rows)
+        self.assertFalse(any(row["decision_reason"].startswith("decision_error:") for row in early_rows))
+        self.assertTrue(any(row["filter_error"] == "no_train_symbols" for row in early_rows))
+        self.assertTrue(any(row["alpha_block_reason"] == "no_train_symbols" for row in early_rows))
+
     def test_save_monthly_train_decision_path_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "train_decisions.csv"
