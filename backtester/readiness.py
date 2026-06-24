@@ -1523,6 +1523,10 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
         f"acceptance_status={acceptance_issue or 'consistent'}; "
         f"recommendation={row.get('recommendation', '')}"
     )
+    recommendation = str(row.get("recommendation", ""))
+    if re.search(r"\b(live|order|trade|trading|fetch)\b", recommendation.lower()):
+        status = "BLOCK"
+        detail += f"; unsafe_recommendation={recommendation}"
     return ReadinessCheck("validation_candidate_decision", status, detail)
 
 
