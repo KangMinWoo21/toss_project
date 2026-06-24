@@ -1795,6 +1795,17 @@ def _validation_failure_drilldown_check(path: Path) -> ReadinessCheck:
     unsafe_detail = f"; unsafe_next_action={unsafe_next_actions[0]}" if unsafe_next_actions else ""
     if unsafe_next_actions:
         status = "BLOCK"
+    unsafe_suggested_actions = [
+        str(row.get("suggested_action", "")).strip()
+        for row in rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("suggested_action", "")).lower(),
+        )
+    ]
+    if unsafe_suggested_actions:
+        status = "BLOCK"
+        unsafe_detail += f"; unsafe_suggested_action={unsafe_suggested_actions[0]}"
     detail = (
         f"{len(rows)} scenarios; root_causes: {root_summary}; "
         f"evidence_gaps={len(evidence_gap_rows)}; top={top_detail}{unsafe_detail}"
