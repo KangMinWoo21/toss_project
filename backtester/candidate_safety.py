@@ -16,12 +16,16 @@ def candidate_promotion_proof_status(
     reasons = str(row.get("decision_reasons", "")).strip().lower()
     if "oos_review_passed" not in reasons or "production_readiness_approved" not in reasons:
         return False, "promotion_proof_missing"
+    if "PENDING_POST_CUTOFF_OOS" in {
+        str(row.get("post_cutoff_oos_start_date", "")).strip(),
+        str(row.get("post_cutoff_oos_end_date", "")).strip(),
+        str(row.get("oos_review_end_date", "")).strip(),
+    }:
+        return False, "post_cutoff_oos_pending"
 
     oos_end = _post_cutoff_oos_end_date(row, reasons)
     if not oos_end:
         return False, "post_cutoff_oos_missing"
-    if oos_end == "PENDING_POST_CUTOFF_OOS":
-        return False, "post_cutoff_oos_pending"
     try:
         oos_end_date = date.fromisoformat(oos_end)
         baseline_date = date.fromisoformat(baseline_end_date)
