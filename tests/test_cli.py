@@ -2384,8 +2384,8 @@ class CliTests(unittest.TestCase):
             )
             decision = root / "monthly_validation_candidate_decision.csv"
             decision.write_text(
-                "candidate_label,comparison_status,decision,decision_reasons,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,new_failure_diagnostics,recommendation\n"
-                "weak_cash10_stop12,REJECT,REJECT,new_failures=3,5,6,1,2,3,3,selection_or_exposure_drag=2; train_gate_regression=1,Do not adopt rejected candidate.\n",
+                "candidate_label,comparison_status,decision,decision_reasons,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
+                "weak_cash10_stop12,REJECT,REJECT,new_failures=3,5,6,1,2,3,3,stress,regime_bear; walk_forward_002,walk_forward_003,selection_or_exposure_drag=2; train_gate_regression=1,Do not adopt rejected candidate.\n",
                 encoding="utf-8",
             )
             output = root / "readiness.csv"

@@ -185,6 +185,23 @@ REQUIRED_VALIDATION_CANDIDATE_FOLLOWUP_COLUMNS = {
     "comparison_command",
     "risk_note",
 }
+REQUIRED_VALIDATION_CANDIDATE_DECISION_COLUMNS = {
+    "candidate_label",
+    "comparison_status",
+    "decision",
+    "decision_reasons",
+    "baseline_failed_required",
+    "candidate_failed_required",
+    "failed_delta",
+    "resolved_count",
+    "new_failure_count",
+    "unchanged_failure_count",
+    "resolved_failure_names",
+    "new_failure_names",
+    "unchanged_failure_names",
+    "new_failure_diagnostics",
+    "recommendation",
+}
 REQUIRED_VALIDATION_FAILURE_PATTERN_COLUMNS = {
     "scenario",
     "baseline_failed",
@@ -1252,6 +1269,13 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
         return ReadinessCheck("validation_candidate_decision", "BLOCK", f"empty: {path}")
 
     row = rows[-1]
+    missing_columns = sorted(REQUIRED_VALIDATION_CANDIDATE_DECISION_COLUMNS - set(row.keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_candidate_decision",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
     decision = str(row.get("decision", "")).strip().upper() or "UNKNOWN"
     comparison_status = str(row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
     promotion_proof_present, promotion_status = candidate_promotion_proof_status(row)
