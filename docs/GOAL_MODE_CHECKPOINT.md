@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 benchmark selection summary diagnostic
+Last updated: 2026-06-24 benchmark selection scenario comparison
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,55 +40,68 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit:
-  `Add monthly benchmark selection summary` (current HEAD after this loop).
+  `Add benchmark selection summary comparison` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `490` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `493` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=344.02` observed).
+  (`age_hours=344.35` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only monthly benchmark selection summary diagnostic to test
-whether the `2025-04` low-liquidity recovery drag repeats across the
-best-candidate `regime_sideways` months.
+Added a report-only monthly benchmark selection summary comparison to separate
+broad benchmark artifacts from candidate-specific failure behavior across
+passing and failing validation scenarios.
 
 Changed behavior:
 
-- New `monthly-attribution --benchmark-selection-summary-output` writes one
-  monthly row with selected-proxy delta, missed-winner delta, missed-winner rank
-  buckets, rank-501+ share, and diagnostic label.
+- New `monthly-compare-benchmark-selection` reads one or more
+  `--benchmark-selection-summary-output` CSVs, joins optional validation rows,
+  and writes one scenario-level comparison row.
+- New comparison columns include deployable status, excess/DD context, month
+  count, low-liquidity drag month count, aggregate selected-proxy delta,
+  missed-winner delta, rank-501+ missed-winner share, worst missed month, and
+  scenario diagnostic.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
-- Generated the best-candidate `regime_sideways` benchmark selection summary
-  report under a separate `_current` output path.
+- Generated four additional best-candidate summary reports for passing
+  scenarios and one comparison report:
+  `data/reports/monthly_benchmark_selection_summary_comparison_proxy_guard_exit_short_minus5_neutral_loss_guard55_current.csv`.
 
 Verification:
 
-- RED: analyzer/saver imports failed; CLI help lacked
-  `--benchmark-selection-summary-output`.
-- GREEN: targeted benchmark-selection-summary tests PASS, monthly module PASS (`200`
-  tests), CLI module PASS (`51` tests).
-- Final verification: full `unittest` PASS (`490` tests), compile PASS,
+- RED: analyzer/saver imports failed and the new CLI command did not write an
+  output file.
+- GREEN: focused analyzer/save/CLI tests PASS (`3` tests).
+- Final verification: full `unittest` PASS (`493` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- Summary report rows: `7` months.
-- All `7/7` months are classified `low_liquidity_recovery_drag`.
-- Total missed-winner delta across the window: `-28.5955`; rank-501+ portion:
-  `-21.0094` (`73.47%` of absolute drag).
-- Monthly rank-501+ shares stayed high: `0.7070` to `0.7785`.
-- April remains the largest single missed-winner drag month: total
-  `-6.8438`, rank-501+ `-5.3277`, share `0.7785`.
-- Interpretation: low-liquidity recovery breadth is repeatable within the
-  best-candidate `regime_sideways` window, but selected proxy winners sometimes
-  offset it (`2025-02` selected-proxy delta `+4.1022`). Treat this as a
-  benchmark/selection diagnostic, not evidence to broaden the live proxy basket.
+- Compared scenarios: `regime_bear`, `regime_bull`, `regime_sideways`,
+  `walk_forward_001`, `walk_forward_005`.
+- All five scenarios have every month classified as
+  `low_liquidity_recovery_drag`.
+- Four passing scenarios are labeled
+  `passed_despite_low_liquidity_recovery_drag`.
+- `regime_sideways` is the only failed row and is labeled
+  `failed_with_shared_low_liquidity_recovery_drag`.
+- Aggregate rank-501+ share of missed-winner drag stays high in every scenario:
+  `0.6638` to `0.7372`.
+- `regime_sideways` aggregate missed-winner delta is `-28.5955`, rank-501+
+  portion `-21.0094`, selected-proxy delta `-5.9297`, worst missed month
+  `2025-04` at `-6.8438`.
+- Passing scenarios also have large missed-winner drag, but selected-proxy
+  offset differs materially: `regime_bull` selected-proxy delta `+57.5498`,
+  `walk_forward_001` `+7.5813`, `walk_forward_005` `+30.071`.
+- Interpretation: low-liquidity missed winners are a broad benchmark artifact,
+  not by themselves proof that the failing candidate needs a broader proxy
+  basket. The remaining `regime_sideways` weakness is more likely tied to
+  selected-proxy offset quality/path behavior inside that regime.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -212,12 +225,11 @@ Pick one narrow loop:
   remaining excess gap. New benchmark-excess evidence points to missed
   `2025-04` recovery participation after the `2025-03` drawdown. Contribution
   and selection-rank evidence points to recovery-breadth/selection rather than
-  only March loss control. Selection-summary evidence shows low-liquidity
-  missed-winner drag repeats inside `regime_sideways`; next paper-only work
-  should compare this summary across passing and failing validation scenarios to
-  separate a broad benchmark artifact from a candidate-specific weakness before
-  testing any broader proxy basket. Avoid broad cash, broad stop, or broad proxy
-  cap reuse.
+  only March loss control. Scenario comparison now shows low-liquidity
+  missed-winner drag is shared with passing scenarios; next paper-only work
+  should isolate why selected-proxy offset is negative in `regime_sideways`
+  while passing scenarios offset the same broad artifact. Avoid broad cash,
+  broad stop, or broad proxy cap reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate
   discipline; do not loosen rejected train windows.
 

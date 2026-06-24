@@ -55,6 +55,7 @@ from backtester.monthly_rebalance import (
     build_monthly_validation_candidate_followup_rows,
     build_monthly_validation_candidate_summary,
     compare_monthly_attribution_reports,
+    compare_monthly_benchmark_selection_summary_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
     summarize_monthly_path_attribution_comparison,
@@ -99,6 +100,7 @@ from backtester.monthly_rebalance import (
     save_monthly_benchmark_contributions,
     save_monthly_benchmark_selection,
     save_monthly_benchmark_selection_summary,
+    save_monthly_benchmark_selection_summary_comparison,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
     save_monthly_validation_remediation,
@@ -3724,6 +3726,82 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("low_liquidity_missed_winner_delta_share", text.splitlines()[0])
         self.assertIn("low_liquidity_recovery_drag", text)
+
+    def test_compare_monthly_benchmark_selection_summary_reports_flags_shared_low_liquidity_drag(self):
+        rows = compare_monthly_benchmark_selection_summary_reports(
+            [
+                {
+                    "scenario": "regime_sideways",
+                    "month": "2025-04",
+                    "selected_proxy_delta_pct": "-0.3",
+                    "missed_benchmark_winner_delta_pct": "-6.8",
+                    "missed_rank_501_plus_delta_pct": "-5.3",
+                    "low_liquidity_missed_winner_delta_share": "0.78",
+                    "diagnostic": "low_liquidity_recovery_drag",
+                },
+                {
+                    "scenario": "walk_forward_001",
+                    "month": "2025-04",
+                    "selected_proxy_delta_pct": "1.1",
+                    "missed_benchmark_winner_delta_pct": "-2.0",
+                    "missed_rank_501_plus_delta_pct": "-1.4",
+                    "low_liquidity_missed_winner_delta_share": "0.70",
+                    "diagnostic": "low_liquidity_recovery_drag",
+                },
+            ],
+            [
+                {
+                    "name": "regime_sideways",
+                    "deployable": "False",
+                    "reason": "negative_excess_return",
+                    "excess_return_pct": "-4.0548",
+                    "max_drawdown_pct": "-21.7902",
+                },
+                {
+                    "name": "walk_forward_001",
+                    "deployable": "True",
+                    "reason": "passed",
+                    "excess_return_pct": "3.0038",
+                    "max_drawdown_pct": "-21.5789",
+                },
+            ],
+        )
+
+        by_scenario = {row["scenario"]: row for row in rows}
+        failed = by_scenario["regime_sideways"]
+        passed = by_scenario["walk_forward_001"]
+        self.assertEqual(failed["deployable"], "False")
+        self.assertEqual(failed["month_count"], "1")
+        self.assertEqual(failed["low_liquidity_drag_month_count"], "1")
+        self.assertEqual(failed["missed_benchmark_winner_delta_pct"], "-6.8")
+        self.assertEqual(failed["missed_rank_501_plus_delta_pct"], "-5.3")
+        self.assertEqual(failed["low_liquidity_missed_winner_delta_share"], "0.7794")
+        self.assertEqual(failed["worst_missed_month"], "2025-04")
+        self.assertEqual(
+            failed["diagnostic"],
+            "failed_with_shared_low_liquidity_recovery_drag",
+        )
+        self.assertEqual(passed["deployable"], "True")
+        self.assertEqual(passed["diagnostic"], "passed_despite_low_liquidity_recovery_drag")
+
+    def test_save_monthly_benchmark_selection_summary_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "benchmark_selection_compare.csv"
+            saved = save_monthly_benchmark_selection_summary_comparison(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "deployable": "False",
+                        "diagnostic": "failed_with_shared_low_liquidity_recovery_drag",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("low_liquidity_missed_winner_delta_share", text.splitlines()[0])
+        self.assertIn("failed_with_shared_low_liquidity_recovery_drag", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

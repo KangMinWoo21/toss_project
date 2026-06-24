@@ -1081,6 +1081,48 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["candidate_only_symbols"], "DDD")
         self.assertIn("symbol_rotation", rows[0]["diagnostic"])
 
+    def test_monthly_compare_benchmark_selection_cli_writes_scenario_comparison(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            summary = root / "selection_summary.csv"
+            validation = root / "validation.csv"
+            output = root / "selection_compare.csv"
+            summary.write_text(
+                "scenario,month,selected_proxy_delta_pct,missed_benchmark_winner_delta_pct,"
+                "missed_rank_501_plus_delta_pct,low_liquidity_missed_winner_delta_share,diagnostic\n"
+                "regime_sideways,2025-04,-0.3,-6.8,-5.3,0.78,low_liquidity_recovery_drag\n"
+                "walk_forward_001,2025-04,1.1,-2.0,-1.4,0.70,low_liquidity_recovery_drag\n",
+                encoding="utf-8",
+            )
+            validation.write_text(
+                "name,deployable,reason,excess_return_pct,max_drawdown_pct\n"
+                "regime_sideways,False,negative_excess_return,-4.0548,-21.7902\n"
+                "walk_forward_001,True,passed,3.0038,-21.5789\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-benchmark-selection",
+                    "--summary-report",
+                    str(summary),
+                    "--validation-report",
+                    str(validation),
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("benchmark_selection_comparison_report", completed.stdout)
+        self.assertIn("comparison_rows  2", completed.stdout)
+        self.assertIn("failed_shared_low_liquidity_rows  1", completed.stdout)
+        self.assertEqual(rows[0]["scenario"], "regime_sideways")
+        self.assertEqual(rows[0]["diagnostic"], "failed_with_shared_low_liquidity_recovery_drag")
+
     def test_monthly_compare_paths_cli_writes_daily_path_delta_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

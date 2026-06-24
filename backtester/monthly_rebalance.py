@@ -1101,6 +1101,23 @@ MONTHLY_BENCHMARK_SELECTION_SUMMARY_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_BENCHMARK_SELECTION_SUMMARY_COMPARISON_COLUMNS = [
+    "scenario",
+    "deployable",
+    "reason",
+    "excess_return_pct",
+    "max_drawdown_pct",
+    "month_count",
+    "low_liquidity_drag_month_count",
+    "selected_proxy_delta_pct",
+    "missed_benchmark_winner_delta_pct",
+    "missed_rank_501_plus_delta_pct",
+    "low_liquidity_missed_winner_delta_share",
+    "worst_missed_month",
+    "worst_missed_month_delta_pct",
+    "diagnostic",
+]
+
 SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "symbol",
     "realized_pnl",
@@ -3069,6 +3086,105 @@ def _monthly_benchmark_selection_summary_diagnostic(
     if selected_delta < 0 and selected_proxy_loser_count > selected_proxy_winner_count:
         return "selected_proxy_loser_drag"
     return "mixed_recovery_selection_drag"
+
+
+def compare_monthly_benchmark_selection_summary_reports(
+    selection_summary_rows: list[dict[str, Any]],
+    validation_rows: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    validation_by_name = {
+        str(row.get("name", "")).strip(): row
+        for row in validation_rows
+        if str(row.get("name", "")).strip()
+    }
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in selection_summary_rows:
+        scenario = str(row.get("scenario", "")).strip()
+        grouped.setdefault(scenario, []).append(row)
+
+    comparison_rows: list[dict[str, str]] = []
+    for scenario, rows in sorted(grouped.items()):
+        validation = validation_by_name.get(scenario, {})
+        deployable = _parse_bool(validation.get("deployable", False)) if validation else None
+        missed_delta = _sum_benchmark_selection_summary_values(
+            rows,
+            "missed_benchmark_winner_delta_pct",
+        )
+        missed_rank_501_plus_delta = _sum_benchmark_selection_summary_values(
+            rows,
+            "missed_rank_501_plus_delta_pct",
+        )
+        low_liquidity_share = (
+            abs(missed_rank_501_plus_delta) / abs(missed_delta)
+            if missed_delta
+            else 0.0
+        )
+        low_liquidity_rows = [
+            row
+            for row in rows
+            if str(row.get("diagnostic", "")).strip() == "low_liquidity_recovery_drag"
+        ]
+        worst_row = min(
+            rows,
+            key=lambda row: _float_or_none(row.get("missed_benchmark_winner_delta_pct")) or 0.0,
+            default={},
+        )
+        worst_delta = _float_or_none(worst_row.get("missed_benchmark_winner_delta_pct"))
+        comparison_rows.append(
+            {
+                "scenario": scenario,
+                "deployable": "" if deployable is None else str(deployable),
+                "reason": str(validation.get("reason", "")),
+                "excess_return_pct": _format_optional_float(
+                    _float_or_none(validation.get("excess_return_pct"))
+                ),
+                "max_drawdown_pct": _format_optional_float(
+                    _float_or_none(validation.get("max_drawdown_pct"))
+                ),
+                "month_count": str(len(rows)),
+                "low_liquidity_drag_month_count": str(len(low_liquidity_rows)),
+                "selected_proxy_delta_pct": _format_optional_float(
+                    _sum_benchmark_selection_summary_values(rows, "selected_proxy_delta_pct")
+                ),
+                "missed_benchmark_winner_delta_pct": _format_optional_float(missed_delta),
+                "missed_rank_501_plus_delta_pct": _format_optional_float(
+                    missed_rank_501_plus_delta
+                ),
+                "low_liquidity_missed_winner_delta_share": _format_optional_float(
+                    low_liquidity_share
+                ),
+                "worst_missed_month": str(worst_row.get("month", "")),
+                "worst_missed_month_delta_pct": _format_optional_float(worst_delta),
+                "diagnostic": _monthly_benchmark_selection_summary_comparison_diagnostic(
+                    deployable=deployable,
+                    low_liquidity_drag_month_count=len(low_liquidity_rows),
+                ),
+            }
+        )
+    return comparison_rows
+
+
+def _sum_benchmark_selection_summary_values(rows: list[dict[str, Any]], column: str) -> float:
+    return sum(_float_or_none(row.get(column)) or 0.0 for row in rows)
+
+
+def _monthly_benchmark_selection_summary_comparison_diagnostic(
+    *,
+    deployable: bool | None,
+    low_liquidity_drag_month_count: int,
+) -> str:
+    has_low_liquidity_drag = low_liquidity_drag_month_count > 0
+    if deployable is False and has_low_liquidity_drag:
+        return "failed_with_shared_low_liquidity_recovery_drag"
+    if deployable is True and has_low_liquidity_drag:
+        return "passed_despite_low_liquidity_recovery_drag"
+    if deployable is False:
+        return "failed_selection_review"
+    if deployable is True:
+        return "passed_selection_review"
+    if has_low_liquidity_drag:
+        return "shared_low_liquidity_recovery_drag"
+    return "selection_review"
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -5075,6 +5191,17 @@ def save_monthly_benchmark_selection_summary(rows: list[dict[str, Any]], output_
         rows,
         output_path,
         columns=MONTHLY_BENCHMARK_SELECTION_SUMMARY_COLUMNS,
+    )
+
+
+def save_monthly_benchmark_selection_summary_comparison(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_BENCHMARK_SELECTION_SUMMARY_COMPARISON_COLUMNS,
     )
 
 
