@@ -10871,12 +10871,15 @@ def build_monthly_validation_candidate_decision(
         f"{name}={count}" for name, count in sorted(diagnostics.items()) if name
     )
     decision_reasons = "; ".join(reasons) if reasons else "no_required_failure_regression"
+    pending_oos_marker = "PENDING_POST_CUTOFF_OOS" if decision == "PAPER_REVIEW" else ""
     return [
         {
             "candidate_label": comparison.get("candidate_label", ""),
             "comparison_status": comparison_status,
             "decision": decision,
             "decision_reasons": decision_reasons,
+            "post_cutoff_oos_start_date": pending_oos_marker,
+            "post_cutoff_oos_end_date": pending_oos_marker,
             "baseline_failed_required": comparison.get("baseline_failed_required", ""),
             "candidate_failed_required": comparison.get("candidate_failed_required", ""),
             "failed_delta": comparison.get("failed_delta", ""),

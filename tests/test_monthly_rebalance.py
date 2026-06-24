@@ -2446,6 +2446,8 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         row = decision[0]
         self.assertEqual(row["decision"], "PAPER_REVIEW")
+        self.assertEqual(row["post_cutoff_oos_start_date"], "PENDING_POST_CUTOFF_OOS")
+        self.assertEqual(row["post_cutoff_oos_end_date"], "PENDING_POST_CUTOFF_OOS")
         self.assertIn("paper-only", row["recommendation"])
         self.assertIn("OOS/post-cutoff", row["recommendation"])
         self.assertIn("production readiness", row["recommendation"])

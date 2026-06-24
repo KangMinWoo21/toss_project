@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 sweep/drilldown evidence hardening
+Last updated: 2026-06-24 candidate OOS pending evidence
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,6 +40,8 @@ appending long command logs or full report lists here.
 
 - Previous pushed goal commit before this loop:
   `f434f4b Require performance report status evidence`.
+- Latest local goal commit: `1b3ed09 Harden validation evidence reports`;
+  push to `origin` is pending explicit approval.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
 - Latest full tests: `python -m unittest discover -s tests` PASS, `562` tests.
@@ -50,7 +52,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=353.16` observed).
+  (`age_hours=353.28` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -73,6 +75,8 @@ appending long command logs or full report lists here.
   they explicitly record `NO_CONFIG_CHANGE`.
 - Failure drilldown readiness no longer blocks non-walk-forward rows for missing
   train-window metadata when they explicitly record non-applicability.
+- Paper-review candidate decisions now write explicit `PENDING_POST_CUTOFF_OOS`
+  markers until post-cutoff OOS evidence exists.
 - Full historical detail is in `docs/archive/` and git history.
 
 ## Current Best Candidate
