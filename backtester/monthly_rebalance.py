@@ -4,7 +4,7 @@ import subprocess
 from collections import Counter
 from dataclasses import dataclass
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from statistics import mean, median
 from typing import Any, Callable
@@ -1188,6 +1188,24 @@ MONTHLY_ENTRY_MONTH_COMPARISON_COLUMNS = [
     "reference_only_symbols",
     "failed_selected_symbols",
     "reference_selected_symbols",
+    "diagnostic",
+]
+
+MONTHLY_ENTRY_PATH_SUBPERIOD_COMPARISON_COLUMNS = [
+    "subperiod",
+    "failed_label",
+    "reference_label",
+    "start_date",
+    "end_date",
+    "trading_days",
+    "return_pct",
+    "average_exposure",
+    "end_position_symbols",
+    "return_delta_vs_reference_post",
+    "average_exposure_delta_vs_reference_post",
+    "shared_with_reference_post_symbol_count",
+    "only_symbols_vs_reference_post",
+    "reference_only_symbols",
     "diagnostic",
 ]
 
@@ -3809,6 +3827,151 @@ def _monthly_entry_month_diagnostics(
     return diagnostics
 
 
+def compare_monthly_entry_path_subperiod_reports(
+    failed_path_rows: list[dict[str, Any]],
+    reference_path_rows: list[dict[str, Any]],
+    *,
+    failed_label: str,
+    reference_label: str,
+    month_start: str,
+    month_end: str,
+    split_date: str,
+) -> list[dict[str, str]]:
+    segments = [
+        (
+            "failed_pre_split",
+            failed_label,
+            _path_rows_between(failed_path_rows, start=month_start, end=_previous_iso_date(split_date)),
+        ),
+        (
+            "failed_post_split",
+            failed_label,
+            _path_rows_between(failed_path_rows, start=split_date, end=month_end),
+        ),
+        (
+            "reference_post_split",
+            reference_label,
+            _path_rows_between(reference_path_rows, start=split_date, end=month_end),
+        ),
+    ]
+    reference_summary = _summarize_path_subperiod(segments[2][2])
+    reference_symbols = set(reference_summary["end_symbols"])
+
+    rows: list[dict[str, str]] = []
+    for subperiod, label, path_rows in segments:
+        summary = _summarize_path_subperiod(path_rows)
+        end_symbols = summary["end_symbols"]
+        end_symbol_set = set(end_symbols)
+        only_symbols = [
+            symbol for symbol in end_symbols if symbol not in reference_symbols
+        ]
+        reference_only = [
+            symbol for symbol in reference_summary["end_symbols"] if symbol not in end_symbol_set
+        ]
+        return_delta = _optional_delta(summary["return_pct"], reference_summary["return_pct"])
+        exposure_delta = _optional_delta(
+            summary["average_exposure"],
+            reference_summary["average_exposure"],
+        )
+        diagnostics = _entry_path_subperiod_diagnostics(
+            subperiod=subperiod,
+            return_delta=return_delta,
+            exposure_delta=exposure_delta,
+            only_symbols=only_symbols,
+            reference_only=reference_only,
+        )
+        rows.append(
+            {
+                "subperiod": subperiod,
+                "failed_label": failed_label,
+                "reference_label": reference_label,
+                "start_date": summary["start_date"],
+                "end_date": summary["end_date"],
+                "trading_days": str(summary["trading_days"]),
+                "return_pct": _format_optional_float(summary["return_pct"]),
+                "average_exposure": _format_optional_float(summary["average_exposure"]),
+                "end_position_symbols": ";".join(end_symbols),
+                "return_delta_vs_reference_post": _format_optional_float(return_delta),
+                "average_exposure_delta_vs_reference_post": _format_optional_float(exposure_delta),
+                "shared_with_reference_post_symbol_count": str(len(end_symbol_set & reference_symbols)),
+                "only_symbols_vs_reference_post": ";".join(only_symbols),
+                "reference_only_symbols": ";".join(reference_only),
+                "diagnostic": ";".join(diagnostics) if diagnostics else "same_as_reference_post",
+            }
+        )
+    return rows
+
+
+def _path_rows_between(rows: list[dict[str, Any]], *, start: str, end: str) -> list[dict[str, Any]]:
+    return sorted(
+        [
+            row
+            for row in rows
+            if start <= str(row.get("date", "")) <= end
+        ],
+        key=lambda row: str(row.get("date", "")),
+    )
+
+
+def _previous_iso_date(day: str) -> str:
+    try:
+        return (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+    except ValueError:
+        return day
+
+
+def _summarize_path_subperiod(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not rows:
+        return {
+            "start_date": "",
+            "end_date": "",
+            "trading_days": 0,
+            "return_pct": None,
+            "average_exposure": None,
+            "end_symbols": [],
+        }
+    first_equity = _float_or_none(rows[0].get("equity"))
+    last_equity = _float_or_none(rows[-1].get("equity"))
+    return_pct = (
+        (last_equity / first_equity - 1.0) * 100.0
+        if first_equity and last_equity is not None
+        else None
+    )
+    average_exposure = _average_numeric(row.get("exposure") for row in rows)
+    return {
+        "start_date": str(rows[0].get("date", "")),
+        "end_date": str(rows[-1].get("date", "")),
+        "trading_days": len(rows),
+        "return_pct": return_pct,
+        "average_exposure": average_exposure,
+        "end_symbols": _split_semicolon_values(str(rows[-1].get("position_symbols", ""))),
+    }
+
+
+def _entry_path_subperiod_diagnostics(
+    *,
+    subperiod: str,
+    return_delta: float | None,
+    exposure_delta: float | None,
+    only_symbols: list[str],
+    reference_only: list[str],
+) -> list[str]:
+    if subperiod == "reference_post_split":
+        return ["reference_post"]
+    diagnostics: list[str] = []
+    if return_delta is not None and return_delta < 0:
+        diagnostics.append("reference_post_outperformed")
+    elif return_delta is not None and return_delta > 0:
+        diagnostics.append("subperiod_outperformed_reference")
+    if exposure_delta is not None and exposure_delta < 0:
+        diagnostics.append("reference_exposure_higher")
+    elif exposure_delta is not None and exposure_delta > 0:
+        diagnostics.append("subperiod_exposure_higher")
+    if only_symbols or reference_only:
+        diagnostics.append("symbol_rotation")
+    return diagnostics
+
+
 def _decision_symbol_list(row: dict[str, Any]) -> list[str]:
     symbols = [
         symbol.strip()
@@ -5667,6 +5830,17 @@ def save_monthly_entry_month_comparison(
         rows,
         output_path,
         columns=MONTHLY_ENTRY_MONTH_COMPARISON_COLUMNS,
+    )
+
+
+def save_monthly_entry_path_subperiod_comparison(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_ENTRY_PATH_SUBPERIOD_COMPARISON_COLUMNS,
     )
 
 

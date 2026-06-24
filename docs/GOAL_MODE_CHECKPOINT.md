@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 January entry-month comparison
+Last updated: 2026-06-24 January path subperiod comparison
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,56 +40,58 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit:
-  `Add January entry-month comparison` (current HEAD after this loop).
+  `Add January path subperiod comparison` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `499` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `502` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=344.98` observed).
+  (`age_hours=345.27` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only January entry-month comparison to isolate the
-`2025-01-02` versus `2025-01-14` start-date and holding-composition gap between
+Added a report-only January path subperiod comparison to split the
+`2025-01-02..2025-01-31` gap around the shared `2025-01-14` entry date between
 the failed `regime_sideways` row and passing `walk_forward_001`.
 
 Changed behavior:
 
-- New `monthly-compare-entry-month` reads failed/reference benchmark,
-  selection-summary, and decision CSVs, then writes one paired month row with
-  date delta, excess delta, selected-proxy delta, exposure/cash deltas, symbol
-  rotation, and diagnostic labels.
+- New `monthly-compare-entry-path-subperiod` reads failed/reference path
+  attribution CSVs and writes `failed_pre_split`, `failed_post_split`, and
+  `reference_post_split` rows with return, average exposure, end holdings,
+  deltas versus reference post-split, symbol rotation, and diagnostics.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
 - Generated:
-  `data/reports/regime_sideways_vs_walk_forward_001_entry_month_2025_01.csv`.
+  `data/reports/regime_sideways_vs_walk_forward_001_entry_path_subperiod_2025_01.csv`.
 
 Verification:
 
-- RED: focused entry-month tests failed on missing analyzer/save/CLI.
+- RED: focused path-subperiod tests failed on missing analyzer/save/CLI.
 - GREEN: focused analyzer/save/CLI tests PASS (`3` tests).
-- Final verification: full `unittest` PASS (`499` tests), compile PASS,
+- Final verification: full `unittest` PASS (`502` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- January paired row has `start_date_delta_days=12`.
-- `regime_sideways` January: start `2025-01-02`, monthly excess `-1.6436`,
-  selected-proxy delta `+1.2827`, target exposure `0.2475`, cash `0.7525`,
-  reason `weak_train_neutral_breadth_proxy_trend_scaled`.
-- `walk_forward_001` January: start `2025-01-14`, monthly excess `+8.646`,
-  selected-proxy delta `+8.7209`, target exposure `0.99`, cash `0.01`, reason
-  `no_train_candidate_strong_breadth_proxy`.
-- Delta: reference monthly excess is higher by `+10.2896`, target exposure by
-  `+0.7425`, selected-proxy delta by `+7.4382`; shared symbols `6/12`, with
-  six failed-only and six reference-only symbols.
-- Diagnostic: `entry_date_mismatch;reference_excess_better;reference_exposure_higher;symbol_rotation`.
-- Interpretation: the January blocker is a combined entry-date, exposure-scale,
-  and holding-composition difference, not just broad benchmark missed winners.
+- Prior entry-month comparison showed `start_date_delta_days=12`,
+  reference monthly excess higher by `+10.2896`, target exposure higher by
+  `+0.7425`, selected-proxy delta higher by `+7.4382`, and shared symbols
+  `6/12`.
+- New path split shows the failed pre-split `2025-01-02..2025-01-13` return was
+  `+1.6148`, average exposure `0.303`, and still `-6.1225` versus the
+  reference post-split return.
+- On shared dates `2025-01-14..2025-01-31`, failed post-split return was only
+  `+0.4198` with average exposure `0.3104`, while reference post-split return
+  was `+7.7374` with average exposure `0.8791`.
+- Failed post-split delta versus reference post-split: return `-7.3175`,
+  exposure `-0.5687`, shared symbols `6/12`; diagnostic:
+  `reference_post_outperformed;reference_exposure_higher;symbol_rotation`.
+- Interpretation: missed `2025-01-02..2025-01-13` timing is not the main cause;
+  the shared-date gap is dominated by exposure scale and six-symbol rotation.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -217,12 +219,12 @@ Pick one narrow loop:
   missed-winner drag is shared with passing scenarios, and selected-proxy drag
   is not unique to the failed scenario. Window comparison now shows the blocker
   is in `2025-01-02..2025-04-17`, while the `2024-10..2024-12` pre-window has
-  positive excess. January entry-month comparison shows the passed reference
-  had later entry, much higher exposure, and materially different holdings.
-  Next paper-only work should isolate whether the January improvement came from
-  later entry timing, strong-breadth exposure scale, or the six-symbol rotation
-  before testing any rule change. Avoid broad cash, broad stop, or broad proxy
-  cap reuse.
+  positive excess. January path subperiod comparison shows missed early-January
+  timing is not the main cause; the shared `2025-01-14..2025-01-31` dates still
+  trail reference by `-7.3175` with much lower exposure and six-symbol rotation.
+  Next paper-only work should isolate strong-breadth exposure scale versus
+  symbol rotation before testing any rule change. Avoid broad cash, broad stop,
+  or broad proxy cap reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate
   discipline; do not loosen rejected train windows.
 

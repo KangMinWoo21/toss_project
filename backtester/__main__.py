@@ -97,6 +97,7 @@ from .monthly_rebalance import (
     compare_monthly_benchmark_selection_window_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_entry_month_reports,
+    compare_monthly_entry_path_subperiod_reports,
     compare_monthly_path_attribution_reports,
     summarize_monthly_path_attribution_comparison,
     compare_monthly_validation_reports,
@@ -137,6 +138,7 @@ from .monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
     save_monthly_entry_month_comparison,
+    save_monthly_entry_path_subperiod_comparison,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_path_drift,
     save_monthly_direct_alpha_rank_drift,
@@ -1270,6 +1272,22 @@ def main() -> int:
         default="data/reports/monthly_entry_month_comparison.csv",
     )
 
+    monthly_compare_entry_path_parser = subparsers.add_parser(
+        "monthly-compare-entry-path-subperiod",
+        help="Split failed/reference entry-month path reports around a reference start date",
+    )
+    monthly_compare_entry_path_parser.add_argument("--failed-path-report", required=True)
+    monthly_compare_entry_path_parser.add_argument("--reference-path-report", required=True)
+    monthly_compare_entry_path_parser.add_argument("--failed-label", default="failed")
+    monthly_compare_entry_path_parser.add_argument("--reference-label", default="reference")
+    monthly_compare_entry_path_parser.add_argument("--month-start", required=True)
+    monthly_compare_entry_path_parser.add_argument("--month-end", required=True)
+    monthly_compare_entry_path_parser.add_argument("--split-date", required=True)
+    monthly_compare_entry_path_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_entry_path_subperiod_comparison.csv",
+    )
+
     monthly_compare_paths_parser = subparsers.add_parser(
         "monthly-compare-paths",
         help="Compare baseline and candidate daily path attribution CSV reports",
@@ -1987,6 +2005,27 @@ def main() -> int:
         print(f"comparison_rows  {saved}")
         print(f"entry_date_mismatch_rows  {len(entry_date_mismatch_rows)}")
         print(f"symbol_rotation_rows  {len(symbol_rotation_rows)}")
+        return 0
+
+    if args.command == "monthly-compare-entry-path-subperiod":
+        rows = compare_monthly_entry_path_subperiod_reports(
+            _read_csv_dicts(Path(args.failed_path_report)),
+            _read_csv_dicts(Path(args.reference_path_report)),
+            failed_label=args.failed_label,
+            reference_label=args.reference_label,
+            month_start=args.month_start,
+            month_end=args.month_end,
+            split_date=args.split_date,
+        )
+        saved = save_monthly_entry_path_subperiod_comparison(rows, args.output)
+        reference_outperformance_rows = [
+            row
+            for row in rows
+            if "reference_post_outperformed" in str(row.get("diagnostic", ""))
+        ]
+        print(f"entry_path_subperiod_report  {args.output}")
+        print(f"comparison_rows  {saved}")
+        print(f"reference_post_outperformance_rows  {len(reference_outperformance_rows)}")
         return 0
 
     if args.command == "monthly-compare-paths":

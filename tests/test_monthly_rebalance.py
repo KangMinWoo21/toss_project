@@ -58,6 +58,7 @@ from backtester.monthly_rebalance import (
     compare_monthly_benchmark_selection_summary_reports,
     compare_monthly_benchmark_selection_window_reports,
     compare_monthly_entry_month_reports,
+    compare_monthly_entry_path_subperiod_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
     summarize_monthly_path_attribution_comparison,
@@ -105,6 +106,7 @@ from backtester.monthly_rebalance import (
     save_monthly_benchmark_selection_summary_comparison,
     save_monthly_benchmark_selection_window_comparison,
     save_monthly_entry_month_comparison,
+    save_monthly_entry_path_subperiod_comparison,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
     save_monthly_validation_remediation,
@@ -4042,6 +4044,61 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("start_date_delta_days", text.splitlines()[0])
         self.assertIn("entry_date_mismatch", text)
+
+    def test_compare_monthly_entry_path_subperiod_reports_splits_timing_and_exposure(self):
+        failed_path_rows = [
+            {"date": "2025-01-02", "equity": "100", "exposure": "0.25", "position_symbols": "AAA;BBB"},
+            {"date": "2025-01-13", "equity": "102", "exposure": "0.25", "position_symbols": "AAA;BBB"},
+            {"date": "2025-01-14", "equity": "102", "exposure": "0.3", "position_symbols": "AAA;BBB"},
+            {"date": "2025-01-31", "equity": "103.02", "exposure": "0.3", "position_symbols": "AAA;BBB"},
+        ]
+        reference_path_rows = [
+            {"date": "2025-01-14", "equity": "100", "exposure": "0.9", "position_symbols": "AAA;CCC"},
+            {"date": "2025-01-31", "equity": "108", "exposure": "0.9", "position_symbols": "AAA;CCC"},
+        ]
+
+        rows = compare_monthly_entry_path_subperiod_reports(
+            failed_path_rows,
+            reference_path_rows,
+            failed_label="regime_sideways",
+            reference_label="walk_forward_001",
+            month_start="2025-01-02",
+            month_end="2025-01-31",
+            split_date="2025-01-14",
+        )
+
+        by_role = {row["subperiod"]: row for row in rows}
+        self.assertEqual(by_role["failed_pre_split"]["return_pct"], "2")
+        self.assertEqual(by_role["failed_pre_split"]["average_exposure"], "0.25")
+        self.assertEqual(by_role["failed_post_split"]["return_pct"], "1")
+        self.assertEqual(by_role["failed_post_split"]["average_exposure"], "0.3")
+        self.assertEqual(by_role["reference_post_split"]["return_pct"], "8")
+        self.assertEqual(by_role["failed_post_split"]["return_delta_vs_reference_post"], "-7")
+        self.assertEqual(by_role["failed_post_split"]["average_exposure_delta_vs_reference_post"], "-0.6")
+        self.assertEqual(by_role["failed_post_split"]["shared_with_reference_post_symbol_count"], "1")
+        self.assertEqual(by_role["failed_post_split"]["only_symbols_vs_reference_post"], "BBB")
+        self.assertEqual(by_role["failed_post_split"]["reference_only_symbols"], "CCC")
+        self.assertIn("reference_post_outperformed", by_role["failed_post_split"]["diagnostic"])
+        self.assertIn("reference_exposure_higher", by_role["failed_post_split"]["diagnostic"])
+        self.assertIn("symbol_rotation", by_role["failed_post_split"]["diagnostic"])
+
+    def test_save_monthly_entry_path_subperiod_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "entry_path_subperiod.csv"
+            saved = save_monthly_entry_path_subperiod_comparison(
+                [
+                    {
+                        "subperiod": "failed_post_split",
+                        "diagnostic": "reference_post_outperformed",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("return_delta_vs_reference_post", text.splitlines()[0])
+        self.assertIn("reference_post_outperformed", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

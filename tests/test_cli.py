@@ -1267,6 +1267,60 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["target_exposure_delta"], "0.7425")
         self.assertIn("symbol_rotation", rows[0]["diagnostic"])
 
+    def test_monthly_compare_entry_path_subperiod_cli_writes_split_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            failed_path = root / "failed_path.csv"
+            reference_path = root / "reference_path.csv"
+            output = root / "entry_path.csv"
+            failed_path.write_text(
+                "date,equity,exposure,position_symbols\n"
+                "2025-01-02,100,0.25,AAA;BBB\n"
+                "2025-01-13,102,0.25,AAA;BBB\n"
+                "2025-01-14,102,0.3,AAA;BBB\n"
+                "2025-01-31,103.02,0.3,AAA;BBB\n",
+                encoding="utf-8",
+            )
+            reference_path.write_text(
+                "date,equity,exposure,position_symbols\n"
+                "2025-01-14,100,0.9,AAA;CCC\n"
+                "2025-01-31,108,0.9,AAA;CCC\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-entry-path-subperiod",
+                    "--failed-path-report",
+                    str(failed_path),
+                    "--reference-path-report",
+                    str(reference_path),
+                    "--failed-label",
+                    "regime_sideways",
+                    "--reference-label",
+                    "walk_forward_001",
+                    "--month-start",
+                    "2025-01-02",
+                    "--month-end",
+                    "2025-01-31",
+                    "--split-date",
+                    "2025-01-14",
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("entry_path_subperiod_report", completed.stdout)
+        self.assertIn("comparison_rows  3", completed.stdout)
+        self.assertIn("reference_post_outperformance_rows  2", completed.stdout)
+        self.assertEqual(rows[1]["subperiod"], "failed_post_split")
+        self.assertEqual(rows[1]["return_delta_vs_reference_post"], "-7")
+        self.assertIn("reference_exposure_higher", rows[1]["diagnostic"])
+
     def test_monthly_compare_paths_cli_writes_daily_path_delta_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
