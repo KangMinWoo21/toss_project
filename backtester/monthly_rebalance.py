@@ -1147,6 +1147,50 @@ MONTHLY_BENCHMARK_SELECTION_WINDOW_COMPARISON_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_ENTRY_MONTH_COMPARISON_COLUMNS = [
+    "month",
+    "failed_label",
+    "reference_label",
+    "failed_start_date",
+    "reference_start_date",
+    "start_date_delta_days",
+    "failed_end_date",
+    "reference_end_date",
+    "failed_strategy_return_pct",
+    "reference_strategy_return_pct",
+    "strategy_return_delta",
+    "failed_benchmark_return_pct",
+    "reference_benchmark_return_pct",
+    "benchmark_return_delta",
+    "failed_monthly_excess_return_pct",
+    "reference_monthly_excess_return_pct",
+    "monthly_excess_delta",
+    "failed_selected_proxy_delta_pct",
+    "reference_selected_proxy_delta_pct",
+    "selected_proxy_delta_delta",
+    "failed_missed_benchmark_winner_delta_pct",
+    "reference_missed_benchmark_winner_delta_pct",
+    "missed_benchmark_winner_delta_delta",
+    "failed_decision_as_of_date",
+    "reference_decision_as_of_date",
+    "failed_signal_date",
+    "reference_signal_date",
+    "failed_reason",
+    "reference_reason",
+    "failed_target_exposure",
+    "reference_target_exposure",
+    "target_exposure_delta",
+    "failed_cash_weight",
+    "reference_cash_weight",
+    "cash_weight_delta",
+    "shared_symbol_count",
+    "failed_only_symbols",
+    "reference_only_symbols",
+    "failed_selected_symbols",
+    "reference_selected_symbols",
+    "diagnostic",
+]
+
 SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "symbol",
     "realized_pnl",
@@ -3605,6 +3649,166 @@ def compare_monthly_decision_attribution_reports(
     return rows
 
 
+def compare_monthly_entry_month_reports(
+    failed_benchmark_rows: list[dict[str, Any]],
+    reference_benchmark_rows: list[dict[str, Any]],
+    failed_selection_rows: list[dict[str, Any]],
+    reference_selection_rows: list[dict[str, Any]],
+    failed_decision_rows: list[dict[str, Any]],
+    reference_decision_rows: list[dict[str, Any]],
+    *,
+    failed_label: str,
+    reference_label: str,
+    month: str,
+) -> list[dict[str, str]]:
+    failed_benchmark = _row_for_month(failed_benchmark_rows, month)
+    reference_benchmark = _row_for_month(reference_benchmark_rows, month)
+    failed_selection = _row_for_month(failed_selection_rows, month)
+    reference_selection = _row_for_month(reference_selection_rows, month)
+    failed_decision = _decision_for_month(failed_decision_rows, month)
+    reference_decision = _decision_for_month(reference_decision_rows, month)
+    if not failed_benchmark and not reference_benchmark:
+        return []
+
+    failed_strategy = _float_or_none(failed_benchmark.get("strategy_return_pct"))
+    reference_strategy = _float_or_none(reference_benchmark.get("strategy_return_pct"))
+    failed_benchmark_return = _float_or_none(failed_benchmark.get("benchmark_return_pct"))
+    reference_benchmark_return = _float_or_none(reference_benchmark.get("benchmark_return_pct"))
+    failed_excess = _monthly_excess_from_row(failed_benchmark)
+    reference_excess = _monthly_excess_from_row(reference_benchmark)
+    failed_selected_delta = _float_or_none(failed_selection.get("selected_proxy_delta_pct"))
+    reference_selected_delta = _float_or_none(reference_selection.get("selected_proxy_delta_pct"))
+    failed_missed_delta = _float_or_none(failed_selection.get("missed_benchmark_winner_delta_pct"))
+    reference_missed_delta = _float_or_none(reference_selection.get("missed_benchmark_winner_delta_pct"))
+    failed_exposure = _float_or_none(failed_decision.get("target_exposure"))
+    reference_exposure = _float_or_none(reference_decision.get("target_exposure"))
+    failed_cash = _float_or_none(failed_decision.get("cash_weight"))
+    reference_cash = _float_or_none(reference_decision.get("cash_weight"))
+    failed_symbols = _decision_symbol_list(failed_decision)
+    reference_symbols = _decision_symbol_list(reference_decision)
+    failed_symbol_set = set(failed_symbols)
+    reference_symbol_set = set(reference_symbols)
+    failed_only = [symbol for symbol in failed_symbols if symbol not in reference_symbol_set]
+    reference_only = [symbol for symbol in reference_symbols if symbol not in failed_symbol_set]
+    start_delta = _date_delta_days(
+        str(failed_benchmark.get("start_date", "")),
+        str(reference_benchmark.get("start_date", "")),
+    )
+    excess_delta = _optional_delta(reference_excess, failed_excess)
+    exposure_delta = _optional_delta(reference_exposure, failed_exposure)
+    cash_delta = _optional_delta(reference_cash, failed_cash)
+    selected_delta_delta = _optional_delta(reference_selected_delta, failed_selected_delta)
+    missed_delta_delta = _optional_delta(reference_missed_delta, failed_missed_delta)
+    diagnostics = _monthly_entry_month_diagnostics(
+        start_delta=start_delta,
+        excess_delta=excess_delta,
+        exposure_delta=exposure_delta,
+        failed_only=failed_only,
+        reference_only=reference_only,
+    )
+    return [
+        {
+            "month": month,
+            "failed_label": failed_label,
+            "reference_label": reference_label,
+            "failed_start_date": str(failed_benchmark.get("start_date", "")),
+            "reference_start_date": str(reference_benchmark.get("start_date", "")),
+            "start_date_delta_days": "" if start_delta is None else str(start_delta),
+            "failed_end_date": str(failed_benchmark.get("end_date", "")),
+            "reference_end_date": str(reference_benchmark.get("end_date", "")),
+            "failed_strategy_return_pct": _format_optional_float(failed_strategy),
+            "reference_strategy_return_pct": _format_optional_float(reference_strategy),
+            "strategy_return_delta": _format_optional_float(_optional_delta(reference_strategy, failed_strategy)),
+            "failed_benchmark_return_pct": _format_optional_float(failed_benchmark_return),
+            "reference_benchmark_return_pct": _format_optional_float(reference_benchmark_return),
+            "benchmark_return_delta": _format_optional_float(
+                _optional_delta(reference_benchmark_return, failed_benchmark_return)
+            ),
+            "failed_monthly_excess_return_pct": _format_optional_float(failed_excess),
+            "reference_monthly_excess_return_pct": _format_optional_float(reference_excess),
+            "monthly_excess_delta": _format_optional_float(excess_delta),
+            "failed_selected_proxy_delta_pct": _format_optional_float(failed_selected_delta),
+            "reference_selected_proxy_delta_pct": _format_optional_float(reference_selected_delta),
+            "selected_proxy_delta_delta": _format_optional_float(selected_delta_delta),
+            "failed_missed_benchmark_winner_delta_pct": _format_optional_float(failed_missed_delta),
+            "reference_missed_benchmark_winner_delta_pct": _format_optional_float(reference_missed_delta),
+            "missed_benchmark_winner_delta_delta": _format_optional_float(missed_delta_delta),
+            "failed_decision_as_of_date": str(failed_decision.get("as_of_date", "")),
+            "reference_decision_as_of_date": str(reference_decision.get("as_of_date", "")),
+            "failed_signal_date": str(failed_decision.get("signal_date", "")),
+            "reference_signal_date": str(reference_decision.get("signal_date", "")),
+            "failed_reason": str(failed_decision.get("reason", "")),
+            "reference_reason": str(reference_decision.get("reason", "")),
+            "failed_target_exposure": _format_optional_float(failed_exposure),
+            "reference_target_exposure": _format_optional_float(reference_exposure),
+            "target_exposure_delta": _format_optional_float(exposure_delta),
+            "failed_cash_weight": _format_optional_float(failed_cash),
+            "reference_cash_weight": _format_optional_float(reference_cash),
+            "cash_weight_delta": _format_optional_float(cash_delta),
+            "shared_symbol_count": str(len(failed_symbol_set & reference_symbol_set)),
+            "failed_only_symbols": ";".join(failed_only),
+            "reference_only_symbols": ";".join(reference_only),
+            "failed_selected_symbols": ";".join(failed_symbols),
+            "reference_selected_symbols": ";".join(reference_symbols),
+            "diagnostic": ";".join(diagnostics) if diagnostics else "same_entry_month",
+        }
+    ]
+
+
+def _row_for_month(rows: list[dict[str, Any]], month: str) -> dict[str, Any]:
+    for row in rows:
+        if str(row.get("month", "")).strip() == month:
+            return row
+    return {}
+
+
+def _decision_for_month(rows: list[dict[str, Any]], month: str) -> dict[str, Any]:
+    for row in rows:
+        if str(row.get("as_of_date", "")).startswith(month):
+            return row
+    return {}
+
+
+def _monthly_excess_from_row(row: dict[str, Any]) -> float | None:
+    excess = _float_or_none(row.get("monthly_excess_return_pct"))
+    if excess is not None:
+        return excess
+    strategy = _float_or_none(row.get("strategy_return_pct"))
+    benchmark = _float_or_none(row.get("benchmark_return_pct"))
+    return _optional_delta(strategy, benchmark)
+
+
+def _date_delta_days(start: str, reference: str) -> int | None:
+    try:
+        return (date.fromisoformat(reference) - date.fromisoformat(start)).days
+    except ValueError:
+        return None
+
+
+def _monthly_entry_month_diagnostics(
+    *,
+    start_delta: int | None,
+    excess_delta: float | None,
+    exposure_delta: float | None,
+    failed_only: list[str],
+    reference_only: list[str],
+) -> list[str]:
+    diagnostics: list[str] = []
+    if start_delta:
+        diagnostics.append("entry_date_mismatch")
+    if excess_delta is not None and excess_delta > 0:
+        diagnostics.append("reference_excess_better")
+    elif excess_delta is not None and excess_delta < 0:
+        diagnostics.append("failed_excess_better")
+    if exposure_delta is not None and exposure_delta > 0:
+        diagnostics.append("reference_exposure_higher")
+    elif exposure_delta is not None and exposure_delta < 0:
+        diagnostics.append("failed_exposure_higher")
+    if failed_only or reference_only:
+        diagnostics.append("symbol_rotation")
+    return diagnostics
+
+
 def _decision_symbol_list(row: dict[str, Any]) -> list[str]:
     symbols = [
         symbol.strip()
@@ -5452,6 +5656,17 @@ def save_monthly_benchmark_selection_window_comparison(
         rows,
         output_path,
         columns=MONTHLY_BENCHMARK_SELECTION_WINDOW_COMPARISON_COLUMNS,
+    )
+
+
+def save_monthly_entry_month_comparison(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_ENTRY_MONTH_COMPARISON_COLUMNS,
     )
 
 

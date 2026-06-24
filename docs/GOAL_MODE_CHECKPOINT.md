@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 selected-proxy offset diagnostics
+Last updated: 2026-06-24 January entry-month comparison
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,61 +40,56 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit:
-  `Add benchmark selection window comparison` (current HEAD after this loop).
+  `Add January entry-month comparison` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `496` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `499` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=344.75` observed).
+  (`age_hours=344.98` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only benchmark selection window comparison to split the failed
-`regime_sideways` candidate window into pre-window versus the overlapping
-`walk_forward_001` months.
+Added a report-only January entry-month comparison to isolate the
+`2025-01-02` versus `2025-01-14` start-date and holding-composition gap between
+the failed `regime_sideways` row and passing `walk_forward_001`.
 
 Changed behavior:
 
-- New `monthly-compare-benchmark-selection-windows` reads selection-summary
-  and benchmark-excess CSVs, joins optional validation rows, and writes
-  scenario/window rows for `pre_window`, `window`, and `post_window`.
-- The report includes exact date bounds, compounded strategy/benchmark returns,
-  window excess, selected-proxy delta, missed-winner delta, and diagnostic
-  labels such as `failed_window_excess_drag`.
+- New `monthly-compare-entry-month` reads failed/reference benchmark,
+  selection-summary, and decision CSVs, then writes one paired month row with
+  date delta, excess delta, selected-proxy delta, exposure/cash deltas, symbol
+  rotation, and diagnostic labels.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
 - Generated:
-  `data/reports/regime_sideways_vs_walk_forward_001_benchmark_selection_window_comparison.csv`.
+  `data/reports/regime_sideways_vs_walk_forward_001_entry_month_2025_01.csv`.
 
 Verification:
 
-- RED: focused window comparison tests failed on missing analyzer/save/CLI and
-  missing date-boundary fields.
+- RED: focused entry-month tests failed on missing analyzer/save/CLI.
 - GREEN: focused analyzer/save/CLI tests PASS (`3` tests).
-- Final verification: full `unittest` PASS (`496` tests), compile PASS,
+- Final verification: full `unittest` PASS (`499` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
 Residual evidence:
 
-- `regime_sideways pre_window` (`2024-10-14..2024-12-30`) has strategy return
-  `-5.6393%`, benchmark return `-7.8879%`, window excess `+2.2486%`, selected
-  proxy delta `-6.0728`, missed-winner delta `-8.9889`; it is not the excess
-  drag source.
-- `regime_sideways window` (`2025-01-02..2025-04-17`) has strategy return
-  `-0.5069%`, benchmark return `+5.9551%`, window excess `-6.4619%`, selected
-  proxy delta `+0.1431`, missed-winner delta `-19.6066`; diagnostic
-  `failed_window_excess_drag`.
-- `walk_forward_001 window` (`2025-01-14..2025-04-17`) passes with strategy
-  return `+4.8813%`, benchmark return `+1.8228%`, excess `+3.0585%`, selected
-  proxy delta `+7.5813`.
-- Interpretation: the remaining blocker is concentrated inside the Jan-Apr
-  window, not the earlier Oct-Dec path. The exact January start-date difference
-  (`2025-01-02` versus `2025-01-14`) is material and should be isolated before
-  any candidate rule change.
+- January paired row has `start_date_delta_days=12`.
+- `regime_sideways` January: start `2025-01-02`, monthly excess `-1.6436`,
+  selected-proxy delta `+1.2827`, target exposure `0.2475`, cash `0.7525`,
+  reason `weak_train_neutral_breadth_proxy_trend_scaled`.
+- `walk_forward_001` January: start `2025-01-14`, monthly excess `+8.646`,
+  selected-proxy delta `+8.7209`, target exposure `0.99`, cash `0.01`, reason
+  `no_train_candidate_strong_breadth_proxy`.
+- Delta: reference monthly excess is higher by `+10.2896`, target exposure by
+  `+0.7425`, selected-proxy delta by `+7.4382`; shared symbols `6/12`, with
+  six failed-only and six reference-only symbols.
+- Diagnostic: `entry_date_mismatch;reference_excess_better;reference_exposure_higher;symbol_rotation`.
+- Interpretation: the January blocker is a combined entry-date, exposure-scale,
+  and holding-composition difference, not just broad benchmark missed winners.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -222,8 +217,10 @@ Pick one narrow loop:
   missed-winner drag is shared with passing scenarios, and selected-proxy drag
   is not unique to the failed scenario. Window comparison now shows the blocker
   is in `2025-01-02..2025-04-17`, while the `2024-10..2024-12` pre-window has
-  positive excess. Next paper-only work should isolate the January entry-date
-  effect (`2025-01-02` versus `2025-01-14`) and the January holding composition
+  positive excess. January entry-month comparison shows the passed reference
+  had later entry, much higher exposure, and materially different holdings.
+  Next paper-only work should isolate whether the January improvement came from
+  later entry timing, strong-breadth exposure scale, or the six-symbol rotation
   before testing any rule change. Avoid broad cash, broad stop, or broad proxy
   cap reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate

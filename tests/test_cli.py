@@ -1189,6 +1189,84 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["window_start_date"], "2024-12-02")
         self.assertEqual(rows[0]["diagnostic"], "failed_pre_window_excess_drag")
 
+    def test_monthly_compare_entry_month_cli_writes_date_and_holding_gap(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            failed_benchmark = root / "failed_benchmark.csv"
+            reference_benchmark = root / "reference_benchmark.csv"
+            failed_selection = root / "failed_selection.csv"
+            reference_selection = root / "reference_selection.csv"
+            failed_decision = root / "failed_decision.csv"
+            reference_decision = root / "reference_decision.csv"
+            output = root / "entry_month.csv"
+            failed_benchmark.write_text(
+                "month,start_date,end_date,strategy_return_pct,benchmark_return_pct,monthly_excess_return_pct\n"
+                "2025-01,2025-01-02,2025-01-31,2,4,-2\n",
+                encoding="utf-8",
+            )
+            reference_benchmark.write_text(
+                "month,start_date,end_date,strategy_return_pct,benchmark_return_pct,monthly_excess_return_pct\n"
+                "2025-01,2025-01-14,2025-01-31,8,-1,9\n",
+                encoding="utf-8",
+            )
+            failed_selection.write_text(
+                "month,selected_proxy_delta_pct,missed_benchmark_winner_delta_pct\n"
+                "2025-01,1,-5\n",
+                encoding="utf-8",
+            )
+            reference_selection.write_text(
+                "month,selected_proxy_delta_pct,missed_benchmark_winner_delta_pct\n"
+                "2025-01,7,-2\n",
+                encoding="utf-8",
+            )
+            failed_decision.write_text(
+                "as_of_date,signal_date,target_exposure,cash_weight,selected_symbols,reason\n"
+                "2025-01-02,2024-12-30,0.2475,0.7525,AAA;BBB;CCC,weak_train_neutral_breadth_proxy_trend_scaled\n",
+                encoding="utf-8",
+            )
+            reference_decision.write_text(
+                "as_of_date,signal_date,target_exposure,cash_weight,selected_symbols,reason\n"
+                "2025-01-14,2025-01-13,0.99,0.01,AAA;DDD;EEE,no_train_candidate_strong_breadth_proxy\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-entry-month",
+                    "--failed-benchmark-report",
+                    str(failed_benchmark),
+                    "--reference-benchmark-report",
+                    str(reference_benchmark),
+                    "--failed-selection-summary-report",
+                    str(failed_selection),
+                    "--reference-selection-summary-report",
+                    str(reference_selection),
+                    "--failed-decision-report",
+                    str(failed_decision),
+                    "--reference-decision-report",
+                    str(reference_decision),
+                    "--failed-label",
+                    "regime_sideways",
+                    "--reference-label",
+                    "walk_forward_001",
+                    "--month",
+                    "2025-01",
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("entry_month_comparison_report", completed.stdout)
+        self.assertIn("comparison_rows  1", completed.stdout)
+        self.assertIn("entry_date_mismatch_rows  1", completed.stdout)
+        self.assertEqual(rows[0]["start_date_delta_days"], "12")
+        self.assertEqual(rows[0]["target_exposure_delta"], "0.7425")
+        self.assertIn("symbol_rotation", rows[0]["diagnostic"])
+
     def test_monthly_compare_paths_cli_writes_daily_path_delta_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

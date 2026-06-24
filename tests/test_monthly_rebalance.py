@@ -57,6 +57,7 @@ from backtester.monthly_rebalance import (
     compare_monthly_attribution_reports,
     compare_monthly_benchmark_selection_summary_reports,
     compare_monthly_benchmark_selection_window_reports,
+    compare_monthly_entry_month_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
     summarize_monthly_path_attribution_comparison,
@@ -103,6 +104,7 @@ from backtester.monthly_rebalance import (
     save_monthly_benchmark_selection_summary,
     save_monthly_benchmark_selection_summary_comparison,
     save_monthly_benchmark_selection_window_comparison,
+    save_monthly_entry_month_comparison,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
     save_monthly_validation_remediation,
@@ -3973,6 +3975,73 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("window_start_date", text.splitlines()[0])
         self.assertIn("window_excess_return_pct", text.splitlines()[0])
         self.assertIn("failed_pre_window_excess_drag", text)
+
+    def test_compare_monthly_entry_month_reports_flags_date_excess_and_holdings_gap(self):
+        rows = compare_monthly_entry_month_reports(
+            [{"month": "2025-01", "start_date": "2025-01-02", "end_date": "2025-01-31", "strategy_return_pct": "2", "benchmark_return_pct": "4", "monthly_excess_return_pct": "-2"}],
+            [{"month": "2025-01", "start_date": "2025-01-14", "end_date": "2025-01-31", "strategy_return_pct": "8", "benchmark_return_pct": "-1", "monthly_excess_return_pct": "9"}],
+            [{"month": "2025-01", "selected_proxy_delta_pct": "1", "missed_benchmark_winner_delta_pct": "-5"}],
+            [{"month": "2025-01", "selected_proxy_delta_pct": "7", "missed_benchmark_winner_delta_pct": "-2"}],
+            [
+                {
+                    "as_of_date": "2025-01-02",
+                    "signal_date": "2024-12-30",
+                    "target_exposure": "0.2475",
+                    "cash_weight": "0.7525",
+                    "selected_symbols": "AAA;BBB;CCC",
+                    "reason": "weak_train_neutral_breadth_proxy_trend_scaled",
+                }
+            ],
+            [
+                {
+                    "as_of_date": "2025-01-14",
+                    "signal_date": "2025-01-13",
+                    "target_exposure": "0.99",
+                    "cash_weight": "0.01",
+                    "selected_symbols": "AAA;DDD;EEE",
+                    "reason": "no_train_candidate_strong_breadth_proxy",
+                }
+            ],
+            failed_label="regime_sideways",
+            reference_label="walk_forward_001",
+            month="2025-01",
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["failed_label"], "regime_sideways")
+        self.assertEqual(row["reference_label"], "walk_forward_001")
+        self.assertEqual(row["start_date_delta_days"], "12")
+        self.assertEqual(row["monthly_excess_delta"], "11")
+        self.assertEqual(row["selected_proxy_delta_delta"], "6")
+        self.assertEqual(row["target_exposure_delta"], "0.7425")
+        self.assertEqual(row["cash_weight_delta"], "-0.7425")
+        self.assertEqual(row["shared_symbol_count"], "1")
+        self.assertEqual(row["failed_only_symbols"], "BBB;CCC")
+        self.assertEqual(row["reference_only_symbols"], "DDD;EEE")
+        self.assertIn("entry_date_mismatch", row["diagnostic"])
+        self.assertIn("reference_excess_better", row["diagnostic"])
+        self.assertIn("reference_exposure_higher", row["diagnostic"])
+        self.assertIn("symbol_rotation", row["diagnostic"])
+
+    def test_save_monthly_entry_month_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "entry_month.csv"
+            saved = save_monthly_entry_month_comparison(
+                [
+                    {
+                        "month": "2025-01",
+                        "failed_label": "regime_sideways",
+                        "diagnostic": "entry_date_mismatch",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("start_date_delta_days", text.splitlines()[0])
+        self.assertIn("entry_date_mismatch", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

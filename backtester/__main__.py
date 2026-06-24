@@ -96,6 +96,7 @@ from .monthly_rebalance import (
     compare_monthly_benchmark_selection_summary_reports,
     compare_monthly_benchmark_selection_window_reports,
     compare_monthly_decision_attribution_reports,
+    compare_monthly_entry_month_reports,
     compare_monthly_path_attribution_reports,
     summarize_monthly_path_attribution_comparison,
     compare_monthly_validation_reports,
@@ -135,6 +136,7 @@ from .monthly_rebalance import (
     save_monthly_benchmark_selection_window_comparison,
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
+    save_monthly_entry_month_comparison,
     save_monthly_direct_alpha_holding_path,
     save_monthly_direct_alpha_path_drift,
     save_monthly_direct_alpha_rank_drift,
@@ -1250,6 +1252,24 @@ def main() -> int:
         default="data/reports/monthly_benchmark_selection_window_comparison.csv",
     )
 
+    monthly_compare_entry_month_parser = subparsers.add_parser(
+        "monthly-compare-entry-month",
+        help="Compare one failed scenario month against a reference scenario month",
+    )
+    monthly_compare_entry_month_parser.add_argument("--failed-benchmark-report", required=True)
+    monthly_compare_entry_month_parser.add_argument("--reference-benchmark-report", required=True)
+    monthly_compare_entry_month_parser.add_argument("--failed-selection-summary-report", required=True)
+    monthly_compare_entry_month_parser.add_argument("--reference-selection-summary-report", required=True)
+    monthly_compare_entry_month_parser.add_argument("--failed-decision-report", required=True)
+    monthly_compare_entry_month_parser.add_argument("--reference-decision-report", required=True)
+    monthly_compare_entry_month_parser.add_argument("--failed-label", default="failed")
+    monthly_compare_entry_month_parser.add_argument("--reference-label", default="reference")
+    monthly_compare_entry_month_parser.add_argument("--month", required=True)
+    monthly_compare_entry_month_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_entry_month_comparison.csv",
+    )
+
     monthly_compare_paths_parser = subparsers.add_parser(
         "monthly-compare-paths",
         help="Compare baseline and candidate daily path attribution CSV reports",
@@ -1942,6 +1962,31 @@ def main() -> int:
         print(f"comparison_rows  {saved}")
         print(f"failed_pre_window_drag_rows  {len(failed_pre_window_rows)}")
         print(f"failed_window_drag_rows  {len(failed_window_rows)}")
+        return 0
+
+    if args.command == "monthly-compare-entry-month":
+        rows = compare_monthly_entry_month_reports(
+            _read_csv_dicts(Path(args.failed_benchmark_report)),
+            _read_csv_dicts(Path(args.reference_benchmark_report)),
+            _read_csv_dicts(Path(args.failed_selection_summary_report)),
+            _read_csv_dicts(Path(args.reference_selection_summary_report)),
+            _read_csv_dicts(Path(args.failed_decision_report)),
+            _read_csv_dicts(Path(args.reference_decision_report)),
+            failed_label=args.failed_label,
+            reference_label=args.reference_label,
+            month=args.month,
+        )
+        saved = save_monthly_entry_month_comparison(rows, args.output)
+        entry_date_mismatch_rows = [
+            row for row in rows if "entry_date_mismatch" in str(row.get("diagnostic", ""))
+        ]
+        symbol_rotation_rows = [
+            row for row in rows if "symbol_rotation" in str(row.get("diagnostic", ""))
+        ]
+        print(f"entry_month_comparison_report  {args.output}")
+        print(f"comparison_rows  {saved}")
+        print(f"entry_date_mismatch_rows  {len(entry_date_mismatch_rows)}")
+        print(f"symbol_rotation_rows  {len(symbol_rotation_rows)}")
         return 0
 
     if args.command == "monthly-compare-paths":
