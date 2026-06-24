@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 candidate follow-up refresh
+Last updated: 2026-06-24 post-cutoff data availability check
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -169,6 +169,8 @@ appending long command logs or full report lists here.
   now passes with `12` covered sweep results.
 - Candidate follow-up was regenerated after sweep result refresh and remains
   `3` rejected follow-up sets; no new improved sweep candidates were introduced.
+- Post-cutoff OOS cannot run from local data yet: `data/krx_expanded` max date
+  is `2026-06-18` and post-cutoff rows are `0`; no fetch was run.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
