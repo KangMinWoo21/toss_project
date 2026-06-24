@@ -1532,6 +1532,20 @@ def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
             "BLOCK",
             f"unsafe_validation_scope={unsafe_validation_scopes[0]}",
         )
+    unsafe_adoption_statuses = [
+        str(row.get("adoption_status", "")).strip()
+        for row in rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("adoption_status", "")).lower(),
+        )
+    ]
+    if unsafe_adoption_statuses:
+        return ReadinessCheck(
+            "validation_sweep_results",
+            "BLOCK",
+            f"unsafe_adoption_status={unsafe_adoption_statuses[0]}",
+        )
     unsafe_adoption_requirements = [
         str(row.get("adoption_requirements", "")).strip()
         for row in rows
