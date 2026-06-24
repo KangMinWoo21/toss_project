@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 benchmark selection scenario comparison
+Last updated: 2026-06-24 selected-proxy offset diagnostics
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,31 +40,31 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit:
-  `Add benchmark selection summary comparison` (current HEAD after this loop).
+  `Add selected-proxy offset comparison diagnostics` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
 - Latest full tests: `python -m unittest discover -s tests` PASS, `493` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=344.35` observed).
+  (`age_hours=344.52` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only monthly benchmark selection summary comparison to separate
-broad benchmark artifacts from candidate-specific failure behavior across
-passing and failing validation scenarios.
+Extended the report-only monthly benchmark selection comparison with
+selected-proxy offset diagnostics, so the remaining `regime_sideways` failure
+can be separated from broad low-liquidity missed-winner drag.
 
 Changed behavior:
 
 - New `monthly-compare-benchmark-selection` reads one or more
   `--benchmark-selection-summary-output` CSVs, joins optional validation rows,
   and writes one scenario-level comparison row.
-- New comparison columns include deployable status, excess/DD context, month
-  count, low-liquidity drag month count, aggregate selected-proxy delta,
-  missed-winner delta, rank-501+ missed-winner share, worst missed month, and
-  scenario diagnostic.
+- Comparison columns now include deployable status, excess/DD context,
+  low-liquidity drag counts, selected-proxy winner/loser counts and loser share,
+  per-selected delta, negative selected-proxy month count, worst selected-proxy
+  month, missed-winner delta, rank-501+ share, and scenario diagnostic.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
 - Generated four additional best-candidate summary reports for passing
@@ -73,8 +73,7 @@ Changed behavior:
 
 Verification:
 
-- RED: analyzer/saver imports failed and the new CLI command did not write an
-  output file.
+- RED: focused comparison tests failed on missing selected-proxy columns.
 - GREEN: focused analyzer/save/CLI tests PASS (`3` tests).
 - Final verification: full `unittest` PASS (`493` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
@@ -98,10 +97,18 @@ Residual evidence:
 - Passing scenarios also have large missed-winner drag, but selected-proxy
   offset differs materially: `regime_bull` selected-proxy delta `+57.5498`,
   `walk_forward_001` `+7.5813`, `walk_forward_005` `+30.071`.
+- Selected-proxy drag is not unique to the failed row: `regime_bear` passes
+  with selected-proxy delta `-8.3553`, per-selected delta `-0.0995`, and `5`
+  negative selected-proxy months; `regime_sideways` has `-5.9297`, `-0.0706`,
+  and `5` negative selected-proxy months.
+- `regime_sideways` and `walk_forward_001` share the same worst selected-proxy
+  month (`2025-03`, `-4.9277`), but `walk_forward_001` passes. This points to
+  earlier `regime_sideways` window composition/path context rather than a
+  standalone selected-proxy-offset rule.
 - Interpretation: low-liquidity missed winners are a broad benchmark artifact,
-  not by themselves proof that the failing candidate needs a broader proxy
-  basket. The remaining `regime_sideways` weakness is more likely tied to
-  selected-proxy offset quality/path behavior inside that regime.
+  and negative selected-proxy offset alone is also not a sufficient explanation.
+  The remaining `regime_sideways` weakness needs a narrower path/window
+  diagnostic before any candidate rule change.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -226,9 +233,10 @@ Pick one narrow loop:
   `2025-04` recovery participation after the `2025-03` drawdown. Contribution
   and selection-rank evidence points to recovery-breadth/selection rather than
   only March loss control. Scenario comparison now shows low-liquidity
-  missed-winner drag is shared with passing scenarios; next paper-only work
-  should isolate why selected-proxy offset is negative in `regime_sideways`
-  while passing scenarios offset the same broad artifact. Avoid broad cash,
+  missed-winner drag is shared with passing scenarios, and selected-proxy drag
+  is not unique to the failed scenario. Next paper-only work should isolate the
+  earlier `regime_sideways` window/path contribution versus the overlapping
+  `walk_forward_001` months before testing any rule change. Avoid broad cash,
   broad stop, or broad proxy cap reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate
   discipline; do not loosen rejected train windows.

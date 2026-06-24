@@ -3733,6 +3733,9 @@ class MonthlyRebalanceTests(unittest.TestCase):
                 {
                     "scenario": "regime_sideways",
                     "month": "2025-04",
+                    "selected_proxy_count": "12",
+                    "selected_proxy_winner_count": "6",
+                    "selected_proxy_loser_count": "6",
                     "selected_proxy_delta_pct": "-0.3",
                     "missed_benchmark_winner_delta_pct": "-6.8",
                     "missed_rank_501_plus_delta_pct": "-5.3",
@@ -3742,6 +3745,9 @@ class MonthlyRebalanceTests(unittest.TestCase):
                 {
                     "scenario": "walk_forward_001",
                     "month": "2025-04",
+                    "selected_proxy_count": "12",
+                    "selected_proxy_winner_count": "8",
+                    "selected_proxy_loser_count": "4",
                     "selected_proxy_delta_pct": "1.1",
                     "missed_benchmark_winner_delta_pct": "-2.0",
                     "missed_rank_501_plus_delta_pct": "-1.4",
@@ -3773,15 +3779,25 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(failed["deployable"], "False")
         self.assertEqual(failed["month_count"], "1")
         self.assertEqual(failed["low_liquidity_drag_month_count"], "1")
+        self.assertEqual(failed["selected_proxy_count"], "12")
+        self.assertEqual(failed["selected_proxy_winner_count"], "6")
+        self.assertEqual(failed["selected_proxy_loser_count"], "6")
+        self.assertEqual(failed["selected_proxy_loser_share"], "0.5")
         self.assertEqual(failed["missed_benchmark_winner_delta_pct"], "-6.8")
         self.assertEqual(failed["missed_rank_501_plus_delta_pct"], "-5.3")
         self.assertEqual(failed["low_liquidity_missed_winner_delta_share"], "0.7794")
+        self.assertEqual(failed["selected_proxy_delta_per_selected_pct"], "-0.025")
+        self.assertEqual(failed["negative_selected_proxy_month_count"], "1")
+        self.assertEqual(failed["worst_selected_proxy_month"], "2025-04")
+        self.assertEqual(failed["worst_selected_proxy_delta_pct"], "-0.3")
         self.assertEqual(failed["worst_missed_month"], "2025-04")
         self.assertEqual(
             failed["diagnostic"],
             "failed_with_shared_low_liquidity_recovery_drag",
         )
         self.assertEqual(passed["deployable"], "True")
+        self.assertEqual(passed["selected_proxy_delta_per_selected_pct"], "0.0917")
+        self.assertEqual(passed["negative_selected_proxy_month_count"], "0")
         self.assertEqual(passed["diagnostic"], "passed_despite_low_liquidity_recovery_drag")
 
     def test_save_monthly_benchmark_selection_summary_comparison_writes_csv(self):
@@ -3800,6 +3816,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
             text = output.read_text(encoding="utf-8")
 
         self.assertEqual(saved, 1)
+        self.assertIn("selected_proxy_delta_per_selected_pct", text.splitlines()[0])
         self.assertIn("low_liquidity_missed_winner_delta_share", text.splitlines()[0])
         self.assertIn("failed_with_shared_low_liquidity_recovery_drag", text)
 

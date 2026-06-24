@@ -1109,7 +1109,15 @@ MONTHLY_BENCHMARK_SELECTION_SUMMARY_COMPARISON_COLUMNS = [
     "max_drawdown_pct",
     "month_count",
     "low_liquidity_drag_month_count",
+    "selected_proxy_count",
+    "selected_proxy_winner_count",
+    "selected_proxy_loser_count",
+    "selected_proxy_loser_share",
     "selected_proxy_delta_pct",
+    "selected_proxy_delta_per_selected_pct",
+    "negative_selected_proxy_month_count",
+    "worst_selected_proxy_month",
+    "worst_selected_proxy_delta_pct",
     "missed_benchmark_winner_delta_pct",
     "missed_rank_501_plus_delta_pct",
     "low_liquidity_missed_winner_delta_share",
@@ -3124,6 +3132,42 @@ def compare_monthly_benchmark_selection_summary_reports(
             for row in rows
             if str(row.get("diagnostic", "")).strip() == "low_liquidity_recovery_drag"
         ]
+        selected_proxy_count = int(
+            _sum_benchmark_selection_summary_values(rows, "selected_proxy_count")
+        )
+        selected_proxy_winner_count = int(
+            _sum_benchmark_selection_summary_values(rows, "selected_proxy_winner_count")
+        )
+        selected_proxy_loser_count = int(
+            _sum_benchmark_selection_summary_values(rows, "selected_proxy_loser_count")
+        )
+        selected_proxy_delta = _sum_benchmark_selection_summary_values(
+            rows,
+            "selected_proxy_delta_pct",
+        )
+        selected_proxy_loser_share = (
+            selected_proxy_loser_count / selected_proxy_count
+            if selected_proxy_count
+            else 0.0
+        )
+        selected_proxy_delta_per_selected = (
+            selected_proxy_delta / selected_proxy_count
+            if selected_proxy_count
+            else 0.0
+        )
+        negative_selected_proxy_rows = [
+            row
+            for row in rows
+            if (_float_or_none(row.get("selected_proxy_delta_pct")) or 0.0) < 0
+        ]
+        worst_selected_proxy_row = min(
+            rows,
+            key=lambda row: _float_or_none(row.get("selected_proxy_delta_pct")) or 0.0,
+            default={},
+        )
+        worst_selected_proxy_delta = _float_or_none(
+            worst_selected_proxy_row.get("selected_proxy_delta_pct")
+        )
         worst_row = min(
             rows,
             key=lambda row: _float_or_none(row.get("missed_benchmark_winner_delta_pct")) or 0.0,
@@ -3143,8 +3187,20 @@ def compare_monthly_benchmark_selection_summary_reports(
                 ),
                 "month_count": str(len(rows)),
                 "low_liquidity_drag_month_count": str(len(low_liquidity_rows)),
-                "selected_proxy_delta_pct": _format_optional_float(
-                    _sum_benchmark_selection_summary_values(rows, "selected_proxy_delta_pct")
+                "selected_proxy_count": str(selected_proxy_count),
+                "selected_proxy_winner_count": str(selected_proxy_winner_count),
+                "selected_proxy_loser_count": str(selected_proxy_loser_count),
+                "selected_proxy_loser_share": _format_optional_float(
+                    selected_proxy_loser_share
+                ),
+                "selected_proxy_delta_pct": _format_optional_float(selected_proxy_delta),
+                "selected_proxy_delta_per_selected_pct": _format_optional_float(
+                    selected_proxy_delta_per_selected
+                ),
+                "negative_selected_proxy_month_count": str(len(negative_selected_proxy_rows)),
+                "worst_selected_proxy_month": str(worst_selected_proxy_row.get("month", "")),
+                "worst_selected_proxy_delta_pct": _format_optional_float(
+                    worst_selected_proxy_delta
                 ),
                 "missed_benchmark_winner_delta_pct": _format_optional_float(missed_delta),
                 "missed_rank_501_plus_delta_pct": _format_optional_float(

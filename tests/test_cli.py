@@ -1088,10 +1088,11 @@ class CliTests(unittest.TestCase):
             validation = root / "validation.csv"
             output = root / "selection_compare.csv"
             summary.write_text(
-                "scenario,month,selected_proxy_delta_pct,missed_benchmark_winner_delta_pct,"
+                "scenario,month,selected_proxy_count,selected_proxy_winner_count,"
+                "selected_proxy_loser_count,selected_proxy_delta_pct,missed_benchmark_winner_delta_pct,"
                 "missed_rank_501_plus_delta_pct,low_liquidity_missed_winner_delta_share,diagnostic\n"
-                "regime_sideways,2025-04,-0.3,-6.8,-5.3,0.78,low_liquidity_recovery_drag\n"
-                "walk_forward_001,2025-04,1.1,-2.0,-1.4,0.70,low_liquidity_recovery_drag\n",
+                "regime_sideways,2025-04,12,6,6,-0.3,-6.8,-5.3,0.78,low_liquidity_recovery_drag\n"
+                "walk_forward_001,2025-04,12,8,4,1.1,-2.0,-1.4,0.70,low_liquidity_recovery_drag\n",
                 encoding="utf-8",
             )
             validation.write_text(
@@ -1121,6 +1122,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("comparison_rows  2", completed.stdout)
         self.assertIn("failed_shared_low_liquidity_rows  1", completed.stdout)
         self.assertEqual(rows[0]["scenario"], "regime_sideways")
+        self.assertEqual(rows[0]["selected_proxy_loser_share"], "0.5")
+        self.assertEqual(rows[0]["negative_selected_proxy_month_count"], "1")
         self.assertEqual(rows[0]["diagnostic"], "failed_with_shared_low_liquidity_recovery_drag")
 
     def test_monthly_compare_paths_cli_writes_daily_path_delta_report(self):
