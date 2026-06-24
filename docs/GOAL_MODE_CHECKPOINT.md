@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 validation sweep plan value evidence hardening
+Last updated: 2026-06-24 validation sweep results value evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,18 +38,18 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `c7de788 Require validation remediation value evidence`.
+  `ae6fee1 Require validation sweep plan value evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `552` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `553` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
-- Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
+- Latest default production-check: BLOCK, `BLOCK=9`, `PASS=31`, `WARN=7`.
 - Latest candidate-overlay production-check using
   `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=349.93` observed).
+  (`age_hours=350.06` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -116,6 +116,9 @@ appending long command logs or full report lists here.
 - Validation sweep plan readiness now blocks experiment plans that include
   required columns but omit priority, action, experiment, target, expected
   effect, or risk-note values.
+- Validation sweep results readiness now blocks result reports that include
+  required columns but omit experiment, status, scenario, candidate args,
+  adoption, result summary, or risk-note values.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.
 - Full historical detail is in

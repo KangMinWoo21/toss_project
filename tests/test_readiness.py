@@ -698,6 +698,25 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("candidate_validation_args", result_checks[0].detail)
         self.assertIn("adoption_requirements", result_checks[0].detail)
 
+    def test_validation_sweep_results_missing_required_values_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            results = Path(temp_dir) / "monthly_validation_sweep_results.csv"
+            results.write_text(
+                "experiment_id,suggested_action,status,target_scenarios,scenario_count,failed_required,baseline_failed_required,failed_delta,candidate_validation_args,validation_scope,adoption_status,adoption_requirements,result_summary,risk_note\n"
+                ",IMPROVE_WEAK_WINDOW_DEFENSE,IMPROVED,regime_sideways,1,0,1,-1,,TARGET_ONLY,FULL_VALIDATION_REQUIRED,,failed_required 1 -> 0,\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_sweep_results_path=results)
+
+        result_checks = [check for check in checks if check.name == "validation_sweep_results"]
+        self.assertEqual(result_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_values", result_checks[0].detail)
+        self.assertIn("experiment_id", result_checks[0].detail)
+        self.assertIn("candidate_validation_args", result_checks[0].detail)
+        self.assertIn("adoption_requirements", result_checks[0].detail)
+        self.assertIn("risk_note", result_checks[0].detail)
+
     def test_validation_candidate_followup_report_warns_with_next_commands(self):
         with TemporaryDirectory() as temp_dir:
             followup = Path(temp_dir) / "monthly_validation_candidate_followup.csv"

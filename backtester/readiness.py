@@ -172,6 +172,7 @@ REQUIRED_VALIDATION_SWEEP_RESULTS_COLUMNS = {
     "result_summary",
     "risk_note",
 }
+REQUIRED_VALIDATION_SWEEP_RESULTS_VALUE_COLUMNS = set(REQUIRED_VALIDATION_SWEEP_RESULTS_COLUMNS)
 REQUIRED_VALIDATION_COMPARISON_COLUMNS = {
     "baseline_label",
     "candidate_label",
@@ -1228,6 +1229,20 @@ def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
             "validation_sweep_results",
             "BLOCK",
             f"missing_required_columns={','.join(missing_columns)}",
+        )
+    missing_values = sorted(
+        {
+            column
+            for row in rows
+            for column in REQUIRED_VALIDATION_SWEEP_RESULTS_VALUE_COLUMNS
+            if not str(row.get(column, "")).strip()
+        }
+    )
+    if missing_values:
+        return ReadinessCheck(
+            "validation_sweep_results",
+            "BLOCK",
+            f"missing_required_values={','.join(missing_values)}",
         )
     statuses = Counter(str(row.get("status", "")).strip().upper() or "UNKNOWN" for row in rows)
     adoption_statuses = Counter(
