@@ -1370,6 +1370,20 @@ def _validation_sweep_plan_check(path: Path) -> ReadinessCheck:
             "BLOCK",
             f"unsafe_risk_note={unsafe_risk_notes[0]}",
         )
+    unsafe_suggested_actions = [
+        str(row.get("suggested_action", "")).strip()
+        for row in rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("suggested_action", "")).lower(),
+        )
+    ]
+    if unsafe_suggested_actions:
+        return ReadinessCheck(
+            "validation_sweep_plan",
+            "BLOCK",
+            f"unsafe_suggested_action={unsafe_suggested_actions[0]}",
+        )
     unsafe_expected_effects = [
         str(row.get("expected_effect", "")).strip()
         for row in rows

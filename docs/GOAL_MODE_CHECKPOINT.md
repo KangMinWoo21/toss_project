@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 unsafe validation remediation hints guard
+Last updated: 2026-06-24 unsafe validation sweep action guard
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -45,7 +45,7 @@ appending long command logs or full report lists here.
   push to `origin` is pending explicit approval.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `595` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `596` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -53,7 +53,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=357.41` observed).
+  (`age_hours=357.47` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -119,6 +119,8 @@ appending long command logs or full report lists here.
   wording in `parameter_hints`.
 - Validation sweep plan readiness now blocks unsafe live/order/trade/fetch
   wording in `risk_note`.
+- Validation sweep plan readiness now blocks unsafe live/order/trade/fetch
+  wording in `suggested_action`.
 - Validation sweep plan readiness now blocks unsafe live/order/trade/fetch
   wording in `expected_effect`, while allowing explicit `no-trade` gate text.
 - Validation sweep results readiness now blocks unsafe live/order/trade/fetch
