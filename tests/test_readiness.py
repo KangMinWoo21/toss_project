@@ -518,6 +518,23 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Review validation sweep plan", action_text)
 
+    def test_validation_sweep_plan_missing_required_columns_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            sweep = Path(temp_dir) / "monthly_validation_sweep_plan.csv"
+            sweep.write_text(
+                "experiment_id,suggested_action\n"
+                "weak_defense_cash_05,IMPROVE_WEAK_WINDOW_DEFENSE\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_sweep_plan_path=sweep)
+
+        sweep_checks = [check for check in checks if check.name == "validation_sweep_plan"]
+        self.assertEqual(sweep_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_columns", sweep_checks[0].detail)
+        self.assertIn("target_scenarios", sweep_checks[0].detail)
+        self.assertIn("risk_note", sweep_checks[0].detail)
+
     def test_validation_sweep_results_report_adds_review_check(self):
         with TemporaryDirectory() as temp_dir:
             results = Path(temp_dir) / "monthly_validation_sweep_results.csv"
@@ -540,6 +557,23 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("--cash-buffer-weight 0.05", result_checks[0].detail)
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Review validation sweep results", action_text)
+
+    def test_validation_sweep_results_missing_required_columns_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            results = Path(temp_dir) / "monthly_validation_sweep_results.csv"
+            results.write_text(
+                "experiment_id,status\n"
+                "weak_defense_cash_05,IMPROVED\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_sweep_results_path=results)
+
+        result_checks = [check for check in checks if check.name == "validation_sweep_results"]
+        self.assertEqual(result_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_columns", result_checks[0].detail)
+        self.assertIn("candidate_validation_args", result_checks[0].detail)
+        self.assertIn("adoption_requirements", result_checks[0].detail)
 
     def test_validation_candidate_followup_report_warns_with_next_commands(self):
         with TemporaryDirectory() as temp_dir:

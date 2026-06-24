@@ -75,6 +75,30 @@ REQUIRED_VALIDATION_REMEDIATION_COLUMNS = {
     "parameter_hints",
     "next_experiment",
 }
+REQUIRED_VALIDATION_SWEEP_PLAN_COLUMNS = {
+    "priority",
+    "suggested_action",
+    "experiment_id",
+    "target_scenarios",
+    "expected_effect",
+    "risk_note",
+}
+REQUIRED_VALIDATION_SWEEP_RESULTS_COLUMNS = {
+    "experiment_id",
+    "suggested_action",
+    "status",
+    "target_scenarios",
+    "scenario_count",
+    "failed_required",
+    "baseline_failed_required",
+    "failed_delta",
+    "candidate_validation_args",
+    "validation_scope",
+    "adoption_status",
+    "adoption_requirements",
+    "result_summary",
+    "risk_note",
+}
 
 
 @dataclass(frozen=True)
@@ -938,6 +962,13 @@ def _validation_sweep_plan_check(path: Path) -> ReadinessCheck:
     rows = _read_csv_rows(path)
     if not rows:
         return ReadinessCheck("validation_sweep_plan", "PASS", "no sweep experiments planned")
+    missing_columns = sorted(REQUIRED_VALIDATION_SWEEP_PLAN_COLUMNS - set(rows[-1].keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_sweep_plan",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
     first = rows[0]
     actions = Counter(str(row.get("suggested_action", "")).strip() or "UNKNOWN" for row in rows)
     action_summary = ", ".join(f"{action}={count}" for action, count in sorted(actions.items()))
@@ -956,6 +987,13 @@ def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
     rows = _read_csv_rows(path)
     if not rows:
         return ReadinessCheck("validation_sweep_results", "WARN", "empty sweep result report")
+    missing_columns = sorted(REQUIRED_VALIDATION_SWEEP_RESULTS_COLUMNS - set(rows[-1].keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_sweep_results",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
     statuses = Counter(str(row.get("status", "")).strip().upper() or "UNKNOWN" for row in rows)
     adoption_statuses = Counter(
         str(row.get("adoption_status", "")).strip().upper()
