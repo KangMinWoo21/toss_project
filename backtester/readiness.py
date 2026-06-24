@@ -39,6 +39,19 @@ REQUIRED_PERFORMANCE_CONCENTRATION_COLUMNS = {
     "concentration_status",
     "concentration_reasons",
 }
+REQUIRED_DRAWDOWN_ATTRIBUTION_MONTHLY_COLUMNS = {
+    "month",
+    "start_date",
+    "end_date",
+    "equity_change",
+    "worst_drawdown_pct",
+}
+REQUIRED_DRAWDOWN_ATTRIBUTION_SYMBOL_COLUMNS = {
+    "symbol",
+    "realized_pnl",
+    "trade_count",
+    "status",
+}
 
 
 @dataclass(frozen=True)
@@ -1346,6 +1359,18 @@ def _drawdown_attribution_check(
             "drawdown_attribution",
             status,
             f"empty attribution report: monthly_rows={len(monthly_rows)}; symbol_rows={len(symbol_rows)}",
+        )
+    monthly_missing = sorted(REQUIRED_DRAWDOWN_ATTRIBUTION_MONTHLY_COLUMNS - set(monthly_rows[-1].keys()))
+    symbol_missing = sorted(REQUIRED_DRAWDOWN_ATTRIBUTION_SYMBOL_COLUMNS - set(symbol_rows[-1].keys()))
+    if monthly_missing or symbol_missing:
+        return ReadinessCheck(
+            "drawdown_attribution",
+            "BLOCK",
+            (
+                "missing_required_columns="
+                f"monthly:{','.join(monthly_missing) or 'none'}; "
+                f"symbol:{','.join(symbol_missing) or 'none'}"
+            ),
         )
 
     worst_loss_month = min(monthly_rows, key=lambda row: _parse_float(row.get("equity_change")))

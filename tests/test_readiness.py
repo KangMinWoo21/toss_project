@@ -420,6 +420,33 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("worst_drawdown_pct=-28", attribution[0].detail)
         self.assertIn("worst_symbol=BBB", attribution[0].detail)
 
+    def test_drawdown_attribution_missing_required_columns_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            monthly = root / "monthly_drawdown_attribution.csv"
+            symbols = root / "monthly_symbol_attribution.csv"
+            monthly.write_text(
+                "month,equity_change\n"
+                "2026-03,-400\n",
+                encoding="utf-8",
+            )
+            symbols.write_text(
+                "symbol,realized_pnl\n"
+                "AAA,-10\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(
+                drawdown_attribution_path=monthly,
+                symbol_attribution_path=symbols,
+            )
+
+        attribution = [check for check in checks if check.name == "drawdown_attribution"]
+        self.assertEqual(attribution[0].status, "BLOCK")
+        self.assertIn("missing_required_columns", attribution[0].detail)
+        self.assertIn("worst_drawdown_pct", attribution[0].detail)
+        self.assertIn("trade_count", attribution[0].detail)
+
     def test_validation_remediation_report_adds_experiment_check(self):
         with TemporaryDirectory() as temp_dir:
             remediation = Path(temp_dir) / "monthly_validation_remediation.csv"
