@@ -23,6 +23,11 @@ def candidate_promotion_proof_status(
         str(row.get("oos_review_end_date", "")).strip().upper(),
     }:
         return False, "post_cutoff_oos_pending"
+    if re.search(
+        r"(?:post_cutoff_oos_start_date|post_cutoff_oos_end_date|oos_review_start_date|oos_review_end_date)=pending_post_cutoff_oos",
+        reasons,
+    ):
+        return False, "post_cutoff_oos_pending"
 
     oos_end = _post_cutoff_oos_end_date(row, reasons)
     if not oos_end:
