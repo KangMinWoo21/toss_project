@@ -110,6 +110,17 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("missing_required_columns", scenario_checks[0].detail)
         self.assertIn("excess_return_pct", scenario_checks[0].detail)
 
+    def test_validation_scenarios_empty_report_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text("", encoding="utf-8")
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        scenario_checks = [check for check in checks if check.name == "validation_scenarios"]
+        self.assertEqual(scenario_checks[0].status, "BLOCK")
+        self.assertIn("empty", scenario_checks[0].detail)
+
     def test_validation_scenarios_missing_required_values_blocks_pass_readiness(self):
         with TemporaryDirectory() as temp_dir:
             scenarios = Path(temp_dir) / "scenarios.csv"

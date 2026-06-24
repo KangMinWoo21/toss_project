@@ -998,6 +998,8 @@ def _validation_scenario_check(path: Path) -> ReadinessCheck:
     if not path.exists():
         return ReadinessCheck("validation_scenarios", "BLOCK", f"missing: {path}")
     rows = _read_csv_rows(path)
+    if not rows:
+        return ReadinessCheck("validation_scenarios", "BLOCK", f"empty: {path}")
     failed_rows = [
         row
         for row in rows
