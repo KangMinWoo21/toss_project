@@ -96,6 +96,7 @@ from .monthly_rebalance import (
     compare_monthly_benchmark_selection_summary_reports,
     compare_monthly_benchmark_selection_window_reports,
     compare_monthly_entry_contribution_overlap_reports,
+    compare_monthly_entry_selection_eligibility_reports,
     compare_monthly_entry_selection_rotation_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_entry_month_reports,
@@ -140,6 +141,7 @@ from .monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
     save_monthly_entry_contribution_overlap_comparison,
+    save_monthly_entry_selection_eligibility_comparison,
     save_monthly_entry_selection_rotation_comparison,
     save_monthly_entry_month_comparison,
     save_monthly_entry_path_subperiod_comparison,
@@ -1320,6 +1322,19 @@ def main() -> int:
         default="data/reports/monthly_entry_selection_rotation_comparison.csv",
     )
 
+    monthly_compare_entry_eligibility_parser = subparsers.add_parser(
+        "monthly-compare-entry-selection-eligibility",
+        help="Join entry selection rotation rows with point-in-time universe filter reasons",
+    )
+    monthly_compare_entry_eligibility_parser.add_argument("--selection-rotation-report", required=True)
+    monthly_compare_entry_eligibility_parser.add_argument("--universe-filter-report", required=True)
+    monthly_compare_entry_eligibility_parser.add_argument("--failed-label", default="failed")
+    monthly_compare_entry_eligibility_parser.add_argument("--reference-label", default="reference")
+    monthly_compare_entry_eligibility_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_entry_selection_eligibility_comparison.csv",
+    )
+
     monthly_compare_paths_parser = subparsers.add_parser(
         "monthly-compare-paths",
         help="Compare baseline and candidate daily path attribution CSV reports",
@@ -2104,6 +2119,30 @@ def main() -> int:
         print(f"reference_only_rows  {len(reference_only_rows)}")
         print(f"failed_only_rows  {len(failed_only_rows)}")
         print(f"reference_selected_winner_rows  {len(reference_winner_rows)}")
+        return 0
+
+    if args.command == "monthly-compare-entry-selection-eligibility":
+        rows = compare_monthly_entry_selection_eligibility_reports(
+            _read_csv_dicts(Path(args.selection_rotation_report)),
+            _read_csv_dicts(Path(args.universe_filter_report)),
+            failed_label=args.failed_label,
+            reference_label=args.reference_label,
+        )
+        saved = save_monthly_entry_selection_eligibility_comparison(rows, args.output)
+        failed_excluded_rows = [
+            row for row in rows if row.get("failed_universe_status") == "EXCLUDED"
+        ]
+        reference_excluded_rows = [
+            row for row in rows if row.get("reference_universe_status") == "EXCLUDED"
+        ]
+        insufficient_history_rows = [
+            row for row in rows if "insufficient_history" in str(row.get("diagnostic", ""))
+        ]
+        print(f"entry_selection_eligibility_report  {args.output}")
+        print(f"comparison_rows  {saved}")
+        print(f"failed_universe_excluded_rows  {len(failed_excluded_rows)}")
+        print(f"reference_universe_excluded_rows  {len(reference_excluded_rows)}")
+        print(f"insufficient_history_rows  {len(insufficient_history_rows)}")
         return 0
 
     if args.command == "monthly-compare-paths":

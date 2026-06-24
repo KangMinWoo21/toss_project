@@ -59,6 +59,7 @@ from backtester.monthly_rebalance import (
     compare_monthly_benchmark_selection_window_reports,
     compare_monthly_entry_month_reports,
     compare_monthly_entry_contribution_overlap_reports,
+    compare_monthly_entry_selection_eligibility_reports,
     compare_monthly_entry_selection_rotation_reports,
     compare_monthly_entry_path_subperiod_reports,
     compare_monthly_decision_attribution_reports,
@@ -109,6 +110,7 @@ from backtester.monthly_rebalance import (
     save_monthly_benchmark_selection_window_comparison,
     save_monthly_entry_month_comparison,
     save_monthly_entry_contribution_overlap_comparison,
+    save_monthly_entry_selection_eligibility_comparison,
     save_monthly_entry_selection_rotation_comparison,
     save_monthly_entry_path_subperiod_comparison,
     save_monthly_validation_rows,
@@ -4314,6 +4316,75 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("symbol_return_delta", text.splitlines()[0])
         self.assertIn("reference_selected_only", text)
+
+    def test_compare_monthly_entry_selection_eligibility_reports_joins_filter_reasons(self):
+        rotation_rows = [
+            {
+                "symbol": "CCC",
+                "rotation_role": "reference_only_symbols",
+                "failed_selected": "false",
+                "reference_selected": "true",
+                "failed_signal_date": "2025-01-02",
+                "reference_signal_date": "2025-01-14",
+                "failed_selection_diagnostic": "missed_inside_proxy_liquidity_cutoff",
+                "reference_selection_diagnostic": "selected_proxy_winner",
+                "contribution_delta_gap_pct": "8.92",
+            },
+            {
+                "symbol": "BBB",
+                "rotation_role": "failed_only_symbols",
+                "failed_selected": "true",
+                "reference_selected": "false",
+                "failed_signal_date": "2025-01-02",
+                "reference_signal_date": "2025-01-14",
+                "failed_selection_diagnostic": "selected_proxy_loser",
+                "reference_selection_diagnostic": "avoided_benchmark_loser",
+                "contribution_delta_gap_pct": "-0.5",
+            },
+        ]
+        universe_filter_rows = [
+            {
+                "as_of_date": "2025-01-02",
+                "symbol": "CCC",
+                "status": "EXCLUDED",
+                "reason": "insufficient_history",
+                "detail": "history_rows=244; required=252",
+            }
+        ]
+
+        rows = compare_monthly_entry_selection_eligibility_reports(
+            rotation_rows,
+            universe_filter_rows,
+            failed_label="regime_sideways",
+            reference_label="walk_forward_001",
+        )
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["CCC"]["failed_universe_status"], "EXCLUDED")
+        self.assertEqual(by_symbol["CCC"]["failed_universe_reason"], "insufficient_history")
+        self.assertEqual(by_symbol["CCC"]["reference_universe_status"], "INCLUDED")
+        self.assertIn("failed_universe_insufficient_history", by_symbol["CCC"]["diagnostic"])
+        self.assertIn("reference_selected_after_failed_exclusion", by_symbol["CCC"]["diagnostic"])
+        self.assertEqual(by_symbol["BBB"]["failed_universe_status"], "INCLUDED")
+        self.assertEqual(by_symbol["BBB"]["reference_universe_status"], "INCLUDED")
+
+    def test_save_monthly_entry_selection_eligibility_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "entry_selection_eligibility.csv"
+            saved = save_monthly_entry_selection_eligibility_comparison(
+                [
+                    {
+                        "symbol": "CCC",
+                        "diagnostic": "failed_universe_insufficient_history",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("failed_universe_reason", text.splitlines()[0])
+        self.assertIn("failed_universe_insufficient_history", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

@@ -1245,6 +1245,8 @@ MONTHLY_ENTRY_SELECTION_ROTATION_COMPARISON_COLUMNS = [
     "reference_start_date",
     "failed_decision_as_of_date",
     "reference_decision_as_of_date",
+    "failed_signal_date",
+    "reference_signal_date",
     "failed_decision_reason",
     "reference_decision_reason",
     "failed_strategy_weight",
@@ -1261,6 +1263,27 @@ MONTHLY_ENTRY_SELECTION_ROTATION_COMPARISON_COLUMNS = [
     "liquidity_rank_delta",
     "failed_selection_diagnostic",
     "reference_selection_diagnostic",
+    "diagnostic",
+]
+
+MONTHLY_ENTRY_SELECTION_ELIGIBILITY_COMPARISON_COLUMNS = [
+    "symbol",
+    "rotation_role",
+    "failed_label",
+    "reference_label",
+    "failed_selected",
+    "reference_selected",
+    "failed_signal_date",
+    "reference_signal_date",
+    "failed_universe_status",
+    "failed_universe_reason",
+    "failed_universe_detail",
+    "reference_universe_status",
+    "reference_universe_reason",
+    "reference_universe_detail",
+    "failed_selection_diagnostic",
+    "reference_selection_diagnostic",
+    "contribution_delta_gap_pct",
     "diagnostic",
 ]
 
@@ -4353,6 +4376,8 @@ def _entry_selection_rotation_row(
         "reference_start_date": str(reference_row.get("start_date", "")),
         "failed_decision_as_of_date": str(failed_row.get("decision_as_of_date", "")),
         "reference_decision_as_of_date": str(reference_row.get("decision_as_of_date", "")),
+        "failed_signal_date": str(failed_row.get("decision_signal_date", "")),
+        "reference_signal_date": str(reference_row.get("decision_signal_date", "")),
         "failed_decision_reason": str(failed_row.get("decision_reason", "")),
         "reference_decision_reason": str(reference_row.get("decision_reason", "")),
         "failed_strategy_weight": _format_optional_float(failed_weight),
@@ -4433,6 +4458,120 @@ def _entry_selection_rotation_diagnostics(
         diagnostics.append("reference_selected_winner")
     if failed_selection_diagnostic == "selected_proxy_loser":
         diagnostics.append("failed_selected_loser")
+    return diagnostics
+
+
+def compare_monthly_entry_selection_eligibility_reports(
+    selection_rotation_rows: list[dict[str, Any]],
+    universe_filter_rows: list[dict[str, Any]],
+    *,
+    failed_label: str,
+    reference_label: str,
+) -> list[dict[str, str]]:
+    exclusions = {
+        (
+            str(row.get("as_of_date", "")).strip(),
+            str(row.get("symbol", "")).strip(),
+        ): row
+        for row in universe_filter_rows
+        if str(row.get("symbol", "")).strip()
+    }
+    rows = [
+        _entry_selection_eligibility_row(
+            rotation_row,
+            exclusions=exclusions,
+            failed_label=failed_label,
+            reference_label=reference_label,
+        )
+        for rotation_row in selection_rotation_rows
+    ]
+    return sorted(
+        rows,
+        key=lambda row: (
+            _selection_rotation_role_sort_key(row.get("rotation_role", "")),
+            row.get("symbol", ""),
+        ),
+    )
+
+
+def _entry_selection_eligibility_row(
+    rotation_row: dict[str, Any],
+    *,
+    exclusions: dict[tuple[str, str], dict[str, Any]],
+    failed_label: str,
+    reference_label: str,
+) -> dict[str, str]:
+    symbol = str(rotation_row.get("symbol", "")).strip()
+    failed_signal_date = str(rotation_row.get("failed_signal_date", "")).strip()
+    reference_signal_date = str(rotation_row.get("reference_signal_date", "")).strip()
+    failed_exclusion = exclusions.get((failed_signal_date, symbol), {})
+    reference_exclusion = exclusions.get((reference_signal_date, symbol), {})
+    failed_status, failed_reason, failed_detail = _selection_eligibility_status(failed_exclusion)
+    reference_status, reference_reason, reference_detail = _selection_eligibility_status(reference_exclusion)
+    diagnostics = _entry_selection_eligibility_diagnostics(
+        rotation_role=str(rotation_row.get("rotation_role", "")),
+        failed_status=failed_status,
+        failed_reason=failed_reason,
+        reference_status=reference_status,
+        reference_reason=reference_reason,
+    )
+    return {
+        "symbol": symbol,
+        "rotation_role": str(rotation_row.get("rotation_role", "")),
+        "failed_label": failed_label,
+        "reference_label": reference_label,
+        "failed_selected": str(rotation_row.get("failed_selected", "")),
+        "reference_selected": str(rotation_row.get("reference_selected", "")),
+        "failed_signal_date": failed_signal_date,
+        "reference_signal_date": reference_signal_date,
+        "failed_universe_status": failed_status,
+        "failed_universe_reason": failed_reason,
+        "failed_universe_detail": failed_detail,
+        "reference_universe_status": reference_status,
+        "reference_universe_reason": reference_reason,
+        "reference_universe_detail": reference_detail,
+        "failed_selection_diagnostic": str(rotation_row.get("failed_selection_diagnostic", "")),
+        "reference_selection_diagnostic": str(rotation_row.get("reference_selection_diagnostic", "")),
+        "contribution_delta_gap_pct": str(rotation_row.get("contribution_delta_gap_pct", "")),
+        "diagnostic": ";".join(diagnostics) if diagnostics else "eligible_both_sides",
+    }
+
+
+def _selection_eligibility_status(row: dict[str, Any]) -> tuple[str, str, str]:
+    if not row:
+        return "INCLUDED", "", ""
+    return (
+        str(row.get("status", "") or "EXCLUDED"),
+        str(row.get("reason", "")),
+        str(row.get("detail", "")),
+    )
+
+
+def _entry_selection_eligibility_diagnostics(
+    *,
+    rotation_role: str,
+    failed_status: str,
+    failed_reason: str,
+    reference_status: str,
+    reference_reason: str,
+) -> list[str]:
+    diagnostics: list[str] = []
+    if failed_status == "EXCLUDED" and failed_reason:
+        diagnostics.append(f"failed_universe_{failed_reason}")
+    if reference_status == "EXCLUDED" and reference_reason:
+        diagnostics.append(f"reference_universe_{reference_reason}")
+    if (
+        rotation_role == "reference_only_symbols"
+        and failed_status == "EXCLUDED"
+        and reference_status != "EXCLUDED"
+    ):
+        diagnostics.append("reference_selected_after_failed_exclusion")
+    if (
+        rotation_role == "failed_only_symbols"
+        and reference_status == "EXCLUDED"
+        and failed_status != "EXCLUDED"
+    ):
+        diagnostics.append("failed_selected_after_reference_exclusion")
     return diagnostics
 
 
@@ -6327,6 +6466,17 @@ def save_monthly_entry_selection_rotation_comparison(
         rows,
         output_path,
         columns=MONTHLY_ENTRY_SELECTION_ROTATION_COMPARISON_COLUMNS,
+    )
+
+
+def save_monthly_entry_selection_eligibility_comparison(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_ENTRY_SELECTION_ELIGIBILITY_COMPARISON_COLUMNS,
     )
 
 

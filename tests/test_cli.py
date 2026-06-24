@@ -1434,6 +1434,52 @@ class CliTests(unittest.TestCase):
         self.assertEqual(by_symbol["CCC"]["contribution_delta_gap_pct"], "8.92")
         self.assertIn("reference_selected_only", by_symbol["CCC"]["diagnostic"])
 
+    def test_monthly_compare_entry_selection_eligibility_cli_writes_filter_join_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            rotation = root / "selection_rotation.csv"
+            universe_filter = root / "universe_filter.csv"
+            output = root / "selection_eligibility.csv"
+            rotation.write_text(
+                "symbol,rotation_role,failed_selected,reference_selected,failed_signal_date,reference_signal_date,"
+                "failed_selection_diagnostic,reference_selection_diagnostic,contribution_delta_gap_pct\n"
+                "CCC,reference_only_symbols,false,true,2025-01-02,2025-01-14,missed_inside_proxy_liquidity_cutoff,selected_proxy_winner,8.92\n"
+                "BBB,failed_only_symbols,true,false,2025-01-02,2025-01-14,selected_proxy_loser,avoided_benchmark_loser,-0.5\n",
+                encoding="utf-8",
+            )
+            universe_filter.write_text(
+                "as_of_date,snapshot_date,symbol,name,market,status,reason,detail\n"
+                "2025-01-02,2024-12-31,CCC,,KOSPI,EXCLUDED,insufficient_history,history_rows=244; required=252\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-entry-selection-eligibility",
+                    "--selection-rotation-report",
+                    str(rotation),
+                    "--universe-filter-report",
+                    str(universe_filter),
+                    "--failed-label",
+                    "regime_sideways",
+                    "--reference-label",
+                    "walk_forward_001",
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("entry_selection_eligibility_report", completed.stdout)
+        self.assertIn("comparison_rows  2", completed.stdout)
+        self.assertIn("failed_universe_excluded_rows  1", completed.stdout)
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["CCC"]["failed_universe_reason"], "insufficient_history")
+        self.assertIn("failed_universe_insufficient_history", by_symbol["CCC"]["diagnostic"])
+
     def test_monthly_compare_paths_cli_writes_daily_path_delta_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
