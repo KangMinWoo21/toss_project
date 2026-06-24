@@ -641,6 +641,23 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("target_scenarios", sweep_checks[0].detail)
         self.assertIn("risk_note", sweep_checks[0].detail)
 
+    def test_validation_sweep_plan_missing_required_values_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            sweep = Path(temp_dir) / "monthly_validation_sweep_plan.csv"
+            sweep.write_text(
+                "priority,suggested_action,experiment_id,target_scenarios,expected_effect,risk_note\n"
+                "P1,IMPROVE_WEAK_WINDOW_DEFENSE,,regime_sideways,,\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_sweep_plan_path=sweep)
+
+        sweep_checks = [check for check in checks if check.name == "validation_sweep_plan"]
+        self.assertEqual(sweep_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_values", sweep_checks[0].detail)
+        self.assertIn("experiment_id", sweep_checks[0].detail)
+        self.assertIn("risk_note", sweep_checks[0].detail)
+
     def test_validation_sweep_results_report_adds_review_check(self):
         with TemporaryDirectory() as temp_dir:
             results = Path(temp_dir) / "monthly_validation_sweep_results.csv"

@@ -148,6 +148,14 @@ REQUIRED_VALIDATION_SWEEP_PLAN_COLUMNS = {
     "expected_effect",
     "risk_note",
 }
+REQUIRED_VALIDATION_SWEEP_PLAN_VALUE_COLUMNS = {
+    "priority",
+    "suggested_action",
+    "experiment_id",
+    "target_scenarios",
+    "expected_effect",
+    "risk_note",
+}
 REQUIRED_VALIDATION_SWEEP_RESULTS_COLUMNS = {
     "experiment_id",
     "suggested_action",
@@ -1181,6 +1189,20 @@ def _validation_sweep_plan_check(path: Path) -> ReadinessCheck:
             "validation_sweep_plan",
             "BLOCK",
             f"missing_required_columns={','.join(missing_columns)}",
+        )
+    missing_values = sorted(
+        {
+            column
+            for row in rows
+            for column in REQUIRED_VALIDATION_SWEEP_PLAN_VALUE_COLUMNS
+            if not str(row.get(column, "")).strip()
+        }
+    )
+    if missing_values:
+        return ReadinessCheck(
+            "validation_sweep_plan",
+            "BLOCK",
+            f"missing_required_values={','.join(missing_values)}",
         )
     first = rows[0]
     actions = Counter(str(row.get("suggested_action", "")).strip() or "UNKNOWN" for row in rows)
