@@ -1504,6 +1504,20 @@ def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
             "BLOCK",
             f"unsafe_candidate_validation_args={unsafe_candidate_args[0]}",
         )
+    unsafe_config_changes = [
+        str(row.get("config_changes", "")).strip()
+        for row in rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("config_changes", "")).lower(),
+        )
+    ]
+    if unsafe_config_changes:
+        return ReadinessCheck(
+            "validation_sweep_results",
+            "BLOCK",
+            f"unsafe_config_changes={unsafe_config_changes[0]}",
+        )
     unsafe_adoption_requirements = [
         str(row.get("adoption_requirements", "")).strip()
         for row in rows
