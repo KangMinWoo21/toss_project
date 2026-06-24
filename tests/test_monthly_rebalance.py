@@ -875,6 +875,26 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(check.status, "BLOCK")
         self.assertIn("post_cutoff_oos_missing", check.detail)
 
+    def test_candidate_decision_risk_marks_pending_oos_proof(self):
+        check = validate_candidate_decision_risk(
+            [
+                {
+                    "candidate_label": "manual_accept",
+                    "decision": "ACCEPT",
+                    "decision_reasons": "oos_review_passed;production_readiness_approved",
+                    "post_cutoff_oos_end_date": "PENDING_POST_CUTOFF_OOS",
+                    "recommendation": "manual accept",
+                }
+            ],
+            source="unit",
+            require=True,
+        )
+
+        self.assertIsNotNone(check)
+        assert check is not None
+        self.assertEqual(check.status, "BLOCK")
+        self.assertIn("post_cutoff_oos_pending", check.detail)
+
     def test_candidate_decision_risk_passes_acceptance_with_proof(self):
         check = validate_candidate_decision_risk(
             [
@@ -2628,6 +2648,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(saved, 1)
         self.assertIn("candidate_rank", text.splitlines()[0])
+        self.assertIn("post_cutoff_oos_status", text.splitlines()[0])
         self.assertIn("neutral_breadth_proxy_cap_50", text)
 
     def test_save_monthly_validation_candidate_decision_writes_csv(self):

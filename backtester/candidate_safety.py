@@ -20,6 +20,8 @@ def candidate_promotion_proof_status(
     oos_end = _post_cutoff_oos_end_date(row, reasons)
     if not oos_end:
         return False, "post_cutoff_oos_missing"
+    if oos_end == "PENDING_POST_CUTOFF_OOS":
+        return False, "post_cutoff_oos_pending"
     try:
         oos_end_date = date.fromisoformat(oos_end)
         baseline_date = date.fromisoformat(baseline_end_date)
