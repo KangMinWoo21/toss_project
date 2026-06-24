@@ -809,6 +809,26 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(check.name, "candidate_decision")
         self.assertIn("PAPER_REVIEW", check.detail)
 
+    def test_candidate_decision_risk_surfaces_pending_oos_marker(self):
+        check = validate_candidate_decision_risk(
+            [
+                {
+                    "candidate_label": "neutral_loss_guard55_min_history244",
+                    "decision": "PAPER_REVIEW",
+                    "decision_reasons": "no_required_failure_regression",
+                    "post_cutoff_oos_end_date": "PENDING_POST_CUTOFF_OOS",
+                    "recommendation": "keep paper-only",
+                }
+            ],
+            source="unit",
+            require=True,
+        )
+
+        self.assertIsNotNone(check)
+        assert check is not None
+        self.assertEqual(check.status, "BLOCK")
+        self.assertIn("post_cutoff_oos_status=pending", check.detail)
+
     def test_candidate_decision_risk_explains_auto_required_missing_report(self):
         check = validate_candidate_decision_risk(None, source="", require=True)
 

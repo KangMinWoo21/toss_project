@@ -2287,6 +2287,12 @@ def validate_candidate_decision_risk(
     reasons = str(row.get("decision_reasons", "")).strip().lower()
     label = str(row.get("candidate_label", source)).strip() or source
     proof_present, promotion_status = candidate_promotion_proof_status(row)
+    oos_status_detail = ""
+    if "PENDING_POST_CUTOFF_OOS" in {
+        str(row.get("post_cutoff_oos_start_date", "")).strip(),
+        str(row.get("post_cutoff_oos_end_date", "")).strip(),
+    }:
+        oos_status_detail = "post_cutoff_oos_status=pending; "
 
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
         status = "PASS" if proof_present else "BLOCK"
@@ -2305,7 +2311,8 @@ def validate_candidate_decision_risk(
         status,
         (
             f"{label}:{decision}; source={source}; promotion_status={promotion_status}; "
-            f"reasons={row.get('decision_reasons', '')}; recommendation={row.get('recommendation', '')}"
+            f"{oos_status_detail}reasons={row.get('decision_reasons', '')}; "
+            f"recommendation={row.get('recommendation', '')}"
         ),
     )
 
