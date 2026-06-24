@@ -56,6 +56,7 @@ from backtester.monthly_rebalance import (
     build_monthly_validation_candidate_summary,
     compare_monthly_attribution_reports,
     compare_monthly_benchmark_selection_summary_reports,
+    compare_monthly_benchmark_selection_window_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
     summarize_monthly_path_attribution_comparison,
@@ -101,6 +102,7 @@ from backtester.monthly_rebalance import (
     save_monthly_benchmark_selection,
     save_monthly_benchmark_selection_summary,
     save_monthly_benchmark_selection_summary_comparison,
+    save_monthly_benchmark_selection_window_comparison,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
     save_monthly_validation_remediation,
@@ -3819,6 +3821,158 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("selected_proxy_delta_per_selected_pct", text.splitlines()[0])
         self.assertIn("low_liquidity_missed_winner_delta_share", text.splitlines()[0])
         self.assertIn("failed_with_shared_low_liquidity_recovery_drag", text)
+
+    def test_compare_monthly_benchmark_selection_window_reports_splits_pre_window_drag(self):
+        selection_rows = [
+            {
+                "scenario": "regime_sideways",
+                "month": "2024-12",
+                "selected_proxy_count": "10",
+                "selected_proxy_delta_pct": "-2",
+                "missed_benchmark_winner_delta_pct": "-4",
+            },
+            {
+                "scenario": "regime_sideways",
+                "month": "2025-01",
+                "selected_proxy_count": "10",
+                "selected_proxy_delta_pct": "1",
+                "missed_benchmark_winner_delta_pct": "-2",
+            },
+            {
+                "scenario": "regime_sideways",
+                "month": "2025-02",
+                "selected_proxy_count": "10",
+                "selected_proxy_delta_pct": "-1",
+                "missed_benchmark_winner_delta_pct": "-1",
+            },
+            {
+                "scenario": "walk_forward_001",
+                "month": "2025-01",
+                "selected_proxy_count": "10",
+                "selected_proxy_delta_pct": "1",
+                "missed_benchmark_winner_delta_pct": "-2",
+            },
+            {
+                "scenario": "walk_forward_001",
+                "month": "2025-02",
+                "selected_proxy_count": "10",
+                "selected_proxy_delta_pct": "-1",
+                "missed_benchmark_winner_delta_pct": "-1",
+            },
+            {
+                "scenario": "failed_overlap_drag",
+                "month": "2025-01",
+                "selected_proxy_count": "10",
+                "selected_proxy_delta_pct": "0",
+                "missed_benchmark_winner_delta_pct": "-3",
+            },
+        ]
+        benchmark_rows = [
+            {
+                "scenario": "regime_sideways",
+                "month": "2024-12",
+                "start_date": "2024-12-02",
+                "end_date": "2024-12-31",
+                "strategy_return_pct": "-5",
+                "benchmark_return_pct": "0",
+            },
+            {
+                "scenario": "regime_sideways",
+                "month": "2025-01",
+                "start_date": "2025-01-02",
+                "end_date": "2025-01-31",
+                "strategy_return_pct": "10",
+                "benchmark_return_pct": "5",
+            },
+            {
+                "scenario": "regime_sideways",
+                "month": "2025-02",
+                "start_date": "2025-02-03",
+                "end_date": "2025-02-28",
+                "strategy_return_pct": "-2",
+                "benchmark_return_pct": "0",
+            },
+            {
+                "scenario": "walk_forward_001",
+                "month": "2025-01",
+                "start_date": "2025-01-14",
+                "end_date": "2025-01-31",
+                "strategy_return_pct": "10",
+                "benchmark_return_pct": "5",
+            },
+            {
+                "scenario": "walk_forward_001",
+                "month": "2025-02",
+                "start_date": "2025-02-03",
+                "end_date": "2025-02-28",
+                "strategy_return_pct": "-2",
+                "benchmark_return_pct": "0",
+            },
+            {
+                "scenario": "failed_overlap_drag",
+                "month": "2025-01",
+                "start_date": "2025-01-02",
+                "end_date": "2025-01-31",
+                "strategy_return_pct": "-2",
+                "benchmark_return_pct": "2",
+            },
+        ]
+        rows = compare_monthly_benchmark_selection_window_reports(
+            selection_rows,
+            benchmark_rows,
+            [
+                {"name": "regime_sideways", "deployable": "False", "reason": "negative_excess_return"},
+                {"name": "walk_forward_001", "deployable": "True", "reason": "passed"},
+                {"name": "failed_overlap_drag", "deployable": "False", "reason": "negative_excess_return"},
+            ],
+            window_start_month="2025-01",
+            window_end_month="2025-02",
+        )
+
+        by_key = {(row["scenario"], row["window"]): row for row in rows}
+        failed_pre = by_key[("regime_sideways", "pre_window")]
+        failed_window = by_key[("regime_sideways", "window")]
+        passed_window = by_key[("walk_forward_001", "window")]
+        self.assertEqual(failed_pre["deployable"], "False")
+        self.assertEqual(failed_pre["month_count"], "1")
+        self.assertEqual(failed_pre["window_start_date"], "2024-12-02")
+        self.assertEqual(failed_pre["window_end_date"], "2024-12-31")
+        self.assertEqual(failed_pre["strategy_return_pct"], "-5")
+        self.assertEqual(failed_pre["window_excess_return_pct"], "-5")
+        self.assertEqual(failed_pre["selected_proxy_delta_pct"], "-2")
+        self.assertEqual(failed_pre["diagnostic"], "failed_pre_window_excess_drag")
+        self.assertEqual(failed_window["strategy_return_pct"], "7.8")
+        self.assertEqual(failed_window["window_start_date"], "2025-01-02")
+        self.assertEqual(failed_window["window_excess_return_pct"], "2.8")
+        self.assertEqual(failed_window["selected_proxy_delta_pct"], "0")
+        self.assertEqual(failed_window["diagnostic"], "failed_window_not_primary_drag")
+        self.assertEqual(passed_window["strategy_return_pct"], "7.8")
+        self.assertEqual(passed_window["window_start_date"], "2025-01-14")
+        self.assertEqual(
+            by_key[("failed_overlap_drag", "window")]["diagnostic"],
+            "failed_window_excess_drag",
+        )
+        self.assertNotIn(("walk_forward_001", "pre_window"), by_key)
+
+    def test_save_monthly_benchmark_selection_window_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "benchmark_selection_windows.csv"
+            saved = save_monthly_benchmark_selection_window_comparison(
+                [
+                    {
+                        "scenario": "regime_sideways",
+                        "window": "pre_window",
+                        "diagnostic": "failed_pre_window_excess_drag",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("window_start_date", text.splitlines()[0])
+        self.assertIn("window_excess_return_pct", text.splitlines()[0])
+        self.assertIn("failed_pre_window_excess_drag", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

@@ -1126,6 +1126,69 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["negative_selected_proxy_month_count"], "1")
         self.assertEqual(rows[0]["diagnostic"], "failed_with_shared_low_liquidity_recovery_drag")
 
+    def test_monthly_compare_benchmark_selection_windows_cli_splits_pre_window(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            summary = root / "selection_summary.csv"
+            benchmark = root / "benchmark_excess.csv"
+            validation = root / "validation.csv"
+            output = root / "selection_windows.csv"
+            summary.write_text(
+                "scenario,month,selected_proxy_count,selected_proxy_delta_pct,missed_benchmark_winner_delta_pct\n"
+                "regime_sideways,2024-12,10,-2,-4\n"
+                "regime_sideways,2025-01,10,1,-2\n"
+                "regime_sideways,2025-02,10,-1,-1\n"
+                "walk_forward_001,2025-01,10,1,-2\n"
+                "walk_forward_001,2025-02,10,-1,-1\n",
+                encoding="utf-8",
+            )
+            benchmark.write_text(
+                "scenario,month,start_date,end_date,strategy_return_pct,benchmark_return_pct\n"
+                "regime_sideways,2024-12,2024-12-02,2024-12-31,-5,0\n"
+                "regime_sideways,2025-01,2025-01-02,2025-01-31,10,5\n"
+                "regime_sideways,2025-02,2025-02-03,2025-02-28,-2,0\n"
+                "walk_forward_001,2025-01,2025-01-14,2025-01-31,10,5\n"
+                "walk_forward_001,2025-02,2025-02-03,2025-02-28,-2,0\n",
+                encoding="utf-8",
+            )
+            validation.write_text(
+                "name,deployable,reason\n"
+                "regime_sideways,False,negative_excess_return\n"
+                "walk_forward_001,True,passed\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-benchmark-selection-windows",
+                    "--summary-report",
+                    str(summary),
+                    "--benchmark-report",
+                    str(benchmark),
+                    "--validation-report",
+                    str(validation),
+                    "--window-start",
+                    "2025-01",
+                    "--window-end",
+                    "2025-02",
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("benchmark_selection_window_comparison_report", completed.stdout)
+        self.assertIn("comparison_rows  3", completed.stdout)
+        self.assertIn("failed_pre_window_drag_rows  1", completed.stdout)
+        self.assertIn("failed_window_drag_rows  0", completed.stdout)
+        self.assertEqual(rows[0]["scenario"], "regime_sideways")
+        self.assertEqual(rows[0]["window"], "pre_window")
+        self.assertEqual(rows[0]["window_start_date"], "2024-12-02")
+        self.assertEqual(rows[0]["diagnostic"], "failed_pre_window_excess_drag")
+
     def test_monthly_compare_paths_cli_writes_daily_path_delta_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

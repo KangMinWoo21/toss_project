@@ -1126,6 +1126,27 @@ MONTHLY_BENCHMARK_SELECTION_SUMMARY_COMPARISON_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_BENCHMARK_SELECTION_WINDOW_COMPARISON_COLUMNS = [
+    "scenario",
+    "window",
+    "deployable",
+    "reason",
+    "window_start_month",
+    "window_end_month",
+    "window_start_date",
+    "window_end_date",
+    "month_count",
+    "strategy_return_pct",
+    "benchmark_return_pct",
+    "window_excess_return_pct",
+    "selected_proxy_count",
+    "selected_proxy_delta_pct",
+    "selected_proxy_delta_per_selected_pct",
+    "negative_selected_proxy_month_count",
+    "missed_benchmark_winner_delta_pct",
+    "diagnostic",
+]
+
 SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "symbol",
     "realized_pnl",
@@ -3243,6 +3264,168 @@ def _monthly_benchmark_selection_summary_comparison_diagnostic(
     return "selection_review"
 
 
+def compare_monthly_benchmark_selection_window_reports(
+    selection_summary_rows: list[dict[str, Any]],
+    benchmark_excess_rows: list[dict[str, Any]],
+    validation_rows: list[dict[str, Any]],
+    *,
+    window_start_month: str,
+    window_end_month: str,
+) -> list[dict[str, str]]:
+    validation_by_name = {
+        str(row.get("name", "")).strip(): row
+        for row in validation_rows
+        if str(row.get("name", "")).strip()
+    }
+    benchmark_by_key = {
+        (str(row.get("scenario", "")).strip(), str(row.get("month", "")).strip()): row
+        for row in benchmark_excess_rows
+    }
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in selection_summary_rows:
+        scenario = str(row.get("scenario", "")).strip()
+        month = str(row.get("month", "")).strip()
+        window = _month_window_label(
+            month,
+            window_start_month=window_start_month,
+            window_end_month=window_end_month,
+        )
+        if scenario and month and window:
+            grouped.setdefault((scenario, window), []).append(row)
+
+    rows: list[dict[str, str]] = []
+    window_order = {"pre_window": 0, "window": 1, "post_window": 2}
+    for (scenario, window), window_rows in sorted(
+        grouped.items(),
+        key=lambda item: (item[0][0], window_order.get(item[0][1], 99)),
+    ):
+        validation = validation_by_name.get(scenario, {})
+        deployable = _parse_bool(validation.get("deployable", False)) if validation else None
+        benchmark_rows = [
+            benchmark_by_key.get((scenario, str(row.get("month", "")).strip()), {})
+            for row in window_rows
+        ]
+        start_dates = [
+            str(benchmark_row.get("start_date") or selection_row.get("start_date", "")).strip()
+            for selection_row, benchmark_row in zip(window_rows, benchmark_rows)
+            if str(benchmark_row.get("start_date") or selection_row.get("start_date", "")).strip()
+        ]
+        end_dates = [
+            str(benchmark_row.get("end_date") or selection_row.get("end_date", "")).strip()
+            for selection_row, benchmark_row in zip(window_rows, benchmark_rows)
+            if str(benchmark_row.get("end_date") or selection_row.get("end_date", "")).strip()
+        ]
+        strategy_return = _compound_return_pct(
+            _float_or_none(row.get("strategy_return_pct")) for row in benchmark_rows
+        )
+        benchmark_return = _compound_return_pct(
+            _float_or_none(row.get("benchmark_return_pct")) for row in benchmark_rows
+        )
+        selected_proxy_count = int(
+            _sum_benchmark_selection_summary_values(window_rows, "selected_proxy_count")
+        )
+        selected_proxy_delta = _sum_benchmark_selection_summary_values(
+            window_rows,
+            "selected_proxy_delta_pct",
+        )
+        selected_proxy_delta_per_selected = (
+            selected_proxy_delta / selected_proxy_count
+            if selected_proxy_count
+            else 0.0
+        )
+        negative_selected_proxy_rows = [
+            row
+            for row in window_rows
+            if (_float_or_none(row.get("selected_proxy_delta_pct")) or 0.0) < 0
+        ]
+        window_excess = (
+            strategy_return - benchmark_return
+            if strategy_return is not None and benchmark_return is not None
+            else None
+        )
+        rows.append(
+            {
+                "scenario": scenario,
+                "window": window,
+                "deployable": "" if deployable is None else str(deployable),
+                "reason": str(validation.get("reason", "")),
+                "window_start_month": min(str(row.get("month", "")) for row in window_rows),
+                "window_end_month": max(str(row.get("month", "")) for row in window_rows),
+                "window_start_date": min(start_dates) if start_dates else "",
+                "window_end_date": max(end_dates) if end_dates else "",
+                "month_count": str(len(window_rows)),
+                "strategy_return_pct": _format_optional_float(strategy_return),
+                "benchmark_return_pct": _format_optional_float(benchmark_return),
+                "window_excess_return_pct": _format_optional_float(window_excess),
+                "selected_proxy_count": str(selected_proxy_count),
+                "selected_proxy_delta_pct": _format_optional_float(selected_proxy_delta),
+                "selected_proxy_delta_per_selected_pct": _format_optional_float(
+                    selected_proxy_delta_per_selected
+                ),
+                "negative_selected_proxy_month_count": str(len(negative_selected_proxy_rows)),
+                "missed_benchmark_winner_delta_pct": _format_optional_float(
+                    _sum_benchmark_selection_summary_values(
+                        window_rows,
+                        "missed_benchmark_winner_delta_pct",
+                    )
+                ),
+                "diagnostic": _monthly_benchmark_selection_window_diagnostic(
+                    deployable=deployable,
+                    window=window,
+                    window_excess=window_excess,
+                ),
+            }
+        )
+    return rows
+
+
+def _month_window_label(
+    month: str,
+    *,
+    window_start_month: str,
+    window_end_month: str,
+) -> str:
+    if not month:
+        return ""
+    if month < window_start_month:
+        return "pre_window"
+    if month > window_end_month:
+        return "post_window"
+    return "window"
+
+
+def _compound_return_pct(values: Any) -> float | None:
+    product = 1.0
+    count = 0
+    for value in values:
+        if value is None:
+            continue
+        product *= 1.0 + value / 100.0
+        count += 1
+    if count <= 0:
+        return None
+    return (product - 1.0) * 100.0
+
+
+def _monthly_benchmark_selection_window_diagnostic(
+    *,
+    deployable: bool | None,
+    window: str,
+    window_excess: float | None,
+) -> str:
+    if deployable is False and window == "pre_window" and (window_excess or 0.0) < 0:
+        return "failed_pre_window_excess_drag"
+    if deployable is False and window == "window" and (window_excess or 0.0) < 0:
+        return "failed_window_excess_drag"
+    if deployable is False and window == "window" and (window_excess or 0.0) >= 0:
+        return "failed_window_not_primary_drag"
+    if deployable is True and (window_excess or 0.0) >= 0:
+        return "passed_window_excess_positive"
+    if window_excess is not None and window_excess < 0:
+        return "window_excess_drag"
+    return "window_review"
+
+
 def _int_or_none(value: Any) -> int | None:
     number = _float_or_none(value)
     if number is None:
@@ -5258,6 +5441,17 @@ def save_monthly_benchmark_selection_summary_comparison(
         rows,
         output_path,
         columns=MONTHLY_BENCHMARK_SELECTION_SUMMARY_COMPARISON_COLUMNS,
+    )
+
+
+def save_monthly_benchmark_selection_window_comparison(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_BENCHMARK_SELECTION_WINDOW_COMPARISON_COLUMNS,
     )
 
 

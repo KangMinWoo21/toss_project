@@ -94,6 +94,7 @@ from .monthly_rebalance import (
     build_universe_filter_report,
     compare_monthly_attribution_reports,
     compare_monthly_benchmark_selection_summary_reports,
+    compare_monthly_benchmark_selection_window_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
     summarize_monthly_path_attribution_comparison,
@@ -131,6 +132,7 @@ from .monthly_rebalance import (
     save_monthly_benchmark_selection,
     save_monthly_benchmark_selection_summary,
     save_monthly_benchmark_selection_summary_comparison,
+    save_monthly_benchmark_selection_window_comparison,
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
     save_monthly_direct_alpha_holding_path,
@@ -1220,6 +1222,34 @@ def main() -> int:
         default="data/reports/monthly_benchmark_selection_summary_comparison.csv",
     )
 
+    monthly_compare_benchmark_selection_windows_parser = subparsers.add_parser(
+        "monthly-compare-benchmark-selection-windows",
+        help="Split benchmark selection and benchmark excess reports into pre/window/post rows",
+    )
+    monthly_compare_benchmark_selection_windows_parser.add_argument(
+        "--summary-report",
+        action="append",
+        required=True,
+        help="CSV written by monthly-attribution --benchmark-selection-summary-output",
+    )
+    monthly_compare_benchmark_selection_windows_parser.add_argument(
+        "--benchmark-report",
+        action="append",
+        required=True,
+        help="CSV written by monthly-attribution --benchmark-output",
+    )
+    monthly_compare_benchmark_selection_windows_parser.add_argument(
+        "--validation-report",
+        default=None,
+        help="Optional monthly validation CSV used to add pass/fail context",
+    )
+    monthly_compare_benchmark_selection_windows_parser.add_argument("--window-start", required=True)
+    monthly_compare_benchmark_selection_windows_parser.add_argument("--window-end", required=True)
+    monthly_compare_benchmark_selection_windows_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_benchmark_selection_window_comparison.csv",
+    )
+
     monthly_compare_paths_parser = subparsers.add_parser(
         "monthly-compare-paths",
         help="Compare baseline and candidate daily path attribution CSV reports",
@@ -1876,6 +1906,42 @@ def main() -> int:
         print(f"benchmark_selection_comparison_report  {args.output}")
         print(f"comparison_rows  {saved}")
         print(f"failed_shared_low_liquidity_rows  {len(failed_shared_rows)}")
+        return 0
+
+    if args.command == "monthly-compare-benchmark-selection-windows":
+        summary_rows: list[dict[str, Any]] = []
+        for report in args.summary_report:
+            summary_rows.extend(_read_csv_dicts(Path(report)))
+        benchmark_rows: list[dict[str, Any]] = []
+        for report in args.benchmark_report:
+            benchmark_rows.extend(_read_csv_dicts(Path(report)))
+        validation_rows = (
+            _read_csv_dicts(Path(args.validation_report))
+            if args.validation_report
+            else []
+        )
+        rows = compare_monthly_benchmark_selection_window_reports(
+            summary_rows,
+            benchmark_rows,
+            validation_rows,
+            window_start_month=args.window_start,
+            window_end_month=args.window_end,
+        )
+        saved = save_monthly_benchmark_selection_window_comparison(rows, args.output)
+        failed_pre_window_rows = [
+            row
+            for row in rows
+            if str(row.get("diagnostic", "")) == "failed_pre_window_excess_drag"
+        ]
+        failed_window_rows = [
+            row
+            for row in rows
+            if str(row.get("diagnostic", "")) == "failed_window_excess_drag"
+        ]
+        print(f"benchmark_selection_window_comparison_report  {args.output}")
+        print(f"comparison_rows  {saved}")
+        print(f"failed_pre_window_drag_rows  {len(failed_pre_window_rows)}")
+        print(f"failed_window_drag_rows  {len(failed_window_rows)}")
         return 0
 
     if args.command == "monthly-compare-paths":
