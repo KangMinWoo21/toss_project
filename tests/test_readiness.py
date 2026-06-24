@@ -395,6 +395,27 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("missing_required_detail", checks[0].detail)
         self.assertIn("required_excess", checks[0].detail)
 
+    def test_performance_report_missing_required_status_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            performance = Path(temp_dir) / "performance.csv"
+            performance.write_text(
+                "name,status,detail\n"
+                "required_scenarios,PASS,all required scenarios pass\n"
+                "required_excess,,excess above threshold\n"
+                "walk_forward_margin,PASS,min_walk_forward_excess_pct=1.0\n"
+                "drawdown_buffer,PASS,max_drawdown_pct=-10\n"
+                "return_concentration,PASS,contribution balanced\n"
+                "trade_activity,PASS,trades=20\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(performance_report_path=performance)
+
+        self.assertEqual(readiness_status(checks), "BLOCK")
+        self.assertEqual(checks[0].name, "performance_report")
+        self.assertIn("missing_required_status", checks[0].detail)
+        self.assertIn("required_excess", checks[0].detail)
+
     def test_missing_performance_concentration_report_warns_readiness(self):
         with TemporaryDirectory() as temp_dir:
             missing = Path(temp_dir) / "monthly_performance_concentration.csv"

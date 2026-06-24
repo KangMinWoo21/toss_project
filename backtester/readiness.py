@@ -1820,6 +1820,18 @@ def _performance_report_check(path: Path) -> ReadinessCheck:
             "BLOCK",
             f"missing_required_detail={','.join(missing_detail)}",
         )
+    missing_status = sorted(
+        str(row.get("name", "")).strip()
+        for row in rows
+        if str(row.get("name", "")).strip() in REQUIRED_PERFORMANCE_REPORT_CHECKS
+        and not str(row.get("status", "")).strip()
+    )
+    if missing_status:
+        return ReadinessCheck(
+            "performance_report",
+            "BLOCK",
+            f"missing_required_status={','.join(missing_status)}",
+        )
     return ReadinessCheck("performance_report", "PASS", f"{len(rows)} performance checks passed")
 
 

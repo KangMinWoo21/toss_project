@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 risk report status evidence hardening
+Last updated: 2026-06-24 performance report status evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -39,10 +39,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `87a3367 Require deployment gate value evidence`.
+  `1f4fab9 Require risk report status evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `558` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `559` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=10`, `PASS=30`, `WARN=7`.
 - Latest candidate-overlay production-check using
@@ -50,7 +50,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=352.54` observed).
+  (`age_hours=352.61` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -65,6 +65,8 @@ appending long command logs or full report lists here.
   universe-bias values.
 - Risk report readiness now blocks required paper-operation gate rows that have
   detail evidence but omit status values.
+- Performance report readiness now blocks required performance gate rows that
+  have detail evidence but omit status values.
 - Full historical detail is in `docs/archive/` and git history.
 
 ## Current Best Candidate
