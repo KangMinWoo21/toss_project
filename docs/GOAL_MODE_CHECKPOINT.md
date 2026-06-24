@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 OOS start-date proof guard
+Last updated: 2026-06-24 OOS date-order proof guard
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,11 +40,12 @@ appending long command logs or full report lists here.
 
 - Previous pushed goal commit before this loop:
   `1ac11a3 Block empty validation scenario reports`.
-- Latest local goal commit series: pending OOS proof/status hardening;
+- Latest local goal commit series: pending OOS proof/status hardening and
+  post-cutoff OOS period guards;
   push to `origin` is pending explicit approval.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `569` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `570` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -52,7 +53,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=354.37` observed).
+  (`age_hours=354.43` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -92,6 +93,8 @@ appending long command logs or full report lists here.
 - Candidate promotion proof treats pending OOS markers case-insensitively.
 - Candidate promotion proof now blocks supplied OOS start dates that are not
   after the fixed `2026-06-18` baseline cutoff.
+- Candidate promotion proof now blocks supplied OOS periods where start is
+  after end.
 - Full historical detail is in `docs/archive/` and git history.
 
 ## Current Best Candidate

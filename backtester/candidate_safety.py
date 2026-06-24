@@ -41,6 +41,8 @@ def candidate_promotion_proof_status(
             return False, "post_cutoff_oos_start_invalid"
         if oos_start_date <= baseline_date:
             return False, "post_cutoff_oos_start_not_post_cutoff"
+        if oos_start_date > oos_end_date:
+            return False, "post_cutoff_oos_date_order_invalid"
     return True, "not_blocked_by_decision"
 
 
