@@ -617,6 +617,22 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Do not adopt rejected validation candidate", action_text)
 
+    def test_validation_candidate_decision_paper_review_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            decision = Path(temp_dir) / "monthly_validation_candidate_decision.csv"
+            decision.write_text(
+                "candidate_label,comparison_status,decision,decision_reasons,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
+                "neutral_loss_guard55_min_history244,IMPROVED,PAPER_REVIEW,no_required_failure_regression,1,0,-1,1,0,0,regime_sideways,,,,keep paper-only and complete OOS/post-cutoff review before promotion.\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_candidate_decision_path=decision)
+
+        candidate_checks = [check for check in checks if check.name == "validation_candidate_decision"]
+        self.assertEqual(candidate_checks[0].status, "BLOCK")
+        self.assertIn("neutral_loss_guard55_min_history244:PAPER_REVIEW", candidate_checks[0].detail)
+        self.assertIn("promotion_blocked", candidate_checks[0].detail)
+
     def test_stale_validation_reports_block_readiness(self):
         with TemporaryDirectory() as temp_dir:
             performance = Path(temp_dir) / "performance.csv"

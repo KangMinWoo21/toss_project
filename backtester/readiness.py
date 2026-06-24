@@ -978,7 +978,9 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
     comparison_status = str(row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
         status = "PASS"
-    elif decision in {"REJECT", "REJECTED", "HOLD", "PAPER_REVIEW"}:
+    elif decision == "PAPER_REVIEW":
+        status = "BLOCK"
+    elif decision in {"REJECT", "REJECTED", "HOLD"}:
         status = "WARN"
     else:
         status = "BLOCK"
@@ -994,6 +996,7 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
         f"unchanged_failure_names={row.get('unchanged_failure_names', '')}; "
         f"diagnostics={row.get('new_failure_diagnostics', '')}; "
         f"reasons={row.get('decision_reasons', '')}; "
+        f"promotion_status={'promotion_blocked' if decision == 'PAPER_REVIEW' else 'not_blocked_by_decision'}; "
         f"recommendation={row.get('recommendation', '')}"
     )
     return ReadinessCheck("validation_candidate_decision", status, detail)

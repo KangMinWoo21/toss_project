@@ -43,12 +43,13 @@ appending long command logs or full report lists here.
   `Record min-history 244 validation` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `512` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `513` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
   `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
-  reports: WARN, `BLOCK=0`, `PASS=37`, `WARN=10`.
+  reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
+  `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
   (`age_hours=346.36` observed).
 - Production remains not live-ready.
@@ -86,6 +87,9 @@ Verification:
 - Candidate decision recommendations now explicitly require paper-only handling,
   full validation rerun, OOS/post-cutoff review, and explicit production
   readiness changes before promotion.
+- `PAPER_REVIEW` candidate decisions now block production readiness promotion.
+  Current data ends at `2026-06-18`, so no post-cutoff/OOS review artifact
+  exists yet.
 
 Residual evidence:
 
