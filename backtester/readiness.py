@@ -25,6 +25,20 @@ REQUIRED_PERFORMANCE_REPORT_CHECKS = {
     "return_concentration",
     "trade_activity",
 }
+REQUIRED_PERFORMANCE_CONCENTRATION_COLUMNS = {
+    "source",
+    "start",
+    "end",
+    "top_1_month_contribution",
+    "top_3_month_contribution",
+    "top_5_symbol_contribution",
+    "positive_month_ratio",
+    "rolling_3m_return_min",
+    "rolling_6m_return_min",
+    "max_recovery_months_if_possible",
+    "concentration_status",
+    "concentration_reasons",
+}
 
 
 @dataclass(frozen=True)
@@ -1282,6 +1296,13 @@ def _performance_concentration_check(path: Path) -> ReadinessCheck:
     if not rows:
         return ReadinessCheck("performance_concentration", "BLOCK", f"empty: {path}")
     row = rows[-1]
+    missing_columns = sorted(REQUIRED_PERFORMANCE_CONCENTRATION_COLUMNS - set(row.keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "performance_concentration",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
     source = str(row.get("source", path)).strip()
     status = str(row.get("concentration_status", "")).strip().upper() or "BLOCK"
     if status not in {"PASS", "WARN", "BLOCK"}:

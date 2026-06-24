@@ -282,8 +282,8 @@ class ProductionReadinessTests(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             report = Path(temp_dir) / "concentration.csv"
             report.write_text(
-                "source,concentration_status,concentration_reasons,top_1_month_contribution\n"
-                "unit,BLOCK,top_1_month_contribution,0.9\n",
+                "source,start,end,top_1_month_contribution,top_3_month_contribution,top_5_symbol_contribution,best_month,worst_month,positive_month_ratio,rolling_3m_return_min,rolling_6m_return_min,max_recovery_months_if_possible,concentration_status,concentration_reasons\n"
+                "unit,2024-01-01,2024-12-31,0.9,0.95,0.99,2024-03,2024-06,0.4,-0.2,-0.3,6,BLOCK,top_1_month_contribution\n",
                 encoding="utf-8",
             )
 
@@ -297,8 +297,8 @@ class ProductionReadinessTests(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             report = Path(temp_dir) / "concentration.csv"
             report.write_text(
-                "source,concentration_status,concentration_reasons,top_1_month_contribution,top_5_symbol_contribution\n"
-                "monthly-backtest:2024-01-02..2024-03-01,PASS,,0.1,0.2\n",
+                "source,start,end,top_1_month_contribution,top_3_month_contribution,top_5_symbol_contribution,best_month,worst_month,positive_month_ratio,rolling_3m_return_min,rolling_6m_return_min,max_recovery_months_if_possible,concentration_status,concentration_reasons\n"
+                "monthly-backtest:2024-01-02..2024-03-01,2024-01-02,2024-03-01,0.1,0.15,0.2,2024-02,2024-01,0.6,-0.1,-0.2,2,PASS,\n",
                 encoding="utf-8",
             )
 
@@ -307,6 +307,23 @@ class ProductionReadinessTests(unittest.TestCase):
         concentration = [check for check in checks if check.name == "performance_concentration"][0]
         self.assertEqual(concentration.status, "WARN")
         self.assertIn("unexpected_source", concentration.detail)
+
+    def test_performance_concentration_missing_required_columns_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            report = Path(temp_dir) / "concentration.csv"
+            report.write_text(
+                "source,concentration_status,concentration_reasons\n"
+                "monthly-validate,PASS,ok\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(performance_concentration_path=report)
+
+        concentration = [check for check in checks if check.name == "performance_concentration"][0]
+        self.assertEqual(concentration.status, "BLOCK")
+        self.assertIn("missing_required_columns", concentration.detail)
+        self.assertIn("top_1_month_contribution", concentration.detail)
+        self.assertIn("top_5_symbol_contribution", concentration.detail)
 
     def test_recommend_readiness_actions_splits_performance_bottlenecks(self):
         with TemporaryDirectory() as temp_dir:

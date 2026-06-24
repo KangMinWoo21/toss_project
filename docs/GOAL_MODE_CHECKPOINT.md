@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 performance audit evidence hardening
+Last updated: 2026-06-24 performance concentration evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,10 +38,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `401853a Require accepted candidate consistency`.
+  `91039ff Require performance audit gate evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `533` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `534` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=348.60` observed).
+  (`age_hours=348.69` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -78,6 +78,9 @@ appending long command logs or full report lists here.
 - Production readiness now blocks performance audit reports that omit required
   evidence rows for scenarios, excess, walk-forward margin, drawdown,
   concentration, and trade activity.
+- Production readiness now blocks performance concentration reports that omit
+  required concentration evidence columns before accepting PASS/WARN/BLOCK
+  status.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.
 - Full historical detail is in
