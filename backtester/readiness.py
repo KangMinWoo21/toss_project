@@ -1458,6 +1458,12 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
     comparison_status = str(row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
     promotion_proof_present, promotion_status = candidate_promotion_proof_status(row)
     acceptance_issue = _candidate_acceptance_consistency_issue(row, comparison_status)
+    oos_status_detail = ""
+    if "PENDING_POST_CUTOFF_OOS" in {
+        str(row.get("post_cutoff_oos_start_date", "")).strip(),
+        str(row.get("post_cutoff_oos_end_date", "")).strip(),
+    }:
+        oos_status_detail = "post_cutoff_oos_status=pending; "
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
         status = "PASS" if promotion_proof_present and not acceptance_issue else "BLOCK"
     elif decision == "PAPER_REVIEW":
@@ -1479,6 +1485,7 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
         f"diagnostics={row.get('new_failure_diagnostics', '')}; "
         f"reasons={row.get('decision_reasons', '')}; "
         f"promotion_status={_candidate_promotion_status(decision, promotion_proof_present, promotion_status)}; "
+        f"{oos_status_detail}"
         f"acceptance_status={acceptance_issue or 'consistent'}; "
         f"recommendation={row.get('recommendation', '')}"
     )

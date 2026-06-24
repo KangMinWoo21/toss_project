@@ -1164,8 +1164,8 @@ class ProductionReadinessTests(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             decision = Path(temp_dir) / "monthly_validation_candidate_decision.csv"
             decision.write_text(
-                "candidate_label,comparison_status,decision,decision_reasons,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
-                "neutral_loss_guard55_min_history244,IMPROVED,PAPER_REVIEW,no_required_failure_regression,1,0,-1,1,0,0,regime_sideways,,,,keep paper-only and complete OOS/post-cutoff review before promotion.\n",
+                "candidate_label,comparison_status,decision,decision_reasons,post_cutoff_oos_start_date,post_cutoff_oos_end_date,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
+                "neutral_loss_guard55_min_history244,IMPROVED,PAPER_REVIEW,no_required_failure_regression,PENDING_POST_CUTOFF_OOS,PENDING_POST_CUTOFF_OOS,1,0,-1,1,0,0,regime_sideways,,,,keep paper-only and complete OOS/post-cutoff review before promotion.\n",
                 encoding="utf-8",
             )
 
@@ -1175,6 +1175,7 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertEqual(candidate_checks[0].status, "BLOCK")
         self.assertIn("neutral_loss_guard55_min_history244:PAPER_REVIEW", candidate_checks[0].detail)
         self.assertIn("promotion_blocked", candidate_checks[0].detail)
+        self.assertIn("post_cutoff_oos_status=pending", candidate_checks[0].detail)
 
     def test_validation_candidate_decision_missing_required_columns_blocks_readiness(self):
         with TemporaryDirectory() as temp_dir:

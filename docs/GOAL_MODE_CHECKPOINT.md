@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 pending OOS risk detail
+Last updated: 2026-06-24 pending OOS readiness detail
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -52,7 +52,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=353.35` observed).
+  (`age_hours=353.81` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -79,6 +79,8 @@ appending long command logs or full report lists here.
   markers until post-cutoff OOS evidence exists.
 - Candidate decision risk details now surface pending post-cutoff OOS status
   when those markers are present.
+- Candidate decision readiness details now also surface pending post-cutoff OOS
+  status when those markers are present.
 - Full historical detail is in `docs/archive/` and git history.
 
 ## Current Best Candidate
