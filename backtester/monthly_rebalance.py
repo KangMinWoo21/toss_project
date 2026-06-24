@@ -9,6 +9,7 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Callable
 
+from .candidate_safety import candidate_promotion_proof_status
 from .events import EventScoreStore
 from .models import Candle
 from .momentum_rotation import (
@@ -2283,11 +2284,10 @@ def validate_candidate_decision_risk(
     decision = str(row.get("decision", "")).strip().upper() or "UNKNOWN"
     reasons = str(row.get("decision_reasons", "")).strip().lower()
     label = str(row.get("candidate_label", source)).strip() or source
-    proof_present = "oos_review_passed" in reasons and "production_readiness_approved" in reasons
+    proof_present, promotion_status = candidate_promotion_proof_status(row)
 
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
         status = "PASS" if proof_present else "BLOCK"
-        promotion_status = "not_blocked_by_decision" if proof_present else "promotion_proof_missing"
     elif decision == "PAPER_REVIEW":
         status = "BLOCK"
         promotion_status = "promotion_blocked"

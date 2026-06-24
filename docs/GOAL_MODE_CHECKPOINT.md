@@ -38,10 +38,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `70f0fd8 Clarify auto-required candidate decisions`.
+  `84f0999 Gate monthly plan on market data freshness`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `523` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `525` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -49,10 +49,31 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=347.73` observed).
+  (`age_hours=347.86` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
+
+Tightened candidate promotion proof.
+
+Changed behavior:
+
+- Candidate `ACCEPT`/`APPROVE` decisions no longer pass readiness or monthly
+  risk checks from text markers alone.
+- Accepted candidates now require both `oos_review_passed` and
+  `production_readiness_approved` plus a post-cutoff OOS end date after
+  `2026-06-18`.
+- Missing/invalid/pre-cutoff OOS evidence blocks with
+  `post_cutoff_oos_missing` or `post_cutoff_oos_invalid`.
+
+Verification:
+
+- Targeted candidate decision/readiness tests PASS.
+- Full `unittest` PASS (`525` tests), compile PASS.
+- Default production-check remains BLOCK: `BLOCK=8`, `PASS=31`, `WARN=8`.
+- Health-check remains WARN from stale scalper data only: `PASS=7`, `WARN=1`.
+
+## Previous Freshness Loop
 
 Added a pre-paper monthly data freshness gate.
 

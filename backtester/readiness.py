@@ -6,6 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from .candidate_safety import candidate_promotion_proof_status
 from .data_quality import validate_dataset_freshness
 
 
@@ -976,11 +977,7 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
     row = rows[-1]
     decision = str(row.get("decision", "")).strip().upper() or "UNKNOWN"
     comparison_status = str(row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
-    decision_reasons = str(row.get("decision_reasons", "")).strip().lower()
-    promotion_proof_present = (
-        "oos_review_passed" in decision_reasons
-        and "production_readiness_approved" in decision_reasons
-    )
+    promotion_proof_present, promotion_status = candidate_promotion_proof_status(row)
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
         status = "PASS" if promotion_proof_present else "BLOCK"
     elif decision == "PAPER_REVIEW":
@@ -1001,17 +998,17 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
         f"unchanged_failure_names={row.get('unchanged_failure_names', '')}; "
         f"diagnostics={row.get('new_failure_diagnostics', '')}; "
         f"reasons={row.get('decision_reasons', '')}; "
-        f"promotion_status={_candidate_promotion_status(decision, promotion_proof_present)}; "
+        f"promotion_status={_candidate_promotion_status(decision, promotion_proof_present, promotion_status)}; "
         f"recommendation={row.get('recommendation', '')}"
     )
     return ReadinessCheck("validation_candidate_decision", status, detail)
 
 
-def _candidate_promotion_status(decision: str, promotion_proof_present: bool) -> str:
+def _candidate_promotion_status(decision: str, promotion_proof_present: bool, proof_status: str) -> str:
     if decision == "PAPER_REVIEW":
         return "promotion_blocked"
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"} and not promotion_proof_present:
-        return "promotion_proof_missing"
+        return proof_status
     return "not_blocked_by_decision"
 
 

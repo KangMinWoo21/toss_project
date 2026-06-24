@@ -662,8 +662,8 @@ class ProductionReadinessTests(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             decision = Path(temp_dir) / "monthly_validation_candidate_decision.csv"
             decision.write_text(
-                "candidate_label,comparison_status,decision,decision_reasons,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
-                "manual_accept,IMPROVED,ACCEPT,oos_review_passed;production_readiness_approved,1,0,-1,1,0,0,regime_sideways,,,,manual accept with proof.\n",
+                "candidate_label,comparison_status,decision,decision_reasons,post_cutoff_oos_end_date,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
+                "manual_accept,IMPROVED,ACCEPT,oos_review_passed;production_readiness_approved,2026-06-19,1,0,-1,1,0,0,regime_sideways,,,,manual accept with proof.\n",
                 encoding="utf-8",
             )
 
@@ -671,6 +671,21 @@ class ProductionReadinessTests(unittest.TestCase):
 
         candidate_checks = [check for check in checks if check.name == "validation_candidate_decision"]
         self.assertEqual(candidate_checks[0].status, "PASS")
+
+    def test_accepted_validation_candidate_requires_post_cutoff_oos_date(self):
+        with TemporaryDirectory() as temp_dir:
+            decision = Path(temp_dir) / "monthly_validation_candidate_decision.csv"
+            decision.write_text(
+                "candidate_label,comparison_status,decision,decision_reasons,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
+                "manual_accept,IMPROVED,ACCEPT,oos_review_passed;production_readiness_approved,1,0,-1,1,0,0,regime_sideways,,,,manual accept with marker-only proof.\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_candidate_decision_path=decision)
+
+        candidate_checks = [check for check in checks if check.name == "validation_candidate_decision"]
+        self.assertEqual(candidate_checks[0].status, "BLOCK")
+        self.assertIn("post_cutoff_oos_missing", candidate_checks[0].detail)
 
     def test_stale_validation_reports_block_readiness(self):
         with TemporaryDirectory() as temp_dir:
