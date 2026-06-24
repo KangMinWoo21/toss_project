@@ -1001,6 +1001,29 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(check.status, "BLOCK")
         self.assertIn("post_cutoff_oos_pending", check.detail)
 
+    def test_candidate_decision_risk_marks_pending_oos_reason_marker_with_spaces(self):
+        check = validate_candidate_decision_risk(
+            [
+                {
+                    "candidate_label": "manual_accept",
+                    "decision": "ACCEPT",
+                    "decision_reasons": (
+                        "oos_review_passed;production_readiness_approved;"
+                        "post_cutoff_oos_start_date = PENDING_POST_CUTOFF_OOS;"
+                        "post_cutoff_oos_end_date = 2026-06-19"
+                    ),
+                    "recommendation": "manual accept",
+                }
+            ],
+            source="unit",
+            require=True,
+        )
+
+        self.assertIsNotNone(check)
+        assert check is not None
+        self.assertEqual(check.status, "BLOCK")
+        self.assertIn("post_cutoff_oos_pending", check.detail)
+
     def test_candidate_decision_risk_marks_invalid_oos_reason_date(self):
         check = validate_candidate_decision_risk(
             [

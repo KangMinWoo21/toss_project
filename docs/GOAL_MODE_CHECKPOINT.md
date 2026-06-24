@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 OOS reason-date invalid guard
+Last updated: 2026-06-24 OOS reason-marker spacing guard
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -45,7 +45,7 @@ appending long command logs or full report lists here.
   push to `origin` is pending explicit approval.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `574` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `575` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -53,7 +53,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=355.20` observed).
+  (`age_hours=355.59` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -103,6 +103,8 @@ appending long command logs or full report lists here.
   `decision_reasons` as pending instead of missing.
 - Candidate promotion proof now classifies malformed OOS dates embedded in
   `decision_reasons` as invalid instead of missing.
+- Candidate promotion proof now accepts whitespace around OOS key/value
+  markers embedded in `decision_reasons`.
 - Full historical detail is in `docs/archive/` and git history.
 
 ## Current Best Candidate
