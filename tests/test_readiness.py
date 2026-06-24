@@ -542,6 +542,21 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertEqual(failure_checks[0].status, "BLOCK")
         self.assertIn("unsafe_suggested_action", failure_checks[0].detail)
 
+    def test_validation_failure_report_blocks_unsafe_live_parameter_hints(self):
+        with TemporaryDirectory() as temp_dir:
+            failures = Path(temp_dir) / "monthly_validation_failures.csv"
+            failures.write_text(
+                "name,category,reason,severity,failed_metric,metric_value,threshold,suggested_action,parameter_hints\n"
+                "stress,stress,max_drawdown_breach,WARN,max_drawdown_pct,-28,-25,REDUCE_DRAWDOWN,fetch live data before review\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_failures_path=failures)
+
+        failure_checks = [check for check in checks if check.name == "validation_failure_actions"]
+        self.assertEqual(failure_checks[0].status, "BLOCK")
+        self.assertIn("unsafe_parameter_hints", failure_checks[0].detail)
+
     def test_validation_failure_report_missing_required_columns_blocks_readiness(self):
         with TemporaryDirectory() as temp_dir:
             failures = Path(temp_dir) / "monthly_validation_failures.csv"

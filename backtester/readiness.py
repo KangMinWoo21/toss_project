@@ -1235,6 +1235,17 @@ def _validation_failure_actions_check(path: Path) -> ReadinessCheck:
     unsafe_detail = f"; unsafe_suggested_action={unsafe_actions[0]}" if unsafe_actions else ""
     if unsafe_actions:
         status = "BLOCK"
+    unsafe_parameter_hints = [
+        str(row.get("parameter_hints", "")).strip()
+        for row in rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("parameter_hints", "")).lower(),
+        )
+    ]
+    if unsafe_parameter_hints:
+        status = "BLOCK"
+        unsafe_detail += f"; unsafe_parameter_hints={unsafe_parameter_hints[0]}"
     return ReadinessCheck(
         "validation_failure_actions",
         status,

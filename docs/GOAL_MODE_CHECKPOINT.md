@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 unsafe validation drilldown suggested-action guard
+Last updated: 2026-06-24 unsafe validation failure parameter-hints guard
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -45,7 +45,7 @@ appending long command logs or full report lists here.
   push to `origin` is pending explicit approval.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `588` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `589` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -53,7 +53,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=357.04` observed).
+  (`age_hours=357.09` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -125,6 +125,8 @@ appending long command logs or full report lists here.
   fetch wording in `recommendation` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
+- Validation failure action readiness now blocks unsafe live/order/trade/fetch
+  wording in `parameter_hints` values.
 - Validation failure pattern readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure drilldown readiness now blocks unsafe live/order/trade/fetch
