@@ -667,6 +667,22 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Run candidate follow-up validation", action_text)
 
+    def test_validation_candidate_followup_missing_required_columns_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            followup = Path(temp_dir) / "monthly_validation_candidate_followup.csv"
+            followup.write_text(
+                "priority_rank,experiment_id,status,adoption_status,failed_delta\n"
+                "1,weak_cash_10_position_stop_12,IMPROVED,FULL_VALIDATION_REQUIRED,-2\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_candidate_followup_path=followup)
+
+        followup_checks = [check for check in checks if check.name == "validation_candidate_followup"]
+        self.assertEqual(followup_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_columns", followup_checks[0].detail)
+        self.assertIn("validation_command", followup_checks[0].detail)
+
     def test_validation_candidate_followup_report_summarizes_completed_decisions(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

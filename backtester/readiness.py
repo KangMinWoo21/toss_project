@@ -169,6 +169,22 @@ REQUIRED_VALIDATION_COMPARISON_DELTA_COLUMNS = {
     "trade_count_delta",
     "diagnostic",
 }
+REQUIRED_VALIDATION_CANDIDATE_FOLLOWUP_COLUMNS = {
+    "priority_rank",
+    "experiment_id",
+    "status",
+    "adoption_status",
+    "failed_delta",
+    "candidate_validation_args",
+    "candidate_scenario_output",
+    "candidate_gate_output",
+    "comparison_output",
+    "delta_output",
+    "decision_output",
+    "validation_command",
+    "comparison_command",
+    "risk_note",
+}
 REQUIRED_VALIDATION_FAILURE_PATTERN_COLUMNS = {
     "scenario",
     "baseline_failed",
@@ -1297,6 +1313,13 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
     rows = _read_csv_rows(path)
     if not rows:
         return ReadinessCheck("validation_candidate_followup", "WARN", f"empty: {path}")
+    missing_columns = sorted(REQUIRED_VALIDATION_CANDIDATE_FOLLOWUP_COLUMNS - set(rows[-1].keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_candidate_followup",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
     rows = sorted(rows, key=lambda row: _parse_float(row.get("priority_rank") or 9999.0))
     top = rows[0]
     decisions = _candidate_followup_decisions(rows, base_dir=path.parent)

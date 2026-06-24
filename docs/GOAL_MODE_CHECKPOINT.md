@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 performance report detail evidence hardening
+Last updated: 2026-06-24 candidate follow-up evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,10 +38,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `4d8628c Require risk gate detail evidence`.
+  `7c1711b Require performance report detail evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `547` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `548` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=349.49` observed).
+  (`age_hours=349.57` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -103,6 +103,8 @@ appending long command logs or full report lists here.
   paper-operation gate rows are present but omit detail evidence.
 - Production readiness now blocks performance audit reports whose required
   rows are present but omit detail evidence.
+- Candidate follow-up readiness now blocks reports that omit required command,
+  artifact, adoption, decision, or risk-note evidence columns.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.
 - Full historical detail is in
