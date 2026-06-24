@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 validation failure patterns value evidence hardening
+Last updated: 2026-06-24 validation failure drilldown value evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,18 +38,18 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `12ca450 Require validation sweep result value evidence`.
+  `a05b608 Require validation failure pattern value evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `554` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `555` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
-- Latest default production-check: BLOCK, `BLOCK=9`, `PASS=31`, `WARN=7`.
+- Latest default production-check: BLOCK, `BLOCK=10`, `PASS=30`, `WARN=7`.
 - Latest candidate-overlay production-check using
   `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=350.14` observed).
+  (`age_hours=350.22` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -121,6 +121,9 @@ appending long command logs or full report lists here.
   adoption, result summary, or risk-note values.
 - Validation failure pattern readiness now blocks reports that include required
   columns but omit scenario, baseline, count, diagnostic, action, or note
+  values.
+- Validation failure drilldown readiness now blocks reports that include
+  required columns but omit scenario, period, metric, diagnostic, or next-action
   values.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.

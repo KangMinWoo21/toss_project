@@ -292,6 +292,34 @@ REQUIRED_VALIDATION_FAILURE_DRILLDOWN_COLUMNS = {
     "evidence_gaps",
     "next_action",
 }
+REQUIRED_VALIDATION_FAILURE_DRILLDOWN_VALUE_COLUMNS = {
+    "scenario",
+    "category",
+    "pattern_status",
+    "suggested_action",
+    "baseline_reason",
+    "likely_root_cause",
+    "train_start",
+    "train_end",
+    "selected_preset",
+    "train_excess_return_pct",
+    "train_candidate_scores",
+    "train_candidate_decision_profiles",
+    "train_candidate_direct_scores",
+    "train_direct_diagnostics",
+    "start",
+    "end",
+    "baseline_excess_return_pct",
+    "baseline_max_drawdown_pct",
+    "baseline_trade_count",
+    "candidate_count",
+    "candidate_excess_delta_min",
+    "candidate_excess_delta_median",
+    "candidate_drawdown_delta_median",
+    "candidate_trade_delta_median",
+    "dominant_diagnostic",
+    "next_action",
+}
 
 
 @dataclass(frozen=True)
@@ -1581,6 +1609,20 @@ def _validation_failure_drilldown_check(path: Path) -> ReadinessCheck:
             "validation_failure_drilldown",
             "BLOCK",
             f"missing required columns: {','.join(missing_columns)}",
+        )
+    missing_values = sorted(
+        {
+            column
+            for row in rows
+            for column in REQUIRED_VALIDATION_FAILURE_DRILLDOWN_VALUE_COLUMNS
+            if not str(row.get(column, "")).strip()
+        }
+    )
+    if missing_values:
+        return ReadinessCheck(
+            "validation_failure_drilldown",
+            "BLOCK",
+            f"missing_required_values={','.join(missing_values)}",
         )
     root_causes = Counter(str(row.get("likely_root_cause", "")).strip() for row in rows)
     evidence_gap_rows = [row for row in rows if str(row.get("evidence_gaps", "")).strip()]

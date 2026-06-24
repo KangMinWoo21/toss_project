@@ -954,6 +954,26 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("missing required columns", drilldown_checks[0].detail)
         self.assertIn("baseline_excess_return_pct", drilldown_checks[0].detail)
 
+    def test_validation_failure_drilldown_missing_required_values_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            drilldown = Path(temp_dir) / "monthly_validation_failure_drilldown.csv"
+            drilldown.write_text(
+                "scenario,category,pattern_status,suggested_action,baseline_reason,likely_root_cause,train_start,train_end,selected_preset,train_excess_return_pct,train_candidate_scores,train_candidate_decision_profiles,train_candidate_direct_scores,train_direct_diagnostics,start,end,baseline_excess_return_pct,baseline_max_drawdown_pct,baseline_trade_count,candidate_count,candidate_labels,candidate_excess_delta_min,candidate_excess_delta_median,candidate_drawdown_delta_median,candidate_trade_delta_median,dominant_diagnostic,evidence_gaps,next_action\n"
+                ",regime,PERSISTENT_BLOCK,,below_excess,,2024-01-01,2024-12-31,baseline,-1.0,profile_a,decision_a,direct_a,diagnostic_a,2025-01-02,2025-04-17,-7.1,-23.9,10,2,candidate_a,-3.0,-1.5,0.5,2.0,,selected_symbols,\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_failure_drilldown_path=drilldown)
+
+        drilldown_checks = [check for check in checks if check.name == "validation_failure_drilldown"]
+        self.assertEqual(drilldown_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_values", drilldown_checks[0].detail)
+        self.assertIn("scenario", drilldown_checks[0].detail)
+        self.assertIn("suggested_action", drilldown_checks[0].detail)
+        self.assertIn("likely_root_cause", drilldown_checks[0].detail)
+        self.assertIn("dominant_diagnostic", drilldown_checks[0].detail)
+        self.assertIn("next_action", drilldown_checks[0].detail)
+
     def test_validation_comparison_reject_warns_readiness(self):
         with TemporaryDirectory() as temp_dir:
             comparison = Path(temp_dir) / "monthly_validation_comparison.csv"
