@@ -56,6 +56,24 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("missing_required_columns", checks[0].detail)
         self.assertIn("excess_return_pct", checks[0].detail)
 
+    def test_deployment_gate_missing_required_values_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            gate = Path(temp_dir) / "gate.csv"
+            gate.write_text(
+                "deployable,reason,source,total_return_pct,buy_hold_return_pct,excess_return_pct,max_drawdown_pct,trade_count,universe_bias_warning\n"
+                "True,,,0,0,,0,0,False\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(deployment_gate_path=gate)
+
+        self.assertEqual(readiness_status(checks), "BLOCK")
+        self.assertEqual(checks[0].name, "deployment_gate")
+        self.assertIn("missing_required_values", checks[0].detail)
+        self.assertIn("reason", checks[0].detail)
+        self.assertIn("source", checks[0].detail)
+        self.assertIn("excess_return_pct", checks[0].detail)
+
     def test_validation_scenario_failures_block_readiness(self):
         with TemporaryDirectory() as temp_dir:
             scenarios = Path(temp_dir) / "scenarios.csv"

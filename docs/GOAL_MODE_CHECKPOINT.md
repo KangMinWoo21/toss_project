@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 validation scenario value evidence hardening
+Last updated: 2026-06-24 deployment gate value evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -39,10 +39,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `96b7e52 Require validation failure drilldown value evidence`.
+  `d9f594d Require validation scenario value evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `556` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `557` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=10`, `PASS=30`, `WARN=7`.
 - Latest candidate-overlay production-check using
@@ -50,7 +50,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=352.39` observed).
+  (`age_hours=352.47` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -60,6 +60,9 @@ appending long command logs or full report lists here.
 - Validation scenario readiness now blocks all-pass scenario reports that
   include required columns but omit core scenario, period, performance, risk,
   universe, deployability, reason, or source values.
+- Deployment gate readiness now blocks reports that include required columns
+  but omit deployability, reason, source, performance, drawdown, trade-count, or
+  universe-bias values.
 - Full historical detail is in `docs/archive/` and git history.
 
 ## Current Best Candidate

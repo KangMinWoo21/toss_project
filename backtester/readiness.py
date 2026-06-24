@@ -22,6 +22,7 @@ REQUIRED_DEPLOYMENT_GATE_COLUMNS = {
     "trade_count",
     "universe_bias_warning",
 }
+REQUIRED_DEPLOYMENT_GATE_VALUE_COLUMNS = set(REQUIRED_DEPLOYMENT_GATE_COLUMNS)
 REQUIRED_VALIDATION_SCENARIO_COLUMNS = {
     "name",
     "category",
@@ -973,6 +974,17 @@ def _deployment_gate_check(path: Path) -> ReadinessCheck:
             "deployment_gate",
             "BLOCK",
             f"missing_required_columns={','.join(missing_columns)}",
+        )
+    missing_values = sorted(
+        column
+        for column in REQUIRED_DEPLOYMENT_GATE_VALUE_COLUMNS
+        if not str(row.get(column, "")).strip()
+    )
+    if missing_values:
+        return ReadinessCheck(
+            "deployment_gate",
+            "BLOCK",
+            f"missing_required_values={','.join(missing_values)}",
         )
     deployable = _parse_bool(row.get("deployable", ""))
     reason = str(row.get("reason", "")).strip() or "no reason"
