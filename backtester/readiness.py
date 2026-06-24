@@ -1546,13 +1546,19 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
         decision_value = str(decision_row.get("decision", "")).strip().upper()
         comparison_status = str(decision_row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
         proof_present, proof_status = candidate_promotion_proof_status(decision_row)
+        oos_status = ""
+        if "PENDING_POST_CUTOFF_OOS" in {
+            str(decision_row.get("post_cutoff_oos_start_date", "")).strip(),
+            str(decision_row.get("post_cutoff_oos_end_date", "")).strip(),
+        }:
+            oos_status = ":post_cutoff_oos_status=pending"
         if decision_value == "PAPER_REVIEW":
             promotion_blocked.append(
-                f"{decision_row.get('candidate_label', '')}:PAPER_REVIEW:promotion_blocked"
+                f"{decision_row.get('candidate_label', '')}:PAPER_REVIEW:promotion_blocked{oos_status}"
             )
         elif decision_value in {"ACCEPT", "PASS", "APPROVE", "APPROVED"} and not proof_present:
             promotion_blocked.append(
-                f"{decision_row.get('candidate_label', '')}:{decision_value}:{proof_status}"
+                f"{decision_row.get('candidate_label', '')}:{decision_value}:{proof_status}{oos_status}"
             )
         elif decision_value in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
             acceptance_issue = _candidate_acceptance_consistency_issue(decision_row, comparison_status)

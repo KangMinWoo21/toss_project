@@ -927,6 +927,28 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("promotion_blocked_decisions", followup_checks[0].detail)
         self.assertIn("manual_accept:ACCEPT:promotion_proof_missing", followup_checks[0].detail)
 
+    def test_validation_candidate_followup_surfaces_pending_oos_marker(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            decision = root / "candidate_decision.csv"
+            decision.write_text(
+                "candidate_label,comparison_status,decision,decision_reasons,post_cutoff_oos_start_date,post_cutoff_oos_end_date,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
+                "neutral_loss_guard55_min_history244,IMPROVED,PAPER_REVIEW,no_required_failure_regression,PENDING_POST_CUTOFF_OOS,PENDING_POST_CUTOFF_OOS,5,0,-5,5,0,0,regime_sideways,,,,keep paper-only.\n",
+                encoding="utf-8",
+            )
+            followup = root / "monthly_validation_candidate_followup.csv"
+            followup.write_text(
+                "priority_rank,experiment_id,status,adoption_status,failed_delta,candidate_validation_args,candidate_scenario_output,candidate_gate_output,comparison_output,delta_output,decision_output,validation_command,comparison_command,risk_note\n"
+                f"1,neutral_loss_guard55_min_history244,IMPROVED,FULL_VALIDATION_REQUIRED,-5,--point-in-time-min-history-days 244,candidate.csv,gate.csv,comparison.csv,delta.csv,{decision},python -m backtester monthly-validate,python -m backtester monthly-compare-validation,Plan only\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_candidate_followup_path=followup)
+
+        followup_checks = [check for check in checks if check.name == "validation_candidate_followup"]
+        self.assertEqual(followup_checks[0].status, "BLOCK")
+        self.assertIn("post_cutoff_oos_status=pending", followup_checks[0].detail)
+
     def test_validation_candidate_followup_blocks_inconsistent_accepted_decisions(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

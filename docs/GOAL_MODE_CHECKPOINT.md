@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 pending OOS readiness detail
+Last updated: 2026-06-24 pending OOS followup detail
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -44,7 +44,7 @@ appending long command logs or full report lists here.
   push to `origin` is pending explicit approval.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `563` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `564` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -52,7 +52,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=353.81` observed).
+  (`age_hours=353.88` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -81,6 +81,8 @@ appending long command logs or full report lists here.
   when those markers are present.
 - Candidate decision readiness details now also surface pending post-cutoff OOS
   status when those markers are present.
+- Candidate follow-up readiness details now surface pending post-cutoff OOS
+  status for blocked paper-review decisions.
 - Full historical detail is in `docs/archive/` and git history.
 
 ## Current Best Candidate
