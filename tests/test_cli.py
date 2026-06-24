@@ -16,6 +16,7 @@ class CliTests(unittest.TestCase):
         env = os.environ.copy()
         existing_pythonpath = env.get("PYTHONPATH")
         env["PYTHONPATH"] = str(ROOT) if not existing_pythonpath else str(ROOT) + os.pathsep + existing_pythonpath
+        env["PYTHONUTF8"] = "1"
         return subprocess.run(
             [sys.executable, "-m", "backtester", *args],
             check=False,
@@ -38,16 +39,25 @@ class CliTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-    def _write_trend_price_file(self, data_dir: Path, symbol: str, *, close: float, step: float, volume: int) -> str:
+    def _write_trend_price_file(
+        self,
+        data_dir: Path,
+        symbol: str,
+        *,
+        close: float,
+        step: float,
+        volume: int,
+        rows: int = 220,
+    ) -> str:
         data_dir.mkdir(parents=True, exist_ok=True)
         start = datetime.fromisoformat("2024-01-01")
         lines = ["date,open,high,low,close,volume"]
-        for index in range(220):
+        for index in range(rows):
             day = (start + timedelta(days=index)).date().isoformat()
             price = close + step * index
             lines.append(f"{day},{price},{price + 1},{max(1, price - 1)},{price},{volume}")
         (data_dir / f"{symbol}.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return (start + timedelta(days=219)).date().isoformat()
+        return (start + timedelta(days=rows - 1)).date().isoformat()
 
     def test_compare_command_prints_strategy_table(self):
         completed = subprocess.run(
@@ -2666,7 +2676,50 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("--summary-output", completed.stdout)
+        self.assertIn("--max-data-stale-days", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
+
+    def test_monthly_plan_blocks_stale_ohlcv_dataset(self):
+        with TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+            data_dir = cwd / "prices"
+            latest = self._write_trend_price_file(data_dir, "111111", close=100, step=1, volume=1000, rows=420)
+            self._write_trend_price_file(data_dir, "222222", close=120, step=1, volume=1000, rows=420)
+            as_of = (datetime.fromisoformat(latest) + timedelta(days=10)).date().isoformat()
+            risk_output = cwd / "risk.csv"
+
+            completed = self._run_backtester_in_cwd(
+                cwd,
+                [
+                    "monthly-plan",
+                    "--data-dir",
+                    str(data_dir),
+                    "--as-of",
+                    as_of,
+                    "--train-years",
+                    "1",
+                    "--min-rows-per-window",
+                    "1",
+                    "--point-in-time-min-history-days",
+                    "1",
+                    "--max-signal-age-days",
+                    "90",
+                    "--risk-output",
+                    str(risk_output),
+                ],
+            )
+            if risk_output.exists():
+                with risk_output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        freshness = [row for row in rows if row["name"] == "market_data_freshness"]
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertEqual(len(freshness), 1)
+        self.assertEqual(freshness[0]["status"], "BLOCK")
+        self.assertIn(f"latest={latest}", freshness[0]["detail"])
+        self.assertIn("stale_days=10", freshness[0]["detail"])
 
     def test_plan_pykrx_missing_ohlcv_writes_prioritized_targets(self):
         with TemporaryDirectory() as temp_dir:

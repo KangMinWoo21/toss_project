@@ -37,13 +37,11 @@ appending long command logs or full report lists here.
 
 ## Current State
 
-- Previous pushed checkpoint/context commit before this loop:
-  `9a96e5c Compact goal mode prompt context`.
-- Latest completed local goal commit:
-  `Record min-history 244 validation` (current HEAD after this loop).
+- Previous pushed goal commit before this loop:
+  `70f0fd8 Clarify auto-required candidate decisions`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `522` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `523` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -51,10 +49,32 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=346.36` observed).
+  (`age_hours=347.73` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
+
+Added a pre-paper monthly data freshness gate.
+
+Changed behavior:
+
+- `monthly-plan` now exposes `--max-data-stale-days` defaulting to `7`.
+- After data-quality exclusions and before strategy selection/order planning,
+  monthly-plan checks loaded OHLCV candle freshness.
+- Stale included market data writes an empty order plan, a
+  `market_data_freshness` BLOCK row, and returns blocked status before any
+  paper-operation plan can proceed.
+- Current baseline probe for `2026-06-24` passes this new gate after exclusions:
+  `latest=2026-06-18`, `stale_days=6`, `symbols=2184`, `stale_symbols=0`.
+
+Verification:
+
+- Targeted CLI freshness tests PASS.
+- Full `unittest` PASS (`523` tests), compile PASS.
+- Default production-check remains BLOCK: `BLOCK=8`, `PASS=31`, `WARN=8`.
+- Health-check remains WARN from stale scalper data only: `PASS=7`, `WARN=1`.
+
+## Previous Candidate Loop
 
 Ran a paper-only full validation of the current best candidate with the PIT
 minimum history gate relaxed from `252` to `244` rows.

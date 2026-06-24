@@ -695,6 +695,7 @@ def main() -> int:
     monthly_plan_parser.add_argument("--candidate-decision-report", default=None)
     monthly_plan_parser.add_argument("--require-candidate-decision-report", action="store_true")
     monthly_plan_parser.add_argument("--max-report-age-days", type=int, default=45)
+    monthly_plan_parser.add_argument("--max-data-stale-days", type=int, default=7)
     monthly_plan_parser.add_argument("--train-years", type=int, default=5)
     monthly_plan_parser.add_argument("--train-start", default=None)
     monthly_plan_parser.add_argument("--presets", default="balanced")
@@ -3114,6 +3115,23 @@ def main() -> int:
             exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
             data_quality_exclusions,
         )
+        market_data_freshness_check = _market_data_freshness_risk_check(
+            symbol_candles,
+            as_of_date=args.as_of,
+            max_stale_days=args.max_data_stale_days,
+        )
+        if market_data_freshness_check is not None and market_data_freshness_check.status == "BLOCK":
+            risk_checks = [market_data_freshness_check]
+            save_order_plan([], args.output)
+            save_risk_report(risk_checks, args.risk_output)
+            print("Monthly rebalance decision")
+            print(f"as_of  {args.as_of}")
+            print("orders  0")
+            print("risk_status  BLOCK")
+            _print_data_quality_exclusions(data_quality_exclusions)
+            print(f"order_plan  {args.output}")
+            print(f"risk_report  {args.risk_output}")
+            return risk_exit_code("BLOCK")
         presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
         point_in_time_universe = (
             load_point_in_time_universe(args.point_in_time_universe)
@@ -3282,6 +3300,8 @@ def main() -> int:
                 max_age_days=args.max_report_age_days,
             )
         )
+        if market_data_freshness_check is not None:
+            risk_checks.append(market_data_freshness_check)
         risk_checks.extend(_data_quality_exclusion_risk_checks(data_quality_exclusions))
         gate_status = risk_status(risk_checks)
         orders = mark_order_plan_execution(
@@ -4325,6 +4345,53 @@ def _data_quality_exclusion_risk_checks(resolution: DataQualityExclusionResoluti
             f"{resolution.mode}:{resolution.path}; excluded_symbols={len(resolution.symbols)}",
         )
     ]
+
+
+def _market_data_freshness_risk_check(
+    symbol_candles: dict[str, list],
+    *,
+    as_of_date: str,
+    max_stale_days: int,
+) -> RiskCheck | None:
+    if max_stale_days < 0:
+        return None
+    try:
+        as_of = date.fromisoformat(as_of_date)
+    except ValueError:
+        return RiskCheck("market_data_freshness", "BLOCK", f"invalid as_of_date: {as_of_date}")
+    if not symbol_candles:
+        return RiskCheck("market_data_freshness", "BLOCK", "no symbols after data-quality exclusions")
+
+    latest_by_symbol: dict[str, date] = {}
+    for symbol, candles in symbol_candles.items():
+        dates = []
+        for candle in candles:
+            try:
+                dates.append(date.fromisoformat(str(candle.date)))
+            except ValueError:
+                continue
+        if dates:
+            latest_by_symbol[symbol] = max(dates)
+    if not latest_by_symbol:
+        return RiskCheck("market_data_freshness", "BLOCK", "no valid candle dates after data-quality exclusions")
+
+    stale_by_symbol = {
+        symbol: max(0, (as_of - latest).days)
+        for symbol, latest in latest_by_symbol.items()
+    }
+    stale_symbols = sorted(symbol for symbol, stale_days in stale_by_symbol.items() if stale_days > max_stale_days)
+    latest = max(latest_by_symbol.values()).isoformat()
+    max_stale = max(stale_by_symbol.values())
+    status = "BLOCK" if stale_symbols else "PASS"
+    sample = ",".join(stale_symbols[:5]) if stale_symbols else "none"
+    return RiskCheck(
+        "market_data_freshness",
+        status,
+        (
+            f"latest={latest}; stale_days={max_stale}; max_stale_days={max_stale_days}; "
+            f"symbols={len(latest_by_symbol)}; stale_symbols={len(stale_symbols)}; sample={sample}"
+        ),
+    )
 
 
 def _save_universe_filter_report_if_needed(
