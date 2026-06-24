@@ -2248,6 +2248,33 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("stress", decision[0]["resolved_failure_names"])
         self.assertIn("Do not adopt", decision[0]["recommendation"])
 
+    def test_build_monthly_validation_candidate_decision_requires_oos_before_promotion(self):
+        decision = build_monthly_validation_candidate_decision(
+            {
+                "candidate_label": "neutral_loss_guard55_min_history244",
+                "status": "IMPROVED",
+                "baseline_failed_required": 1,
+                "candidate_failed_required": 0,
+                "failed_delta": -1,
+                "resolved_failures": "regime_sideways",
+                "new_failures": "",
+                "unchanged_failures": "",
+            },
+            [
+                {
+                    "classification": "RESOLVED",
+                    "diagnostic": "candidate_fixed_required_failure",
+                    "name": "regime_sideways",
+                },
+            ],
+        )
+
+        row = decision[0]
+        self.assertEqual(row["decision"], "PAPER_REVIEW")
+        self.assertIn("paper-only", row["recommendation"])
+        self.assertIn("OOS/post-cutoff", row["recommendation"])
+        self.assertIn("production readiness", row["recommendation"])
+
     def test_build_monthly_validation_candidate_decision_rejects_drawdown_buffer_loss(self):
         decision = build_monthly_validation_candidate_decision(
             {

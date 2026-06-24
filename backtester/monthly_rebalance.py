@@ -10785,7 +10785,8 @@ def build_monthly_validation_candidate_decision(
     elif failed_delta < 0 and not new_count:
         decision = "PAPER_REVIEW"
         recommendation = (
-            "Candidate improved required failures without introducing new failures; keep paper-only and rerun full validation."
+            "Candidate improved required failures without introducing new failures; keep paper-only, rerun full validation, "
+            "complete OOS/post-cutoff review, and require explicit production readiness changes before promotion."
         )
     else:
         decision = "HOLD"

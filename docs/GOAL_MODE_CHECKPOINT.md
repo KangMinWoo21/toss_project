@@ -43,7 +43,7 @@ appending long command logs or full report lists here.
   `Record min-history 244 validation` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `511` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `512` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -83,6 +83,9 @@ Verification:
   monthly risk reports. This removes readiness BLOCKs only when all
   production-check inputs are pointed at the candidate artifacts; the default
   canonical check remains BLOCK and the candidate remains `PAPER_REVIEW`.
+- Candidate decision recommendations now explicitly require paper-only handling,
+  full validation rerun, OOS/post-cutoff review, and explicit production
+  readiness changes before promotion.
 
 Residual evidence:
 
