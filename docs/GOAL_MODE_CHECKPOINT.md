@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 failure action coverage guard
+Last updated: 2026-06-24 PIT failure action refresh
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -48,11 +48,10 @@ appending long command logs or full report lists here.
   remain outside recent goal loops. Do not revert them.
 - Latest full tests: `python -m unittest discover -s tests` PASS, `607` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
-- Latest default production-check: BLOCK, `BLOCK=9`, `PASS=31`, `WARN=8`;
+- Latest default production-check: BLOCK, `BLOCK=8`, `PASS=32`, `WARN=8`;
   BLOCK_NAMES=`overall`, `deployment_gate`, `validation_scenarios`,
-  `validation_failure_actions`, `validation_failure_action_coverage`,
-  `validation_remediation`, `validation_failure_patterns`, `risk_report`,
-  `performance_report`.
+  `validation_failure_actions`, `validation_remediation`,
+  `validation_failure_patterns`, `risk_report`, `performance_report`.
 - Latest candidate-overlay production-check using
   `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
@@ -159,8 +158,10 @@ appending long command logs or full report lists here.
 - Post-cutoff OOS pending marker detection is centralized; readiness and risk
   details now surface lowercase pending markers as `post_cutoff_oos_status=pending`.
 - Validation failure action coverage now blocks when a failed required scenario
-  is missing from the failure action report; current missing action:
-  `stress_exclude_500pct_winners`.
+  is missing from the failure action report.
+- Derived failure/remediation/sweep-plan reports were refreshed from
+  `monthly_validation_scenarios_pit_universe.csv`; coverage now passes with
+  `5` covered failed scenarios, including `stress_exclude_500pct_winners`.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
