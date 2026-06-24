@@ -1,5 +1,6 @@
 import csv
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -1256,6 +1257,17 @@ def _validation_remediation_check(path: Path) -> ReadinessCheck:
             "validation_remediation",
             "BLOCK",
             f"missing_required_values={','.join(missing_values)}",
+        )
+    unsafe_next_experiments = [
+        str(row.get("next_experiment", "")).strip()
+        for row in rows
+        if re.search(r"\b(live|order|trade|trading|fetch)\b", str(row.get("next_experiment", "")).lower())
+    ]
+    if unsafe_next_experiments:
+        return ReadinessCheck(
+            "validation_remediation",
+            "BLOCK",
+            f"unsafe_next_experiment={unsafe_next_experiments[0]}",
         )
     priority_counts = Counter(str(row.get("priority", "")).strip() or "P2" for row in rows)
     status = "BLOCK" if priority_counts.get("P0", 0) or priority_counts.get("P1", 0) else "WARN"

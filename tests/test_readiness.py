@@ -693,6 +693,21 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("affected_scenarios", remediation_checks[0].detail)
         self.assertIn("next_experiment", remediation_checks[0].detail)
 
+    def test_validation_remediation_report_blocks_unsafe_live_next_experiment(self):
+        with TemporaryDirectory() as temp_dir:
+            remediation = Path(temp_dir) / "monthly_validation_remediation.csv"
+            remediation.write_text(
+                "priority,suggested_action,failure_count,blocked_count,affected_categories,affected_scenarios,failed_metrics,worst_metric_value,parameter_hints,next_experiment\n"
+                "P1,IMPROVE_WEAK_WINDOW_DEFENSE,3,3,regime; walk_forward,regime_sideways; walk_forward_005,excess_return_pct,-7.1648,increase cash_buffer_weight,Run live order experiment\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_remediation_path=remediation)
+
+        remediation_checks = [check for check in checks if check.name == "validation_remediation"]
+        self.assertEqual(remediation_checks[0].status, "BLOCK")
+        self.assertIn("unsafe_next_experiment", remediation_checks[0].detail)
+
     def test_validation_sweep_plan_report_adds_pending_experiment_check(self):
         with TemporaryDirectory() as temp_dir:
             sweep = Path(temp_dir) / "monthly_validation_sweep_plan.csv"
