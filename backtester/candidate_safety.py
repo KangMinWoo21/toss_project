@@ -33,7 +33,24 @@ def candidate_promotion_proof_status(
         return False, "post_cutoff_oos_invalid"
     if oos_end_date <= baseline_date:
         return False, "post_cutoff_oos_missing"
+    oos_start = _post_cutoff_oos_start_date(row, reasons)
+    if oos_start:
+        try:
+            oos_start_date = date.fromisoformat(oos_start)
+        except ValueError:
+            return False, "post_cutoff_oos_start_invalid"
+        if oos_start_date <= baseline_date:
+            return False, "post_cutoff_oos_start_not_post_cutoff"
     return True, "not_blocked_by_decision"
+
+
+def _post_cutoff_oos_start_date(row: dict[str, Any], reasons: str) -> str:
+    for field_name in ("post_cutoff_oos_start_date", "oos_review_start_date"):
+        value = str(row.get(field_name, "")).strip()
+        if value:
+            return value
+    match = re.search(r"(?:post_cutoff_oos_start_date|oos_review_start_date)=([0-9]{4}-[0-9]{2}-[0-9]{2})", reasons)
+    return match.group(1) if match else ""
 
 
 def _post_cutoff_oos_end_date(row: dict[str, Any], reasons: str) -> str:
