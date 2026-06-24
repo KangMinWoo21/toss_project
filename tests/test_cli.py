@@ -2677,6 +2677,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("--summary-output", completed.stdout)
         self.assertIn("--max-data-stale-days", completed.stdout)
+        self.assertIn("--coverage-min-pct", completed.stdout)
         self.assertIn("--market-beta-proxy-max-exposure", completed.stdout)
 
     def test_monthly_plan_blocks_stale_ohlcv_dataset(self):
@@ -2771,6 +2772,58 @@ class CliTests(unittest.TestCase):
         self.assertEqual(freshness[0]["status"], "BLOCK")
         self.assertIn(f"snapshot={stale_snapshot}", freshness[0]["detail"])
         self.assertIn("stale_days=10", freshness[0]["detail"])
+
+    def test_monthly_plan_blocks_low_point_in_time_price_coverage(self):
+        with TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+            data_dir = cwd / "prices"
+            latest = self._write_trend_price_file(data_dir, "111111", close=100, step=1, volume=1000, rows=420)
+            self._write_trend_price_file(data_dir, "222222", close=120, step=1, volume=1000, rows=420)
+            universe = cwd / "universe.csv"
+            universe.write_text(
+                "date,symbol,name,market\n"
+                f"{latest},111111,One,KOSPI\n"
+                f"{latest},222222,Two,KOSPI\n"
+                f"{latest},333333,Three,KOSPI\n"
+                f"{latest},444444,Four,KOSPI\n",
+                encoding="utf-8",
+            )
+            risk_output = cwd / "risk.csv"
+
+            completed = self._run_backtester_in_cwd(
+                cwd,
+                [
+                    "monthly-plan",
+                    "--data-dir",
+                    str(data_dir),
+                    "--as-of",
+                    latest,
+                    "--train-years",
+                    "1",
+                    "--min-rows-per-window",
+                    "1",
+                    "--point-in-time-min-history-days",
+                    "1",
+                    "--point-in-time-universe",
+                    str(universe),
+                    "--max-signal-age-days",
+                    "90",
+                    "--risk-output",
+                    str(risk_output),
+                ],
+            )
+            if risk_output.exists():
+                with risk_output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        coverage = [row for row in rows if row["name"] == "universe_price_coverage"]
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertEqual(len(coverage), 1)
+        self.assertEqual(coverage[0]["status"], "BLOCK")
+        self.assertIn("coverage_pct=50.0000", coverage[0]["detail"])
+        self.assertIn("missing_symbols=2", coverage[0]["detail"])
 
     def test_plan_pykrx_missing_ohlcv_writes_prioritized_targets(self):
         with TemporaryDirectory() as temp_dir:

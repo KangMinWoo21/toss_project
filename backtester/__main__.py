@@ -696,6 +696,7 @@ def main() -> int:
     monthly_plan_parser.add_argument("--require-candidate-decision-report", action="store_true")
     monthly_plan_parser.add_argument("--max-report-age-days", type=int, default=45)
     monthly_plan_parser.add_argument("--max-data-stale-days", type=int, default=7)
+    monthly_plan_parser.add_argument("--coverage-min-pct", type=float, default=80.0)
     monthly_plan_parser.add_argument("--train-years", type=int, default=5)
     monthly_plan_parser.add_argument("--train-start", default=None)
     monthly_plan_parser.add_argument("--presets", default="balanced")
@@ -3155,6 +3156,25 @@ def main() -> int:
             print(f"order_plan  {args.output}")
             print(f"risk_report  {args.risk_output}")
             return risk_exit_code("BLOCK")
+        universe_coverage_check = _universe_price_coverage_risk_check(
+            symbol_candles,
+            point_in_time_universe,
+            as_of_date=args.as_of,
+            min_coverage_pct=args.coverage_min_pct,
+            excluded_symbols=data_quality_exclusions.symbols,
+        )
+        if universe_coverage_check is not None and universe_coverage_check.status == "BLOCK":
+            risk_checks = [universe_coverage_check]
+            save_order_plan([], args.output)
+            save_risk_report(risk_checks, args.risk_output)
+            print("Monthly rebalance decision")
+            print(f"as_of  {args.as_of}")
+            print("orders  0")
+            print("risk_status  BLOCK")
+            _print_data_quality_exclusions(data_quality_exclusions)
+            print(f"order_plan  {args.output}")
+            print(f"risk_report  {args.risk_output}")
+            return risk_exit_code("BLOCK")
         _save_universe_filter_report_if_needed(
             symbol_candles,
             point_in_time_universe,
@@ -3321,6 +3341,8 @@ def main() -> int:
             risk_checks.append(market_data_freshness_check)
         if universe_freshness_check is not None:
             risk_checks.append(universe_freshness_check)
+        if universe_coverage_check is not None:
+            risk_checks.append(universe_coverage_check)
         risk_checks.extend(_data_quality_exclusion_risk_checks(data_quality_exclusions))
         gate_status = risk_status(risk_checks)
         orders = mark_order_plan_execution(
@@ -4448,6 +4470,46 @@ def _universe_freshness_risk_check(
         (
             f"snapshot={latest_snapshot.isoformat()}; stale_days={stale_days}; "
             f"max_stale_days={max_stale_days}; snapshots={len(snapshots)}"
+        ),
+    )
+
+
+def _universe_price_coverage_risk_check(
+    symbol_candles: dict[str, list],
+    point_in_time_universe: dict[str, set[str]] | None,
+    *,
+    as_of_date: str,
+    min_coverage_pct: float,
+    excluded_symbols: set[str],
+) -> RiskCheck | None:
+    if point_in_time_universe is None:
+        return None
+    rows = audit_point_in_time_price_coverage(
+        symbol_candles,
+        point_in_time_universe,
+        min_coverage_pct=min_coverage_pct,
+        excluded_symbols=excluded_symbols,
+    )
+    current_rows = [row for row in rows if str(row.get("date", "")) <= as_of_date]
+    if not current_rows:
+        return RiskCheck(
+            "universe_price_coverage",
+            "BLOCK",
+            f"no universe coverage row on or before as_of={as_of_date}",
+        )
+    row = max(current_rows, key=lambda item: str(item.get("date", "")))
+    coverage_pct = float(row.get("coverage_pct", 0.0) or 0.0)
+    status = "PASS" if str(row.get("status", "")).upper() == "PASS" else "BLOCK"
+    return RiskCheck(
+        "universe_price_coverage",
+        status,
+        (
+            f"date={row.get('date', '')}; coverage_pct={coverage_pct:.4f}; "
+            f"min_coverage_pct={min_coverage_pct:.4f}; "
+            f"universe_symbols={row.get('universe_symbols', '')}; "
+            f"covered_symbols={row.get('covered_symbols', '')}; "
+            f"missing_symbols={row.get('missing_symbols', '')}; "
+            f"missing_preview={row.get('missing_preview', '')}"
         ),
     )
 
