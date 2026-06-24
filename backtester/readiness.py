@@ -17,6 +17,14 @@ REQUIRED_RISK_REPORT_CHECKS = {
     "universe_freshness",
     "universe_price_coverage",
 }
+REQUIRED_PERFORMANCE_REPORT_CHECKS = {
+    "required_scenarios",
+    "required_excess",
+    "walk_forward_margin",
+    "drawdown_buffer",
+    "return_concentration",
+    "trade_activity",
+}
 
 
 @dataclass(frozen=True)
@@ -1256,6 +1264,14 @@ def _performance_report_check(path: Path) -> ReadinessCheck:
     ]
     if warned:
         return ReadinessCheck("performance_report", "WARN", "; ".join(warned[:5]))
+    names = {str(row.get("name", "")).strip() for row in rows}
+    missing = sorted(REQUIRED_PERFORMANCE_REPORT_CHECKS - names)
+    if missing:
+        return ReadinessCheck(
+            "performance_report",
+            "BLOCK",
+            f"missing_required_checks={','.join(missing)}",
+        )
     return ReadinessCheck("performance_report", "PASS", f"{len(rows)} performance checks passed")
 
 

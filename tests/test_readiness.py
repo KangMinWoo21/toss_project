@@ -251,6 +251,23 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertEqual(checks[0].name, "performance_report")
         self.assertIn("walk_forward_margin", checks[0].detail)
 
+    def test_performance_report_missing_required_rows_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            performance = Path(temp_dir) / "performance.csv"
+            performance.write_text(
+                "name,status,detail\n"
+                "summary,PASS,looks fine\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(performance_report_path=performance)
+
+        self.assertEqual(readiness_status(checks), "BLOCK")
+        self.assertEqual(checks[0].name, "performance_report")
+        self.assertIn("missing_required_checks", checks[0].detail)
+        self.assertIn("required_scenarios", checks[0].detail)
+        self.assertIn("drawdown_buffer", checks[0].detail)
+
     def test_missing_performance_concentration_report_warns_readiness(self):
         with TemporaryDirectory() as temp_dir:
             missing = Path(temp_dir) / "monthly_performance_concentration.csv"
@@ -771,7 +788,16 @@ class ProductionReadinessTests(unittest.TestCase):
     def test_stale_validation_reports_block_readiness(self):
         with TemporaryDirectory() as temp_dir:
             performance = Path(temp_dir) / "performance.csv"
-            performance.write_text("name,status,detail\nall,PASS,ok\n", encoding="utf-8")
+            performance.write_text(
+                "name,status,detail\n"
+                "required_scenarios,PASS,0 failed\n"
+                "required_excess,PASS,min_required_excess_pct=1.0\n"
+                "walk_forward_margin,PASS,min_walk_forward_excess_pct=6.0\n"
+                "drawdown_buffer,PASS,worst_max_drawdown_pct=-12.0\n"
+                "return_concentration,PASS,ratio=2.0\n"
+                "trade_activity,PASS,4 required scenarios traded\n",
+                encoding="utf-8",
+            )
             stale_timestamp = datetime(2026, 1, 1, 9, 0, 0).timestamp()
             os.utime(performance, (stale_timestamp, stale_timestamp))
 
@@ -851,7 +877,16 @@ class ProductionReadinessTests(unittest.TestCase):
     def test_recent_validation_reports_pass_freshness_readiness(self):
         with TemporaryDirectory() as temp_dir:
             performance = Path(temp_dir) / "performance.csv"
-            performance.write_text("name,status,detail\nall,PASS,ok\n", encoding="utf-8")
+            performance.write_text(
+                "name,status,detail\n"
+                "required_scenarios,PASS,0 failed\n"
+                "required_excess,PASS,min_required_excess_pct=1.0\n"
+                "walk_forward_margin,PASS,min_walk_forward_excess_pct=6.0\n"
+                "drawdown_buffer,PASS,worst_max_drawdown_pct=-12.0\n"
+                "return_concentration,PASS,ratio=2.0\n"
+                "trade_activity,PASS,4 required scenarios traded\n",
+                encoding="utf-8",
+            )
             recent_timestamp = datetime(2026, 6, 20, 9, 0, 0).timestamp()
             os.utime(performance, (recent_timestamp, recent_timestamp))
 
