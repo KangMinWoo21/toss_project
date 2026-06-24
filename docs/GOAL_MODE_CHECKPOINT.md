@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 lowercase pending OOS status detail
+Last updated: 2026-06-24 failure action coverage guard
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -41,16 +41,18 @@ appending long command logs or full report lists here.
 - Previous pushed goal commit before this loop:
   `1ac11a3 Block empty validation scenario reports`.
 - Latest local goal commit series: pending OOS proof/status hardening,
-  post-cutoff OOS period guards, and lowercase pending marker detail;
+  post-cutoff OOS period guards, lowercase pending marker detail, and failure
+  action coverage checks;
   push to `origin` is pending explicit approval.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `606` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `607` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
-- Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`;
+- Latest default production-check: BLOCK, `BLOCK=9`, `PASS=31`, `WARN=8`;
   BLOCK_NAMES=`overall`, `deployment_gate`, `validation_scenarios`,
-  `validation_failure_actions`, `validation_remediation`,
-  `validation_failure_patterns`, `risk_report`, `performance_report`.
+  `validation_failure_actions`, `validation_failure_action_coverage`,
+  `validation_remediation`, `validation_failure_patterns`, `risk_report`,
+  `performance_report`.
 - Latest candidate-overlay production-check using
   `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
@@ -156,6 +158,9 @@ appending long command logs or full report lists here.
   fetch wording in `recommendation` values.
 - Post-cutoff OOS pending marker detection is centralized; readiness and risk
   details now surface lowercase pending markers as `post_cutoff_oos_status=pending`.
+- Validation failure action coverage now blocks when a failed required scenario
+  is missing from the failure action report; current missing action:
+  `stress_exclude_500pct_winners`.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch

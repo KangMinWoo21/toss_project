@@ -527,6 +527,32 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("lower max_position_weight", action_text)
         self.assertIn("increase cash_buffer_weight", action_text)
 
+    def test_validation_failure_report_blocks_missing_failed_scenario_actions(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            scenarios = root / "monthly_validation.csv"
+            scenarios.write_text(
+                "name,required,deployable,reason,start,end,excess_return_pct,max_drawdown_pct,trade_count,universe_size,source\n"
+                "stress_exclude_500pct_winners,True,False,max_drawdown_breach,2024-01-01,2026-06-18,-1,-28,2,30,monthly-validate\n"
+                "regime_sideways,True,False,negative_excess_return,2025-01-02,2025-04-17,-7,-23,4,30,monthly-validate\n",
+                encoding="utf-8",
+            )
+            failures = root / "monthly_validation_failures.csv"
+            failures.write_text(
+                "name,category,reason,severity,failed_metric,metric_value,threshold,suggested_action,parameter_hints\n"
+                "regime_sideways,regime,negative_excess_return,BLOCK,excess_return_pct,-7,0,IMPROVE_WEAK_WINDOW_DEFENSE,increase cash_buffer_weight\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(
+                validation_scenarios_path=scenarios,
+                validation_failures_path=failures,
+            )
+
+        coverage_checks = [check for check in checks if check.name == "validation_failure_action_coverage"]
+        self.assertEqual(coverage_checks[0].status, "BLOCK")
+        self.assertIn("stress_exclude_500pct_winners", coverage_checks[0].detail)
+
     def test_validation_failure_report_blocks_unsafe_live_action(self):
         with TemporaryDirectory() as temp_dir:
             failures = Path(temp_dir) / "monthly_validation_failures.csv"

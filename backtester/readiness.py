@@ -402,6 +402,13 @@ def evaluate_readiness(
         checks.append(_walk_forward_train_candidate_coverage_check(validation_path))
     if validation_failures_path is not None:
         checks.append(_validation_failure_actions_check(Path(validation_failures_path)))
+    if validation_scenarios_path is not None and validation_failures_path is not None:
+        checks.append(
+            _validation_failure_action_coverage_check(
+                Path(validation_scenarios_path),
+                Path(validation_failures_path),
+            )
+        )
     if validation_remediation_path is not None:
         checks.append(_validation_remediation_check(Path(validation_remediation_path)))
     if validation_sweep_plan_path is not None:
@@ -1250,6 +1257,38 @@ def _validation_failure_actions_check(path: Path) -> ReadinessCheck:
         "validation_failure_actions",
         status,
         f"{len(rows)} failures; actions: {action_summary}; samples: {samples}{unsafe_detail}",
+    )
+
+
+def _validation_failure_action_coverage_check(
+    validation_scenarios_path: Path,
+    validation_failures_path: Path,
+) -> ReadinessCheck:
+    if not validation_scenarios_path.exists() or not validation_failures_path.exists():
+        return ReadinessCheck("validation_failure_action_coverage", "WARN", "missing source report")
+    scenario_rows = _read_csv_rows(validation_scenarios_path)
+    failure_rows = _read_csv_rows(validation_failures_path)
+    failed_names = {
+        str(row.get("name", "")).strip()
+        for row in scenario_rows
+        if _parse_bool(row.get("required", "False")) and not _parse_bool(row.get("deployable", "False"))
+    }
+    action_names = {
+        str(row.get("name", "")).strip()
+        for row in failure_rows
+        if str(row.get("name", "")).strip()
+    }
+    missing = sorted(name for name in failed_names - action_names if name)
+    if missing:
+        return ReadinessCheck(
+            "validation_failure_action_coverage",
+            "BLOCK",
+            f"missing_failed_scenario_actions={';'.join(missing[:10])}",
+        )
+    return ReadinessCheck(
+        "validation_failure_action_coverage",
+        "PASS",
+        f"covered_failed_scenarios={len(failed_names)}",
     )
 
 
