@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=347.96` observed).
+  (`age_hours=348.02` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -57,6 +57,8 @@ appending long command logs or full report lists here.
 - `925f9e1`: candidate `ACCEPT/APPROVE` requires marker proof plus post-cutoff
   OOS end date after `2026-06-18`; marker-only proof blocks readiness/monthly
   risk.
+- Candidate decision CSV now has explicit `post_cutoff_oos_start_date` and
+  `post_cutoff_oos_end_date` fields for that proof.
 - `84f0999`: `monthly-plan --max-data-stale-days` blocks stale included OHLCV
   before strategy selection or paper order planning.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and

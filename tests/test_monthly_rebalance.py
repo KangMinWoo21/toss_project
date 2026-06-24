@@ -2526,6 +2526,8 @@ class MonthlyRebalanceTests(unittest.TestCase):
                         "comparison_status": "REJECT",
                         "decision": "REJECT",
                         "decision_reasons": "new_failures=1",
+                        "post_cutoff_oos_start_date": "2026-06-19",
+                        "post_cutoff_oos_end_date": "2026-07-03",
                         "baseline_failed_required": 5,
                         "candidate_failed_required": 6,
                         "failed_delta": 1,
@@ -2542,6 +2544,8 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(saved, 1)
         self.assertIn("decision_reasons", text.splitlines()[0])
+        self.assertIn("post_cutoff_oos_end_date", text.splitlines()[0])
+        self.assertIn("2026-07-03", text)
         self.assertIn("REJECT", text)
 
     def test_analyze_monthly_drawdown_attribution_groups_equity_losses(self):

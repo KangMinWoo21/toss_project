@@ -412,6 +412,8 @@ VALIDATION_CANDIDATE_DECISION_COLUMNS = [
     "comparison_status",
     "decision",
     "decision_reasons",
+    "post_cutoff_oos_start_date",
+    "post_cutoff_oos_end_date",
     "baseline_failed_required",
     "candidate_failed_required",
     "failed_delta",
