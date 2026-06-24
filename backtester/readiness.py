@@ -1897,7 +1897,8 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
         next_pending = pending_rows[0]
         pending_detail += (
             f"; next_pending={next_pending.get('experiment_id', '')}; "
-            f"next_validation_command={next_pending.get('validation_command', '')}"
+            f"next_validation_command={next_pending.get('validation_command', '')}; "
+            f"next_stress_review_output={next_pending.get('candidate_stress_review_output', '')}"
         )
     else:
         pending_detail += "; all_candidate_followups_completed"

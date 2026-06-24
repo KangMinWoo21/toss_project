@@ -1188,9 +1188,9 @@ class ProductionReadinessTests(unittest.TestCase):
             )
             followup = root / "monthly_validation_candidate_followup.csv"
             followup.write_text(
-                "priority_rank,experiment_id,status,adoption_status,failed_delta,candidate_validation_args,candidate_scenario_output,candidate_gate_output,comparison_output,delta_output,decision_output,validation_command,comparison_command,risk_note\n"
-                f"1,weak_cash_10_position_stop_12,IMPROVED,FULL_VALIDATION_REQUIRED,-2,--cash-buffer-weight 0.1,candidate.csv,gate.csv,comparison.csv,delta.csv,{decision},python -m backtester monthly-validate,python -m backtester monthly-compare-validation,Plan only\n"
-                "2,position_stop_12,IMPROVED,FULL_VALIDATION_REQUIRED,-1,--position-trailing-stop-pct -12,candidate2.csv,gate2.csv,comparison2.csv,delta2.csv,missing_decision.csv,python -m backtester monthly-validate --position-trailing-stop-pct -12,python -m backtester monthly-compare-validation,Plan only\n",
+                "priority_rank,experiment_id,status,adoption_status,failed_delta,candidate_validation_args,candidate_scenario_output,candidate_gate_output,comparison_output,delta_output,decision_output,candidate_stress_review_output,validation_command,comparison_command,risk_note\n"
+                f"1,weak_cash_10_position_stop_12,IMPROVED,FULL_VALIDATION_REQUIRED,-2,--cash-buffer-weight 0.1,candidate.csv,gate.csv,comparison.csv,delta.csv,{decision},stress_review.csv,python -m backtester monthly-validate,python -m backtester monthly-compare-validation --stress-review-output stress_review.csv,Plan only\n"
+                "2,position_stop_12,IMPROVED,FULL_VALIDATION_REQUIRED,-1,--position-trailing-stop-pct -12,candidate2.csv,gate2.csv,comparison2.csv,delta2.csv,missing_decision.csv,stress_review2.csv,python -m backtester monthly-validate --position-trailing-stop-pct -12,python -m backtester monthly-compare-validation --stress-review-output stress_review2.csv,Plan only\n",
                 encoding="utf-8",
             )
 
@@ -1204,6 +1204,7 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("completed=1", followup_checks[0].detail)
         self.assertIn("pending=1", followup_checks[0].detail)
         self.assertIn("next_pending=position_stop_12", followup_checks[0].detail)
+        self.assertIn("next_stress_review_output=stress_review2.csv", followup_checks[0].detail)
         self.assertIn("--position-trailing-stop-pct -12", followup_checks[0].detail)
 
     def test_validation_candidate_followup_omits_commands_when_all_completed(self):
