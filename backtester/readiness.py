@@ -52,6 +52,29 @@ REQUIRED_DRAWDOWN_ATTRIBUTION_SYMBOL_COLUMNS = {
     "trade_count",
     "status",
 }
+REQUIRED_VALIDATION_FAILURE_COLUMNS = {
+    "name",
+    "category",
+    "reason",
+    "severity",
+    "failed_metric",
+    "metric_value",
+    "threshold",
+    "suggested_action",
+    "parameter_hints",
+}
+REQUIRED_VALIDATION_REMEDIATION_COLUMNS = {
+    "priority",
+    "suggested_action",
+    "failure_count",
+    "blocked_count",
+    "affected_categories",
+    "affected_scenarios",
+    "failed_metrics",
+    "worst_metric_value",
+    "parameter_hints",
+    "next_experiment",
+}
 
 
 @dataclass(frozen=True)
@@ -842,6 +865,13 @@ def _validation_failure_actions_check(path: Path) -> ReadinessCheck:
     rows = _read_csv_rows(path)
     if not rows:
         return ReadinessCheck("validation_failure_actions", "PASS", "no validation failures recorded")
+    missing_columns = sorted(REQUIRED_VALIDATION_FAILURE_COLUMNS - set(rows[-1].keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_failure_actions",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
 
     severities = Counter(str(row.get("severity", "")).strip().upper() or "WARN" for row in rows)
     action_counts = Counter(
@@ -882,6 +912,13 @@ def _validation_remediation_check(path: Path) -> ReadinessCheck:
     rows = _read_csv_rows(path)
     if not rows:
         return ReadinessCheck("validation_remediation", "PASS", "no validation remediation experiments needed")
+    missing_columns = sorted(REQUIRED_VALIDATION_REMEDIATION_COLUMNS - set(rows[-1].keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_remediation",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
     priority_counts = Counter(str(row.get("priority", "")).strip() or "P2" for row in rows)
     status = "BLOCK" if priority_counts.get("P0", 0) or priority_counts.get("P1", 0) else "WARN"
     first = rows[0]
