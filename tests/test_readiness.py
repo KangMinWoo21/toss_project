@@ -689,6 +689,21 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Run validation remediation experiments", action_text)
 
+    def test_validation_remediation_report_blocks_unsafe_live_action(self):
+        with TemporaryDirectory() as temp_dir:
+            remediation = Path(temp_dir) / "monthly_validation_remediation.csv"
+            remediation.write_text(
+                "priority,suggested_action,failure_count,blocked_count,affected_categories,affected_scenarios,failed_metrics,worst_metric_value,parameter_hints,next_experiment\n"
+                "P2,LIVE_ORDER_AFTER_REVIEW,1,1,regime,regime_sideways,excess_return_pct,-7.1648,keep paper-only,Run attribution\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_remediation_path=remediation)
+
+        remediation_checks = [check for check in checks if check.name == "validation_remediation"]
+        self.assertEqual(remediation_checks[0].status, "BLOCK")
+        self.assertIn("unsafe_suggested_action", remediation_checks[0].detail)
+
     def test_validation_remediation_report_missing_required_columns_blocks_readiness(self):
         with TemporaryDirectory() as temp_dir:
             remediation = Path(temp_dir) / "monthly_validation_remediation.csv"
