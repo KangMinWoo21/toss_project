@@ -125,6 +125,53 @@ REQUIRED_VALIDATION_COMPARISON_DELTA_COLUMNS = {
     "trade_count_delta",
     "diagnostic",
 }
+REQUIRED_VALIDATION_FAILURE_PATTERN_COLUMNS = {
+    "scenario",
+    "baseline_failed",
+    "baseline_reason",
+    "failed_candidate_count",
+    "new_failure_candidate_count",
+    "resolved_candidate_count",
+    "unchanged_failure_candidate_count",
+    "candidate_labels_failed",
+    "candidate_labels_new_failure",
+    "candidate_labels_resolved",
+    "candidate_labels_unchanged",
+    "dominant_diagnostic",
+    "pattern_status",
+    "suggested_action",
+    "notes",
+}
+REQUIRED_VALIDATION_FAILURE_DRILLDOWN_COLUMNS = {
+    "scenario",
+    "category",
+    "pattern_status",
+    "suggested_action",
+    "baseline_reason",
+    "likely_root_cause",
+    "train_start",
+    "train_end",
+    "selected_preset",
+    "train_excess_return_pct",
+    "train_candidate_scores",
+    "train_candidate_decision_profiles",
+    "train_candidate_direct_scores",
+    "train_direct_diagnostics",
+    "start",
+    "end",
+    "baseline_excess_return_pct",
+    "baseline_max_drawdown_pct",
+    "baseline_trade_count",
+    "candidate_count",
+    "candidate_labels",
+    "candidate_excess_delta_min",
+    "candidate_excess_delta_median",
+    "candidate_drawdown_delta_median",
+    "candidate_trade_delta_median",
+    "dominant_diagnostic",
+    "evidence_gaps",
+    "next_action",
+}
 
 
 @dataclass(frozen=True)
@@ -1267,6 +1314,13 @@ def _validation_failure_patterns_check(path: Path) -> ReadinessCheck:
     rows = _read_csv_rows(path)
     if not rows:
         return ReadinessCheck("validation_failure_patterns", "PASS", f"empty: {path}")
+    missing_columns = sorted(REQUIRED_VALIDATION_FAILURE_PATTERN_COLUMNS - set(rows[-1].keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_failure_patterns",
+            "BLOCK",
+            f"missing required columns: {','.join(missing_columns)}",
+        )
 
     statuses = Counter(str(row.get("pattern_status", "")).strip().upper() for row in rows)
     blocking_statuses = {"PERSISTENT_BLOCK", "REGRESSION_RISK"}
@@ -1303,6 +1357,13 @@ def _validation_failure_drilldown_check(path: Path) -> ReadinessCheck:
     rows = _read_csv_rows(path)
     if not rows:
         return ReadinessCheck("validation_failure_drilldown", "WARN", f"empty: {path}")
+    missing_columns = sorted(REQUIRED_VALIDATION_FAILURE_DRILLDOWN_COLUMNS - set(rows[-1].keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_failure_drilldown",
+            "BLOCK",
+            f"missing required columns: {','.join(missing_columns)}",
+        )
     root_causes = Counter(str(row.get("likely_root_cause", "")).strip() for row in rows)
     evidence_gap_rows = [row for row in rows if str(row.get("evidence_gaps", "")).strip()]
     persistent_gap_rows = [
