@@ -1305,6 +1305,20 @@ def _validation_remediation_check(path: Path) -> ReadinessCheck:
             "BLOCK",
             f"unsafe_suggested_action={unsafe_suggested_actions[0]}",
         )
+    unsafe_parameter_hints = [
+        str(row.get("parameter_hints", "")).strip()
+        for row in rows
+        if re.search(
+            r"\b(live|order|trade|trading|fetch)\b",
+            str(row.get("parameter_hints", "")).lower(),
+        )
+    ]
+    if unsafe_parameter_hints:
+        return ReadinessCheck(
+            "validation_remediation",
+            "BLOCK",
+            f"unsafe_parameter_hints={unsafe_parameter_hints[0]}",
+        )
     priority_counts = Counter(str(row.get("priority", "")).strip() or "P2" for row in rows)
     status = "BLOCK" if priority_counts.get("P0", 0) or priority_counts.get("P1", 0) else "WARN"
     first = rows[0]
