@@ -1917,6 +1917,16 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
         unsafe_detail = f"unsafe_followup_command={unsafe_commands[0]}"
         promotion_blocked.append(unsafe_detail)
         decision_detail += f"; promotion_blocked_decisions={unsafe_detail}"
+    missing_stress_review_output_commands = [
+        str(row.get("experiment_id", "")).strip()
+        for row in pending_rows
+        if str(row.get("candidate_stress_review_output", "")).strip()
+        and "--stress-review-output" not in str(row.get("comparison_command", ""))
+    ]
+    if missing_stress_review_output_commands:
+        unsafe_detail = f"missing_stress_review_output_command={missing_stress_review_output_commands[0]}"
+        promotion_blocked.append(unsafe_detail)
+        decision_detail += f"; promotion_blocked_decisions={unsafe_detail}"
     unsafe_experiment_ids = [
         str(row.get("experiment_id", "")).strip()
         for row in pending_rows

@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 candidate follow-up stress review output
+Last updated: 2026-06-24 follow-up stress review readiness guard
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -189,6 +189,9 @@ appending long command logs or full report lists here.
 - Candidate follow-up rows now include `candidate_stress_review_output` and
   comparison commands include `--stress-review-output`; ignored follow-up
   report regenerated with `3` rows.
+- Readiness now blocks pending follow-up rows that declare
+  `candidate_stress_review_output` but omit `--stress-review-output` from the
+  comparison command.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
