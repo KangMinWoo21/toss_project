@@ -1784,9 +1784,20 @@ def _validation_failure_drilldown_check(path: Path) -> ReadinessCheck:
         f"{row.get('scenario', '')}:{row.get('likely_root_cause', '')}:{row.get('evidence_gaps', '')}"
         for row in top_rows[:5]
     )
+    unsafe_next_actions = [
+        str(row.get("next_action", "")).strip()
+        for row in rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("next_action", "")).lower(),
+        )
+    ]
+    unsafe_detail = f"; unsafe_next_action={unsafe_next_actions[0]}" if unsafe_next_actions else ""
+    if unsafe_next_actions:
+        status = "BLOCK"
     detail = (
         f"{len(rows)} scenarios; root_causes: {root_summary}; "
-        f"evidence_gaps={len(evidence_gap_rows)}; top={top_detail}"
+        f"evidence_gaps={len(evidence_gap_rows)}; top={top_detail}{unsafe_detail}"
     )
     return ReadinessCheck("validation_failure_drilldown", status, detail)
 

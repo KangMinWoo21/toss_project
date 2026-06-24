@@ -1154,6 +1154,21 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Fill validation drilldown evidence gaps", action_text)
 
+    def test_validation_failure_drilldown_blocks_unsafe_live_next_action(self):
+        with TemporaryDirectory() as temp_dir:
+            drilldown = Path(temp_dir) / "monthly_validation_failure_drilldown.csv"
+            drilldown.write_text(
+                "scenario,category,pattern_status,suggested_action,baseline_reason,likely_root_cause,train_start,train_end,selected_preset,train_excess_return_pct,train_candidate_scores,train_candidate_decision_profiles,train_candidate_direct_scores,train_direct_diagnostics,start,end,baseline_excess_return_pct,baseline_max_drawdown_pct,baseline_trade_count,candidate_count,candidate_labels,candidate_excess_delta_min,candidate_excess_delta_median,candidate_drawdown_delta_median,candidate_trade_delta_median,dominant_diagnostic,evidence_gaps,next_action\n"
+                "regime_sideways,regime,PERSISTENT_BLOCK,REVIEW_PERSISTENT_FAILURE,below_excess,weak_window_return_drag,2024-01-01,2024-12-31,baseline,-1.0,profile_a,decision_a,direct_a,diagnostic_a,2025-01-02,2025-04-17,-7.1,-23.9,10,2,candidate_a,-3.0,-1.5,0.5,2.0,selection_or_exposure_drag,selected_symbols,Run live order after review.\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_failure_drilldown_path=drilldown)
+
+        drilldown_checks = [check for check in checks if check.name == "validation_failure_drilldown"]
+        self.assertEqual(drilldown_checks[0].status, "BLOCK")
+        self.assertIn("unsafe_next_action", drilldown_checks[0].detail)
+
     def test_validation_failure_drilldown_missing_required_columns_blocks_readiness(self):
         with TemporaryDirectory() as temp_dir:
             drilldown = Path(temp_dir) / "monthly_validation_failure_drilldown.csv"
