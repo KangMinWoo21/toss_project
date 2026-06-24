@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 validation failure pattern/drilldown evidence hardening
+Last updated: 2026-06-24 deployment gate evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,10 +38,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `d08e1f1 Require validation comparison evidence`.
+  `3e3cd16 Require validation failure evidence schemas`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `543` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `544` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=349.16` observed).
+  (`age_hours=349.24` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -92,6 +92,9 @@ appending long command logs or full report lists here.
   columns.
 - Production readiness now blocks validation failure pattern/drilldown reports
   that omit required scenario, candidate, metric, diagnostic, or next-action
+  evidence columns.
+- Production readiness now blocks deployment gate reports that omit required
+  deployability, source, performance, drawdown, trade-count, or universe-bias
   evidence columns.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.

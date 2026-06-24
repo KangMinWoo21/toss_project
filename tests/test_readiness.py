@@ -40,6 +40,22 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertEqual(checks[0].name, "deployment_gate")
         self.assertIn("failed_required_scenarios", checks[0].detail)
 
+    def test_deployment_gate_missing_required_columns_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            gate = Path(temp_dir) / "gate.csv"
+            gate.write_text(
+                "deployable,reason,source\n"
+                "True,validation passed,monthly-validate\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(deployment_gate_path=gate)
+
+        self.assertEqual(readiness_status(checks), "BLOCK")
+        self.assertEqual(checks[0].name, "deployment_gate")
+        self.assertIn("missing_required_columns", checks[0].detail)
+        self.assertIn("excess_return_pct", checks[0].detail)
+
     def test_validation_scenario_failures_block_readiness(self):
         with TemporaryDirectory() as temp_dir:
             scenarios = Path(temp_dir) / "scenarios.csv"

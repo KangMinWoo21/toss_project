@@ -11,6 +11,17 @@ from .data_quality import validate_dataset_freshness
 
 
 READINESS_COLUMNS = ["name", "status", "detail"]
+REQUIRED_DEPLOYMENT_GATE_COLUMNS = {
+    "deployable",
+    "reason",
+    "source",
+    "total_return_pct",
+    "buy_hold_return_pct",
+    "excess_return_pct",
+    "max_drawdown_pct",
+    "trade_count",
+    "universe_bias_warning",
+}
 REQUIRED_RISK_REPORT_CHECKS = {
     "point_in_time_universe",
     "market_data_freshness",
@@ -796,6 +807,13 @@ def _deployment_gate_check(path: Path) -> ReadinessCheck:
     if not rows:
         return ReadinessCheck("deployment_gate", "BLOCK", f"empty: {path}")
     row = rows[-1]
+    missing_columns = sorted(REQUIRED_DEPLOYMENT_GATE_COLUMNS - set(row.keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "deployment_gate",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
     deployable = _parse_bool(row.get("deployable", ""))
     reason = str(row.get("reason", "")).strip() or "no reason"
     source = str(row.get("source", "")).strip() or str(path)
