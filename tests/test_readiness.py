@@ -457,6 +457,23 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("suggested_action", failure_checks[0].detail)
         self.assertIn("failed_metric", failure_checks[0].detail)
 
+    def test_validation_failure_report_missing_required_values_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            failures = Path(temp_dir) / "monthly_validation_failures.csv"
+            failures.write_text(
+                "name,category,reason,severity,failed_metric,metric_value,threshold,suggested_action,parameter_hints\n"
+                "stress,stress,max_drawdown_breach,BLOCK,,-28,-25,,lower exposure\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_failures_path=failures)
+
+        failure_checks = [check for check in checks if check.name == "validation_failure_actions"]
+        self.assertEqual(failure_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_values", failure_checks[0].detail)
+        self.assertIn("failed_metric", failure_checks[0].detail)
+        self.assertIn("suggested_action", failure_checks[0].detail)
+
     def test_missing_drawdown_attribution_warns_when_drawdown_failure_exists(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 candidate decision evidence hardening
+Last updated: 2026-06-24 validation failure value evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,10 +38,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `118ac51 Require candidate followup evidence schema`.
+  `59957fa Require candidate decision evidence schema`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `549` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `550` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=349.67` observed).
+  (`age_hours=349.75` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -108,6 +108,8 @@ appending long command logs or full report lists here.
 - Candidate decision readiness now blocks reports that omit required comparison,
   failure-count, failure-name, diagnostic, reason, or recommendation evidence
   columns.
+- Validation failure readiness now blocks action reports that include required
+  columns but omit required failure, metric, severity, or action values.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.
 - Full historical detail is in

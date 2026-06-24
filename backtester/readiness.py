@@ -107,6 +107,15 @@ REQUIRED_VALIDATION_FAILURE_COLUMNS = {
     "suggested_action",
     "parameter_hints",
 }
+REQUIRED_VALIDATION_FAILURE_VALUE_COLUMNS = {
+    "name",
+    "category",
+    "reason",
+    "severity",
+    "failed_metric",
+    "metric_value",
+    "suggested_action",
+}
 REQUIRED_VALIDATION_REMEDIATION_COLUMNS = {
     "priority",
     "suggested_action",
@@ -1059,6 +1068,20 @@ def _validation_failure_actions_check(path: Path) -> ReadinessCheck:
             "validation_failure_actions",
             "BLOCK",
             f"missing_required_columns={','.join(missing_columns)}",
+        )
+    missing_values = sorted(
+        {
+            column
+            for row in rows
+            for column in REQUIRED_VALIDATION_FAILURE_VALUE_COLUMNS
+            if not str(row.get(column, "")).strip()
+        }
+    )
+    if missing_values:
+        return ReadinessCheck(
+            "validation_failure_actions",
+            "BLOCK",
+            f"missing_required_values={','.join(missing_values)}",
         )
 
     severities = Counter(str(row.get("severity", "")).strip().upper() or "WARN" for row in rows)
