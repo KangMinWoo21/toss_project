@@ -1688,6 +1688,34 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("IMPROVED", text)
         self.assertIn("FULL_VALIDATION_REQUIRED", text)
 
+    def test_save_monthly_validation_sweep_results_marks_unchanged_no_config(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "sweep_results.csv"
+            saved = save_monthly_validation_sweep_results(
+                [
+                    {
+                        "experiment_id": "train_gate_keep_blocked",
+                        "suggested_action": "KEEP_TRAIN_WINDOW_REJECTED",
+                        "status": "UNCHANGED",
+                        "target_scenarios": "walk_forward_003",
+                        "scenario_count": 1,
+                        "failed_required": 1,
+                        "baseline_failed_required": 1,
+                        "failed_delta": 0,
+                        "config_changes": "",
+                        "result_summary": "train gate remained blocked",
+                        "risk_note": "No candidate config change; preserve train-gate discipline.",
+                    }
+                ],
+                output,
+            )
+            with output.open(newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(saved, 1)
+        self.assertEqual(rows[0]["candidate_validation_args"], "NO_CONFIG_CHANGE")
+        self.assertEqual(rows[0]["adoption_status"], "PAPER_DIAGNOSTIC_ONLY")
+
     def test_build_monthly_validation_candidate_followup_rows_prioritizes_full_validation_candidates(self):
         rows = build_monthly_validation_candidate_followup_rows(
             [
@@ -1975,6 +2003,46 @@ class MonthlyRebalanceTests(unittest.TestCase):
         improved = by_name["regime_improved_but_failed"]
         self.assertEqual(improved["candidate_excess_delta_median"], "2")
         self.assertEqual(improved["likely_root_cause"], "insufficient_recovery")
+
+    def test_analyze_monthly_validation_failure_drilldown_marks_non_walk_train_metadata(self):
+        baseline_rows = [
+            {
+                "name": "regime_sideways",
+                "category": "regime",
+                "required": True,
+                "deployable": False,
+                "reason": "negative_excess_return",
+                "start": "2025-01-01",
+                "end": "2025-04-17",
+                "excess_return_pct": "-7.1",
+                "max_drawdown_pct": "-23.9",
+                "trade_count": "42",
+            }
+        ]
+        pattern_rows = [
+            {
+                "scenario": "regime_sideways",
+                "pattern_status": "PERSISTENT_BLOCK",
+                "dominant_diagnostic": "same_failure_persists=3",
+                "failed_candidate_count": "3",
+                "suggested_action": "REVIEW_PERSISTENT_FAILURE",
+            }
+        ]
+
+        rows = analyze_monthly_validation_failure_drilldown(baseline_rows, pattern_rows, [])
+
+        row = rows[0]
+        for field in (
+            "train_start",
+            "train_end",
+            "selected_preset",
+            "train_excess_return_pct",
+            "train_candidate_scores",
+            "train_candidate_decision_profiles",
+            "train_candidate_direct_scores",
+            "train_direct_diagnostics",
+        ):
+            self.assertEqual(row[field], "NOT_APPLICABLE_NON_WALK_FORWARD")
 
     def test_analyze_monthly_validation_failure_drilldown_uses_attribution_evidence(self):
         baseline_rows = [

@@ -10658,6 +10658,11 @@ def _normalize_sweep_result_row(row: dict[str, Any]) -> dict[str, Any]:
         normalized["candidate_validation_args"] = _sweep_candidate_validation_args_from_config_changes(
             str(normalized.get("config_changes", ""))
         )
+    if (
+        not str(normalized.get("candidate_validation_args", "")).strip()
+        and status in {"UNCHANGED", "SKIPPED"}
+    ):
+        normalized["candidate_validation_args"] = "NO_CONFIG_CHANGE"
     normalized.setdefault("validation_scope", "TARGET_ONLY")
     if not str(normalized.get("validation_scope", "")).strip():
         normalized["validation_scope"] = "TARGET_ONLY"
@@ -11239,6 +11244,14 @@ def analyze_monthly_validation_failure_drilldown(
             pattern,
             median_excess_delta=median_excess_delta,
         )
+        non_walk_train_marker = (
+            "NOT_APPLICABLE_NON_WALK_FORWARD"
+            if str(baseline.get("category", "")).strip() != "walk_forward"
+            else ""
+        )
+        def train_value(field_name: str) -> Any:
+            return baseline.get(field_name, "") or non_walk_train_marker
+
         evidence_gaps = _validation_failure_evidence_gaps(
             pattern_status=str(pattern.get("pattern_status", "")),
             likely_root_cause=likely_root_cause,
@@ -11255,14 +11268,14 @@ def analyze_monthly_validation_failure_drilldown(
                 "suggested_action": pattern.get("suggested_action", ""),
                 "baseline_reason": baseline.get("reason", pattern.get("baseline_reason", "")),
                 "likely_root_cause": likely_root_cause,
-                "train_start": baseline.get("train_start", ""),
-                "train_end": baseline.get("train_end", ""),
-                "selected_preset": baseline.get("selected_preset", ""),
-                "train_excess_return_pct": baseline.get("train_excess_return_pct", ""),
-                "train_candidate_scores": baseline.get("train_candidate_scores", ""),
-                "train_candidate_decision_profiles": baseline.get("train_candidate_decision_profiles", ""),
-                "train_candidate_direct_scores": baseline.get("train_candidate_direct_scores", ""),
-                "train_direct_diagnostics": baseline.get("train_direct_diagnostics", ""),
+                "train_start": train_value("train_start"),
+                "train_end": train_value("train_end"),
+                "selected_preset": train_value("selected_preset"),
+                "train_excess_return_pct": train_value("train_excess_return_pct"),
+                "train_candidate_scores": train_value("train_candidate_scores"),
+                "train_candidate_decision_profiles": train_value("train_candidate_decision_profiles"),
+                "train_candidate_direct_scores": train_value("train_candidate_direct_scores"),
+                "train_direct_diagnostics": train_value("train_direct_diagnostics"),
                 "start": baseline.get("start", ""),
                 "end": baseline.get("end", ""),
                 "baseline_excess_return_pct": baseline.get("excess_return_pct", ""),

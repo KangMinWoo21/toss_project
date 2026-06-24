@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 validation scenario empty report hardening
+Last updated: 2026-06-24 sweep/drilldown evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -42,15 +42,15 @@ appending long command logs or full report lists here.
   `f434f4b Require performance report status evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `560` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `562` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
-- Latest default production-check: BLOCK, `BLOCK=10`, `PASS=30`, `WARN=7`.
+- Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
   `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=352.70` observed).
+  (`age_hours=353.16` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -69,6 +69,10 @@ appending long command logs or full report lists here.
   have detail evidence but omit status values.
 - Validation scenario readiness now blocks empty scenario reports instead of
   raising an internal error.
+- Sweep result readiness no longer blocks unchanged/skipped no-config rows when
+  they explicitly record `NO_CONFIG_CHANGE`.
+- Failure drilldown readiness no longer blocks non-walk-forward rows for missing
+  train-window metadata when they explicitly record non-applicability.
 - Full historical detail is in `docs/archive/` and git history.
 
 ## Current Best Candidate
