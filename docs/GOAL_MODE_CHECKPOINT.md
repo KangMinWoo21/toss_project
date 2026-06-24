@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 unsafe candidate follow-up id guard
+Last updated: 2026-06-24 lowercase pending OOS status detail
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,14 +40,17 @@ appending long command logs or full report lists here.
 
 - Previous pushed goal commit before this loop:
   `1ac11a3 Block empty validation scenario reports`.
-- Latest local goal commit series: pending OOS proof/status hardening and
-  post-cutoff OOS period guards;
+- Latest local goal commit series: pending OOS proof/status hardening,
+  post-cutoff OOS period guards, and lowercase pending marker detail;
   push to `origin` is pending explicit approval.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `604` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `606` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
-- Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
+- Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`;
+  BLOCK_NAMES=`overall`, `deployment_gate`, `validation_scenarios`,
+  `validation_failure_actions`, `validation_remediation`,
+  `validation_failure_patterns`, `risk_report`, `performance_report`.
 - Latest candidate-overlay production-check using
   `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
@@ -151,6 +154,8 @@ appending long command logs or full report lists here.
   or fetch wording in pending `risk_note` values.
 - Validation candidate decision readiness now blocks unsafe live/order/trade or
   fetch wording in `recommendation` values.
+- Post-cutoff OOS pending marker detection is centralized; readiness and risk
+  details now surface lowercase pending markers as `post_cutoff_oos_status=pending`.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
@@ -211,6 +216,7 @@ Why still blocked:
 
 Production baseline required failures:
 
+- `stress_exclude_500pct_winners`: max drawdown breach.
 - `regime_sideways`: excess about `-7.1648%`, max DD about `-23.9059%`.
 - `walk_forward_001`: excess about `-0.7420%`, max DD about `-25.1309%`.
 - `walk_forward_003`: train rejected; train excess about `-1.3447%`.

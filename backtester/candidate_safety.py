@@ -6,6 +6,28 @@ from typing import Any
 
 
 POST_CUTOFF_BASELINE_END_DATE = "2026-06-18"
+POST_CUTOFF_OOS_PENDING_MARKER = "PENDING_POST_CUTOFF_OOS"
+POST_CUTOFF_OOS_DATE_FIELDS = (
+    "post_cutoff_oos_start_date",
+    "post_cutoff_oos_end_date",
+    "oos_review_start_date",
+    "oos_review_end_date",
+)
+
+
+def has_pending_post_cutoff_oos_marker(row: dict[str, Any]) -> bool:
+    if POST_CUTOFF_OOS_PENDING_MARKER in {
+        str(row.get(field_name, "")).strip().upper()
+        for field_name in POST_CUTOFF_OOS_DATE_FIELDS
+    }:
+        return True
+    reasons = str(row.get("decision_reasons", "")).strip().lower()
+    return bool(
+        re.search(
+            r"(?:^|[,;\s])(?:post_cutoff_oos_start_date|post_cutoff_oos_end_date|oos_review_start_date|oos_review_end_date)\s*=\s*pending_post_cutoff_oos(?:[,;\s]|$)",
+            reasons,
+        )
+    )
 
 
 def candidate_promotion_proof_status(
@@ -16,17 +38,7 @@ def candidate_promotion_proof_status(
     reasons = str(row.get("decision_reasons", "")).strip().lower()
     if "oos_review_passed" not in reasons or "production_readiness_approved" not in reasons:
         return False, "promotion_proof_missing"
-    if "PENDING_POST_CUTOFF_OOS" in {
-        str(row.get("post_cutoff_oos_start_date", "")).strip().upper(),
-        str(row.get("post_cutoff_oos_end_date", "")).strip().upper(),
-        str(row.get("oos_review_start_date", "")).strip().upper(),
-        str(row.get("oos_review_end_date", "")).strip().upper(),
-    }:
-        return False, "post_cutoff_oos_pending"
-    if re.search(
-        r"(?:^|[,;\s])(?:post_cutoff_oos_start_date|post_cutoff_oos_end_date|oos_review_start_date|oos_review_end_date)\s*=\s*pending_post_cutoff_oos(?:[,;\s]|$)",
-        reasons,
-    ):
+    if has_pending_post_cutoff_oos_marker(row):
         return False, "post_cutoff_oos_pending"
 
     oos_end = _post_cutoff_oos_end_date(row, reasons)

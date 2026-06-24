@@ -7,7 +7,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from .candidate_safety import candidate_promotion_proof_status
+from .candidate_safety import candidate_promotion_proof_status, has_pending_post_cutoff_oos_marker
 from .data_quality import validate_dataset_freshness
 
 
@@ -1697,10 +1697,7 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
     promotion_proof_present, promotion_status = candidate_promotion_proof_status(row)
     acceptance_issue = _candidate_acceptance_consistency_issue(row, comparison_status)
     oos_status_detail = ""
-    if "PENDING_POST_CUTOFF_OOS" in {
-        str(row.get("post_cutoff_oos_start_date", "")).strip(),
-        str(row.get("post_cutoff_oos_end_date", "")).strip(),
-    }:
+    if has_pending_post_cutoff_oos_marker(row):
         oos_status_detail = "post_cutoff_oos_status=pending; "
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
         status = "PASS" if promotion_proof_present and not acceptance_issue else "BLOCK"
@@ -1789,10 +1786,7 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
         comparison_status = str(decision_row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
         proof_present, proof_status = candidate_promotion_proof_status(decision_row)
         oos_status = ""
-        if "PENDING_POST_CUTOFF_OOS" in {
-            str(decision_row.get("post_cutoff_oos_start_date", "")).strip(),
-            str(decision_row.get("post_cutoff_oos_end_date", "")).strip(),
-        }:
+        if has_pending_post_cutoff_oos_marker(decision_row):
             oos_status = ":post_cutoff_oos_status=pending"
         if decision_value == "PAPER_REVIEW":
             promotion_blocked.append(

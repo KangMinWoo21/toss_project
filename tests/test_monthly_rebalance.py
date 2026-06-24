@@ -1134,6 +1134,7 @@ class MonthlyRebalanceTests(unittest.TestCase):
         assert check is not None
         self.assertEqual(check.status, "BLOCK")
         self.assertIn("post_cutoff_oos_pending", check.detail)
+        self.assertIn("post_cutoff_oos_status=pending", check.detail)
 
     def test_candidate_decision_risk_passes_acceptance_with_proof(self):
         check = validate_candidate_decision_risk(

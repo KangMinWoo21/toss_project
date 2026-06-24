@@ -9,7 +9,7 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Callable
 
-from .candidate_safety import candidate_promotion_proof_status
+from .candidate_safety import candidate_promotion_proof_status, has_pending_post_cutoff_oos_marker
 from .events import EventScoreStore
 from .models import Candle
 from .momentum_rotation import (
@@ -2289,10 +2289,7 @@ def validate_candidate_decision_risk(
     label = str(row.get("candidate_label", source)).strip() or source
     proof_present, promotion_status = candidate_promotion_proof_status(row)
     oos_status_detail = ""
-    if "PENDING_POST_CUTOFF_OOS" in {
-        str(row.get("post_cutoff_oos_start_date", "")).strip(),
-        str(row.get("post_cutoff_oos_end_date", "")).strip(),
-    }:
+    if has_pending_post_cutoff_oos_marker(row):
         oos_status_detail = "post_cutoff_oos_status=pending; "
 
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
