@@ -415,6 +415,13 @@ def evaluate_readiness(
         checks.append(_validation_sweep_plan_check(Path(validation_sweep_plan_path)))
     if validation_sweep_results_path is not None:
         checks.append(_validation_sweep_results_check(Path(validation_sweep_results_path)))
+    if validation_sweep_plan_path is not None and validation_sweep_results_path is not None:
+        checks.append(
+            _validation_sweep_result_coverage_check(
+                Path(validation_sweep_plan_path),
+                Path(validation_sweep_results_path),
+            )
+        )
     if validation_comparison_path is not None:
         checks.append(_validation_comparison_check(Path(validation_comparison_path)))
     if validation_comparison_delta_path is not None:
@@ -1647,6 +1654,39 @@ def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
         f"{target_only_note}"
     )
     return ReadinessCheck("validation_sweep_results", status, detail)
+
+
+def _validation_sweep_result_coverage_check(
+    validation_sweep_plan_path: Path,
+    validation_sweep_results_path: Path,
+) -> ReadinessCheck:
+    if not validation_sweep_plan_path.exists() or not validation_sweep_results_path.exists():
+        return ReadinessCheck("validation_sweep_result_coverage", "WARN", "missing source report")
+    plan_rows = _read_csv_rows(validation_sweep_plan_path)
+    result_rows = _read_csv_rows(validation_sweep_results_path)
+    planned = {
+        str(row.get("experiment_id", "")).strip()
+        for row in plan_rows
+        if str(row.get("experiment_id", "")).strip()
+        and str(row.get("suggested_action", "")).strip().upper() != "KEEP_TRAIN_WINDOW_REJECTED"
+    }
+    completed = {
+        str(row.get("experiment_id", "")).strip()
+        for row in result_rows
+        if str(row.get("experiment_id", "")).strip()
+    }
+    missing = sorted(planned - completed)
+    if missing:
+        return ReadinessCheck(
+            "validation_sweep_result_coverage",
+            "BLOCK",
+            f"missing_sweep_results={';'.join(missing[:10])}",
+        )
+    return ReadinessCheck(
+        "validation_sweep_result_coverage",
+        "PASS",
+        f"covered_sweep_results={len(planned)}",
+    )
 
 
 def _validation_comparison_check(path: Path) -> ReadinessCheck:

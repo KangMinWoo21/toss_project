@@ -944,6 +944,32 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Review validation sweep results", action_text)
 
+    def test_validation_sweep_result_coverage_blocks_missing_planned_experiments(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            plan = root / "monthly_validation_sweep_plan.csv"
+            plan.write_text(
+                "priority,suggested_action,experiment_id,target_scenarios,cash_buffer_weight,min_train_positive_ratio,candidate_pool_size,max_position_weight,drawdown_guard_scale,market_volatility_min_scale,expected_effect,risk_note\n"
+                "P1,IMPROVE_WEAK_WINDOW_DEFENSE,weak_defense_cash_05,regime_sideways,0.05,0.55,5,,,,Reduce weak-window exposure,Paper-only review\n"
+                "P1,REDUCE_DRAWDOWN,stress_drawdown_cap_20,stress_exclude_500pct_winners,,,,0.20,,,Reduce drawdown pressure,Paper-only review\n",
+                encoding="utf-8",
+            )
+            results = root / "monthly_validation_sweep_results.csv"
+            results.write_text(
+                "experiment_id,suggested_action,status,target_scenarios,scenario_count,failed_required,baseline_failed_required,failed_delta,min_excess_return_pct,worst_drawdown_pct,trade_count,config_changes,candidate_validation_args,validation_scope,adoption_status,adoption_requirements,result_summary,risk_note\n"
+                "weak_defense_cash_05,IMPROVE_WEAK_WINDOW_DEFENSE,IMPROVED,regime_sideways,1,0,1,-1,1.2,-8,1,cash_buffer_weight=0.05,--cash-buffer-weight 0.05,TARGET_ONLY,FULL_VALIDATION_REQUIRED,Run monthly-validate and compare,failed_required 1 -> 0,Paper-only review\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(
+                validation_sweep_plan_path=plan,
+                validation_sweep_results_path=results,
+            )
+
+        coverage_checks = [check for check in checks if check.name == "validation_sweep_result_coverage"]
+        self.assertEqual(coverage_checks[0].status, "BLOCK")
+        self.assertIn("stress_drawdown_cap_20", coverage_checks[0].detail)
+
     def test_validation_sweep_results_blocks_unsafe_live_risk_note(self):
         with TemporaryDirectory() as temp_dir:
             results = Path(temp_dir) / "monthly_validation_sweep_results.csv"
