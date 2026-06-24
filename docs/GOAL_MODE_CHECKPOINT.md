@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 January selection eligibility join
+Last updated: 2026-06-24 min-history 244 validation
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,38 +40,39 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit:
-  `Add January selection eligibility join` (current HEAD after this loop).
+  `Record min-history 244 validation` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
 - Latest full tests: `python -m unittest discover -s tests` PASS, `511` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=345.96` observed).
+  (`age_hours=346.36` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only January selection eligibility join to explain why
-reference-only symbols were omitted from the failed `regime_sideways` proxy
-selection.
+Ran a paper-only full validation of the current best candidate with the PIT
+minimum history gate relaxed from `252` to `244` rows.
 
 Changed behavior:
 
-- New `monthly-compare-entry-selection-eligibility` joins entry
-  selection-rotation rows with point-in-time universe-filter exclusions, adding
-  failed/reference universe status, reason, detail, and eligibility diagnostics.
-- `monthly-compare-entry-selection-rotation` now also writes failed/reference
-  signal dates so downstream diagnostics can join to universe-filter dates.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
 - Generated:
-  `data/reports/regime_sideways_vs_walk_forward_001_entry_selection_eligibility_2025_01.csv`.
+  `data/reports/monthly_validation_candidate_proxy_guard_exit_short_minus5_neutral_loss_guard55_min_history244.csv`.
 
 Verification:
 
-- RED: focused eligibility-join tests failed on missing analyzer/save/CLI.
-- GREEN: focused analyzer/save/CLI tests PASS (`3` tests).
+- Validation run: `18` scenarios, `failed_required=0`, deployment gate
+  `deployable=True`, reason `passed`.
+- Comparison versus current `252`-day best candidate:
+  `comparison_status=IMPROVED`, baseline required failures `1`, candidate
+  required failures `0`, resolved `regime_sideways`, new failures `0`,
+  decision `PAPER_REVIEW`.
+- Regressions to watch, all still deployable: `duration_1y` excess delta
+  `-4.6393`, `duration_6m` `-3.2402`, `duration_3m` `-2.2312`,
+  `walk_forward_003` `-1.2941`.
 - Final verification: full `unittest` PASS (`511` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
@@ -120,6 +121,10 @@ Residual evidence:
   mostly omitted high-return reference-only names because they did not yet meet
   the fixed `252`-row PIT history gate at signal date `2024-12-30`, then became
   eligible by the reference signal date `2025-01-13`.
+- New min-history `244` evidence: `regime_sideways` improved from failing to
+  passing with excess `+3.5847` and max drawdown `-21.5169`. The candidate also
+  passed `walk_forward_001` (`+3.0038` excess), `walk_forward_003` (`+8.7530`),
+  and `walk_forward_005` (`+4.4114`).
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -225,9 +230,15 @@ Production baseline required failures:
 - `walk_forward_003`: train rejected; train excess about `-1.3447%`.
 - `walk_forward_005`: excess about `-5.2167%`, max DD about `-20.2645%`.
 
-Best candidate remaining failure:
+Best paper-review candidate:
 
-- `regime_sideways`: excess `-4.0548%`, max DD `-21.7902%`.
+- `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244` has
+  `0` required failures in the full validation run.
+- Decision: `PAPER_REVIEW`, not adopt/promote.
+- Why not promote yet: it relaxes a data-history safety gate and reduces several
+  short-duration excess results even though they remain deployable; needs a
+  clean full rerun, paper-only OOS/post-cutoff review, and explicit production
+  readiness changes before any adoption.
 
 Diagnostic combo remaining failure:
 
@@ -251,10 +262,11 @@ Pick one narrow loop:
   timing is not the main cause, contribution-overlap comparison shows the
   selected-target gap is dominated by six-symbol rotation rather than shared
   symbols, and eligibility join shows five reference-only names were excluded by
-  the fixed PIT history gate at the failed signal date. Next paper-only work
-  should test whether any history-gate relaxation is safe across all validation
-  scenarios before considering it; avoid broad cash, broad stop, or broad proxy
-  cap reuse.
+  the fixed PIT history gate at the failed signal date. Full paper validation
+  with `point_in_time_min_history_days=244` resolved all required failures, but
+  remains paper-review only. Next paper-only work should stress/OOS-review
+  `min_history244` before considering any default change. Avoid broad cash,
+  broad stop, or broad proxy cap reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate
   discipline; do not loosen rejected train windows.
 
