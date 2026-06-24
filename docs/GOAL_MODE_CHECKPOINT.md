@@ -99,6 +99,8 @@ Verification:
   paper-review/rejected candidates or accepted candidates without promotion
   proof block the monthly risk report. The `min_history244` candidate monthly
   plan now reports `risk_status BLOCK` from `candidate_decision:PAPER_REVIEW`.
+- The same plan writes `execution_allowed=False`, `execution_mode=blocked`,
+  `risk_status_BLOCK` for all `5` generated orders.
 
 Residual evidence:
 
