@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 performance audit refresh
+Last updated: 2026-06-24 min_history244 paper stress review
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -176,6 +176,10 @@ appending long command logs or full report lists here.
 - Stale performance audit report was refreshed from
   `monthly_validation_scenarios_pit_universe.csv`; `required_scenarios` now
   reports `5 failed of 18 required`, matching validation scenarios.
+- `min_history244` paper-only stress/duration review was recorded in ignored
+  report `monthly_validation_candidate_stress_review_neutral_loss_guard55_min_history244.csv`:
+  stress failed `0/5`, duration failed `0/5`, baseline regressions `0`; still
+  blocked from promotion by pending post-cutoff OOS.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
