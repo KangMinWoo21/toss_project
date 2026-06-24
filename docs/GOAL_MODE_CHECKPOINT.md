@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 post-cutoff data availability check
+Last updated: 2026-06-24 performance audit refresh
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -52,6 +52,8 @@ appending long command logs or full report lists here.
   BLOCK_NAMES=`overall`, `deployment_gate`, `validation_scenarios`,
   `validation_failure_actions`, `validation_remediation`,
   `validation_failure_patterns`, `risk_report`, `performance_report`.
+  Performance report now matches validation scenarios:
+  `required_scenarios:5 failed of 18 required`.
 - Latest candidate-overlay production-check using
   `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
@@ -171,6 +173,9 @@ appending long command logs or full report lists here.
   `3` rejected follow-up sets; no new improved sweep candidates were introduced.
 - Post-cutoff OOS cannot run from local data yet: `data/krx_expanded` max date
   is `2026-06-18` and post-cutoff rows are `0`; no fetch was run.
+- Stale performance audit report was refreshed from
+  `monthly_validation_scenarios_pit_universe.csv`; `required_scenarios` now
+  reports `5 failed of 18 required`, matching validation scenarios.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
