@@ -128,6 +128,18 @@ REQUIRED_VALIDATION_REMEDIATION_COLUMNS = {
     "parameter_hints",
     "next_experiment",
 }
+REQUIRED_VALIDATION_REMEDIATION_VALUE_COLUMNS = {
+    "priority",
+    "suggested_action",
+    "failure_count",
+    "blocked_count",
+    "affected_categories",
+    "affected_scenarios",
+    "failed_metrics",
+    "worst_metric_value",
+    "parameter_hints",
+    "next_experiment",
+}
 REQUIRED_VALIDATION_SWEEP_PLAN_COLUMNS = {
     "priority",
     "suggested_action",
@@ -1129,6 +1141,20 @@ def _validation_remediation_check(path: Path) -> ReadinessCheck:
             "validation_remediation",
             "BLOCK",
             f"missing_required_columns={','.join(missing_columns)}",
+        )
+    missing_values = sorted(
+        {
+            column
+            for row in rows
+            for column in REQUIRED_VALIDATION_REMEDIATION_VALUE_COLUMNS
+            if not str(row.get(column, "")).strip()
+        }
+    )
+    if missing_values:
+        return ReadinessCheck(
+            "validation_remediation",
+            "BLOCK",
+            f"missing_required_values={','.join(missing_values)}",
         )
     priority_counts = Counter(str(row.get("priority", "")).strip() or "P2" for row in rows)
     status = "BLOCK" if priority_counts.get("P0", 0) or priority_counts.get("P1", 0) else "WARN"
