@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 sweep result coverage refresh
+Last updated: 2026-06-24 candidate follow-up refresh
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -167,6 +167,8 @@ appending long command logs or full report lists here.
   `guarded_loss_position_stop_12`, `market_beta_proxy_cap_75`,
   `neutral_breadth_proxy_cap_50`, and `neutral_proxy_deep_guard_35`; coverage
   now passes with `12` covered sweep results.
+- Candidate follow-up was regenerated after sweep result refresh and remains
+  `3` rejected follow-up sets; no new improved sweep candidates were introduced.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
