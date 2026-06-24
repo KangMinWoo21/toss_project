@@ -58,7 +58,7 @@ def _post_cutoff_oos_start_date(row: dict[str, Any], reasons: str) -> str:
         value = str(row.get(field_name, "")).strip()
         if value:
             return value
-    match = re.search(r"(?:post_cutoff_oos_start_date|oos_review_start_date)=([0-9]{4}-[0-9]{2}-[0-9]{2})", reasons)
+    match = re.search(r"(?:post_cutoff_oos_start_date|oos_review_start_date)=([^;\s]+)", reasons)
     return match.group(1) if match else ""
 
 
@@ -67,5 +67,5 @@ def _post_cutoff_oos_end_date(row: dict[str, Any], reasons: str) -> str:
         value = str(row.get(field_name, "")).strip()
         if value:
             return value
-    match = re.search(r"(?:post_cutoff_oos_end_date|oos_review_end_date)=([0-9]{4}-[0-9]{2}-[0-9]{2})", reasons)
+    match = re.search(r"(?:post_cutoff_oos_end_date|oos_review_end_date)=([^;\s]+)", reasons)
     return match.group(1) if match else ""
