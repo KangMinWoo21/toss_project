@@ -1626,6 +1626,16 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
             f"; validation_command={top.get('validation_command', '')}; "
             f"comparison_command={top.get('comparison_command', '')}"
         )
+    unsafe_commands = [
+        str(row.get(column, "")).strip()
+        for row in pending_rows
+        for column in ("validation_command", "comparison_command")
+        if re.search(r"\b(live|order|trade|trading|fetch)\b", str(row.get(column, "")).lower())
+    ]
+    if unsafe_commands:
+        unsafe_detail = f"unsafe_followup_command={unsafe_commands[0]}"
+        promotion_blocked.append(unsafe_detail)
+        decision_detail += f"; promotion_blocked_decisions={unsafe_detail}"
     detail = (
         f"{len(rows)} candidate follow-up command sets; "
         f"top={top.get('experiment_id', '')}; "
