@@ -765,14 +765,31 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Do not adopt rejected validation candidate", action_text)
 
+    def test_validation_comparison_missing_required_columns_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            comparison = Path(temp_dir) / "monthly_validation_comparison.csv"
+            comparison.write_text(
+                "candidate_label,status\n"
+                "combo,REJECT\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_comparison_path=comparison)
+
+        comparison_checks = [check for check in checks if check.name == "validation_comparison"]
+        self.assertEqual(comparison_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_columns", comparison_checks[0].detail)
+        self.assertIn("failed_delta", comparison_checks[0].detail)
+        self.assertIn("new_failures", comparison_checks[0].detail)
+
     def test_validation_comparison_delta_report_summarizes_new_failure_diagnostics(self):
         with TemporaryDirectory() as temp_dir:
             deltas = Path(temp_dir) / "monthly_validation_comparison_deltas.csv"
             deltas.write_text(
-                "name,classification,diagnostic,excess_return_delta,max_drawdown_delta,trade_count_delta\n"
-                "stress,RESOLVED,candidate_fixed_required_failure,-2.3,8.9,120\n"
-                "regime_bear,NEW_FAILURE,over_defense_or_filter_drag,-7.1,-2.0,54\n"
-                "walk_forward_002,NEW_FAILURE,over_defense_or_filter_drag,-4.2,0.5,-22\n",
+                "name,classification,baseline_label,candidate_label,baseline_deployable,candidate_deployable,baseline_reason,candidate_reason,excess_return_delta,max_drawdown_delta,trade_count_delta,diagnostic\n"
+                "stress,RESOLVED,baseline,candidate,False,True,max_drawdown_breach,passed,-2.3,8.9,120,candidate_fixed_required_failure\n"
+                "regime_bear,NEW_FAILURE,baseline,candidate,True,False,passed,negative_excess_return,-7.1,-2.0,54,over_defense_or_filter_drag\n"
+                "walk_forward_002,NEW_FAILURE,baseline,candidate,True,False,passed,negative_excess_return,-4.2,0.5,-22,over_defense_or_filter_drag\n",
                 encoding="utf-8",
             )
 
@@ -788,6 +805,23 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Review validation scenario deltas", action_text)
         self.assertIn("over_defense_or_filter_drag", action_text)
+
+    def test_validation_comparison_delta_missing_required_columns_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            deltas = Path(temp_dir) / "monthly_validation_comparison_deltas.csv"
+            deltas.write_text(
+                "name,classification\n"
+                "stress,NEW_FAILURE\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_comparison_delta_path=deltas)
+
+        delta_checks = [check for check in checks if check.name == "validation_comparison_deltas"]
+        self.assertEqual(delta_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_columns", delta_checks[0].detail)
+        self.assertIn("diagnostic", delta_checks[0].detail)
+        self.assertIn("trade_count_delta", delta_checks[0].detail)
 
     def test_validation_candidate_decision_reject_warns_readiness(self):
         with TemporaryDirectory() as temp_dir:

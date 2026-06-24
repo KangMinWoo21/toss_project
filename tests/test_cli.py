@@ -2555,8 +2555,8 @@ class CliTests(unittest.TestCase):
             )
             deltas = root / "monthly_validation_comparison_deltas.csv"
             deltas.write_text(
-                "name,classification,diagnostic,excess_return_delta,max_drawdown_delta,trade_count_delta\n"
-                "regime_bear,NEW_FAILURE,over_defense_or_filter_drag,-7.1,-2.0,54\n",
+                "name,classification,baseline_label,candidate_label,baseline_deployable,candidate_deployable,baseline_reason,candidate_reason,excess_return_delta,max_drawdown_delta,trade_count_delta,diagnostic\n"
+                "regime_bear,NEW_FAILURE,baseline,candidate,True,False,passed,negative_excess_return,-7.1,-2.0,54,over_defense_or_filter_drag\n",
                 encoding="utf-8",
             )
             output = root / "readiness.csv"

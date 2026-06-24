@@ -99,6 +99,32 @@ REQUIRED_VALIDATION_SWEEP_RESULTS_COLUMNS = {
     "result_summary",
     "risk_note",
 }
+REQUIRED_VALIDATION_COMPARISON_COLUMNS = {
+    "baseline_label",
+    "candidate_label",
+    "status",
+    "baseline_failed_required",
+    "candidate_failed_required",
+    "failed_delta",
+    "resolved_failures",
+    "new_failures",
+    "unchanged_failures",
+    "summary",
+}
+REQUIRED_VALIDATION_COMPARISON_DELTA_COLUMNS = {
+    "name",
+    "classification",
+    "baseline_label",
+    "candidate_label",
+    "baseline_deployable",
+    "candidate_deployable",
+    "baseline_reason",
+    "candidate_reason",
+    "excess_return_delta",
+    "max_drawdown_delta",
+    "trade_count_delta",
+    "diagnostic",
+}
 
 
 @dataclass(frozen=True)
@@ -1037,6 +1063,13 @@ def _validation_comparison_check(path: Path) -> ReadinessCheck:
     if not rows:
         return ReadinessCheck("validation_comparison", "WARN", f"empty: {path}")
     row = rows[-1]
+    missing_columns = sorted(REQUIRED_VALIDATION_COMPARISON_COLUMNS - set(row.keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_comparison",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
     raw_status = str(row.get("status", "")).strip().upper()
     if raw_status in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
         status = "PASS"
@@ -1060,6 +1093,13 @@ def _validation_comparison_delta_check(path: Path) -> ReadinessCheck:
     rows = _read_csv_rows(path)
     if not rows:
         return ReadinessCheck("validation_comparison_deltas", "BLOCK", f"empty: {path}")
+    missing_columns = sorted(REQUIRED_VALIDATION_COMPARISON_DELTA_COLUMNS - set(rows[-1].keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_comparison_deltas",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
+        )
     classifications = Counter(str(row.get("classification", "")).strip() or "UNKNOWN" for row in rows)
     diagnostics = Counter(str(row.get("diagnostic", "")).strip() or "unknown" for row in rows)
     status = "WARN" if classifications.get("NEW_FAILURE", 0) else "PASS"

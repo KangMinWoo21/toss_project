@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 validation sweep evidence hardening
+Last updated: 2026-06-24 validation comparison evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,10 +38,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `f79a94a Require validation action evidence`.
+  `6ad00f0 Require validation sweep evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `539` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `541` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=348.93` observed).
+  (`age_hours=349.05` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -87,6 +87,9 @@ appending long command logs or full report lists here.
   that omit required action/remediation evidence columns.
 - Production readiness now blocks validation sweep plan/result reports that omit
   required experiment, command, adoption, or risk-note evidence columns.
+- Production readiness now blocks validation comparison and scenario delta
+  reports that omit required comparison, metric-delta, or diagnostic evidence
+  columns.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.
 - Full historical detail is in
