@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 candidate stress review builder
+Last updated: 2026-06-24 candidate stress review CLI
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -183,6 +183,9 @@ appending long command logs or full report lists here.
 - Candidate stress/duration review now has a tested builder/saver and the
   ignored `min_history244` review report was regenerated from validation and
   comparison rows.
+- `monthly-compare-validation --stress-review-output` now regenerates that
+  paper-only review report; `min_history244` comparison remains IMPROVED with
+  baseline failed `5`, candidate failed `0`, review rows `2`.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch

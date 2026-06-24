@@ -1655,6 +1655,59 @@ class CliTests(unittest.TestCase):
         self.assertIn("--delta-output", completed.stdout)
         self.assertIn("--decision-output", completed.stdout)
 
+    def test_monthly_compare_validation_writes_stress_review_output(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            baseline = root / "baseline.csv"
+            candidate = root / "candidate.csv"
+            comparison = root / "comparison.csv"
+            deltas = root / "deltas.csv"
+            decision = root / "decision.csv"
+            stress_review = root / "stress_review.csv"
+            baseline.write_text(
+                "name,category,required,deployable,reason,excess_return_pct,max_drawdown_pct\n"
+                "stress_a,stress,True,False,max_drawdown_breach,1,-28\n"
+                "duration_3m,duration,True,True,passed,2,-10\n",
+                encoding="utf-8",
+            )
+            candidate.write_text(
+                "name,category,required,deployable,reason,excess_return_pct,max_drawdown_pct\n"
+                "stress_a,stress,True,True,passed,8,-18\n"
+                "duration_3m,duration,True,True,passed,5,-9\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "backtester",
+                    "monthly-compare-validation",
+                    "--baseline",
+                    str(baseline),
+                    "--candidate",
+                    str(candidate),
+                    "--output",
+                    str(comparison),
+                    "--delta-output",
+                    str(deltas),
+                    "--decision-output",
+                    str(decision),
+                    "--stress-review-output",
+                    str(stress_review),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            text = stress_review.read_text(encoding="utf-8") if stress_review.exists() else ""
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("candidate_stress_review_report", completed.stdout)
+        self.assertIn("stress,1,0", text)
+        self.assertIn("PASS_PAPER_ONLY", text)
+
     def test_monthly_candidate_followup_cli_writes_next_commands(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

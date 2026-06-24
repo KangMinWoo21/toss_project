@@ -81,6 +81,7 @@ from .monthly_rebalance import (
     analyze_monthly_benchmark_selection,
     analyze_monthly_benchmark_selection_summary,
     analyze_symbol_realized_pnl_attribution,
+    build_monthly_candidate_stress_review,
     build_monthly_validation_sweep_plan,
     build_monthly_validation_candidate_decision,
     build_monthly_validation_candidate_followup_rows,
@@ -168,6 +169,7 @@ from .monthly_rebalance import (
     save_monthly_train_stability_path_drift_experiments,
     save_monthly_train_stability_symbol_attribution,
     save_monthly_train_stability_windows,
+    save_monthly_candidate_stress_review,
     save_monthly_performance_audit_rows,
     save_monthly_performance_concentration,
     save_monthly_validation_failures,
@@ -1163,6 +1165,11 @@ def main() -> int:
         default="data/reports/monthly_validation_candidate_decision.csv",
         help="Candidate adoption decision report derived from comparison deltas",
     )
+    monthly_compare_parser.add_argument(
+        "--stress-review-output",
+        default=None,
+        help="Optional paper-only stress/duration review CSV for the candidate",
+    )
 
     monthly_candidate_summary_parser = subparsers.add_parser(
         "monthly-candidate-summary",
@@ -1890,6 +1897,13 @@ def main() -> int:
             decision_rows = build_monthly_validation_candidate_decision(comparison, delta_rows)
             save_monthly_validation_candidate_decision(decision_rows, args.decision_output)
             print(f"candidate_decision_report  {args.decision_output}")
+            if args.stress_review_output:
+                stress_review_rows = build_monthly_candidate_stress_review(candidate_rows, delta_rows)
+                saved_stress_review_rows = save_monthly_candidate_stress_review(
+                    stress_review_rows,
+                    args.stress_review_output,
+                )
+                print(f"candidate_stress_review_report  {args.stress_review_output} rows={saved_stress_review_rows}")
         print(f"comparison_status  {comparison['status']}")
         print(f"baseline_failed_required  {comparison['baseline_failed_required']}")
         print(f"candidate_failed_required  {comparison['candidate_failed_required']}")
