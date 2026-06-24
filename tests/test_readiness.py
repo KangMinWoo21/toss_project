@@ -76,13 +76,29 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("max_drawdown_breach=1", checks[0].detail)
         self.assertIn("extreme_return_share=1", checks[0].detail)
 
+    def test_validation_scenarios_missing_required_columns_blocks_pass_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,deployable,reason\n"
+                "full_period,duration,True,True,passed\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        scenario_checks = [check for check in checks if check.name == "validation_scenarios"]
+        self.assertEqual(scenario_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_columns", scenario_checks[0].detail)
+        self.assertIn("excess_return_pct", scenario_checks[0].detail)
+
     def test_walk_forward_single_train_candidate_warns_readiness(self):
         with TemporaryDirectory() as temp_dir:
             scenarios = Path(temp_dir) / "scenarios.csv"
             scenarios.write_text(
-                "name,category,required,deployable,reason,train_candidate_scores\n"
-                "walk_forward_001,walk_forward,True,True,passed,\"balanced:excess=1,drawdown=-5,trades=3,score=-4\"\n"
-                "full_period,duration,True,True,passed,\n",
+                "name,category,required,train_start,train_end,selected_preset,train_excess_return_pct,train_candidate_scores,train_candidate_decision_profiles,train_candidate_direct_scores,train_direct_diagnostics,start,end,slippage_multiplier,stress,final_equity,total_return_pct,buy_hold_return_pct,excess_return_pct,max_drawdown_pct,trade_count,universe_bias_warning,universe_bias_reasons,universe_symbol_count,universe_avg_symbol_return_pct,universe_median_symbol_return_pct,universe_extreme_return_symbols,universe_extreme_return_share,deployable,reason,source\n"
+                "walk_forward_001,walk_forward,True,2024-01-01,2024-12-31,balanced,1,\"balanced:excess=1,drawdown=-5,trades=3,score=-4\",,,,2025-01-01,2025-03-31,1.0,False,1010000,1,0,1,-5,3,False,,120,1,0.5,,0,True,passed,monthly-validate\n"
+                "full_period,duration,True,,,,,,,,,2025-01-01,2025-12-31,1.0,False,1010000,1,0,1,-5,3,False,,120,1,0.5,,0,True,passed,monthly-validate\n",
                 encoding="utf-8",
             )
 

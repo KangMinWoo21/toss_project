@@ -22,6 +22,39 @@ REQUIRED_DEPLOYMENT_GATE_COLUMNS = {
     "trade_count",
     "universe_bias_warning",
 }
+REQUIRED_VALIDATION_SCENARIO_COLUMNS = {
+    "name",
+    "category",
+    "required",
+    "train_start",
+    "train_end",
+    "selected_preset",
+    "train_excess_return_pct",
+    "train_candidate_scores",
+    "train_candidate_decision_profiles",
+    "train_candidate_direct_scores",
+    "train_direct_diagnostics",
+    "start",
+    "end",
+    "slippage_multiplier",
+    "stress",
+    "final_equity",
+    "total_return_pct",
+    "buy_hold_return_pct",
+    "excess_return_pct",
+    "max_drawdown_pct",
+    "trade_count",
+    "universe_bias_warning",
+    "universe_bias_reasons",
+    "universe_symbol_count",
+    "universe_avg_symbol_return_pct",
+    "universe_median_symbol_return_pct",
+    "universe_extreme_return_symbols",
+    "universe_extreme_return_share",
+    "deployable",
+    "reason",
+    "source",
+}
 REQUIRED_RISK_REPORT_CHECKS = {
     "point_in_time_universe",
     "market_data_freshness",
@@ -852,6 +885,13 @@ def _validation_scenario_check(path: Path) -> ReadinessCheck:
             "validation_scenarios",
             "BLOCK",
             f"{len(failed)} failed: {preview}{suffix}; reasons: {reason_summary}{bias_summary}",
+        )
+    missing_columns = sorted(REQUIRED_VALIDATION_SCENARIO_COLUMNS - set(rows[-1].keys()))
+    if missing_columns:
+        return ReadinessCheck(
+            "validation_scenarios",
+            "BLOCK",
+            f"missing_required_columns={','.join(missing_columns)}",
         )
     return ReadinessCheck("validation_scenarios", "PASS", f"{len(rows)} scenarios passed")
 
