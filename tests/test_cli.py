@@ -1375,6 +1375,65 @@ class CliTests(unittest.TestCase):
         self.assertEqual(by_bucket["rotation_symbols"]["contribution_delta_pct"], "7")
         self.assertIn("rotation_gap_dominant", by_bucket["selected_total"]["diagnostic"])
 
+    def test_monthly_compare_entry_selection_rotation_cli_writes_symbol_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            failed_selection = root / "failed_selection.csv"
+            reference_selection = root / "reference_selection.csv"
+            output = root / "entry_selection_rotation.csv"
+            header = (
+                "scenario,month,start_date,end_date,decision_as_of_date,decision_signal_date,"
+                "decision_reason,symbol,contribution_role,strategy_weight,benchmark_weight,"
+                "symbol_return_pct,contribution_delta_pct,contribution_diagnostic,"
+                "liquidity_rank,average_trading_value,proxy_cutoff_rank,rank_gap_to_proxy_cutoff,"
+                "selection_diagnostic\n"
+            )
+            failed_selection.write_text(
+                header
+                + "regime_sideways,2025-01,2025-01-02,2025-01-31,2025-01-02,2024-12-30,weak,AAA,strategy_overweight,0.2,0,10,1.8,winner,5,100,12,-7,selected_proxy_winner\n"
+                + "regime_sideways,2025-01,2025-01-02,2025-01-31,2025-01-02,2024-12-30,weak,BBB,strategy_overweight,0.1,0,-5,-0.6,loser,40,80,12,28,selected_proxy_loser\n"
+                + "regime_sideways,2025-01,2025-01-02,2025-01-31,2025-01-02,2024-12-30,weak,CCC,benchmark_only,0,0,20,-0.02,missed,35,90,12,23,missed_inside_proxy_cutoff\n",
+                encoding="utf-8",
+            )
+            reference_selection.write_text(
+                header
+                + "walk_forward_001,2025-01,2025-01-14,2025-01-31,2025-01-14,2025-01-13,strong,AAA,strategy_overweight,0.4,0,12,4.7,winner,3,120,12,-9,selected_proxy_winner\n"
+                + "walk_forward_001,2025-01,2025-01-14,2025-01-31,2025-01-14,2025-01-13,strong,BBB,benchmark_only,0,0,-4,-0.01,avoided,44,70,12,32,avoided_benchmark_loser\n"
+                + "walk_forward_001,2025-01,2025-01-14,2025-01-31,2025-01-14,2025-01-13,strong,CCC,strategy_overweight,0.3,0,30,8.9,winner,7,130,12,-5,selected_proxy_winner\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-entry-selection-rotation",
+                    "--failed-selection-report",
+                    str(failed_selection),
+                    "--reference-selection-report",
+                    str(reference_selection),
+                    "--failed-label",
+                    "regime_sideways",
+                    "--reference-label",
+                    "walk_forward_001",
+                    "--month",
+                    "2025-01",
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("entry_selection_rotation_report", completed.stdout)
+        self.assertIn("comparison_rows  3", completed.stdout)
+        self.assertIn("reference_only_rows  1", completed.stdout)
+        self.assertIn("failed_only_rows  1", completed.stdout)
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["CCC"]["rotation_role"], "reference_only_symbols")
+        self.assertEqual(by_symbol["CCC"]["contribution_delta_gap_pct"], "8.92")
+        self.assertIn("reference_selected_only", by_symbol["CCC"]["diagnostic"])
+
     def test_monthly_compare_paths_cli_writes_daily_path_delta_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

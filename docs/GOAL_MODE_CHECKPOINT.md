@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 January contribution overlap comparison
+Last updated: 2026-06-24 January selection rotation detail
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,39 +40,39 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit:
-  `Add January contribution overlap comparison` (current HEAD after this loop).
+  `Add January selection rotation detail` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `505` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `508` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=345.52` observed).
+  (`age_hours=345.76` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only January target-contribution overlap comparison to separate
-shared selected-symbol contribution from six-symbol rotation between the failed
-`regime_sideways` row and passing `walk_forward_001`.
+Added a report-only January selected-symbol rotation detail comparison to
+explain the failed-only versus reference-only six-symbol rotation between the
+failed `regime_sideways` row and passing `walk_forward_001`.
 
 Changed behavior:
 
-- New `monthly-compare-entry-contribution-overlap` reads failed/reference
-  benchmark-contribution CSVs for one month and writes `selected_total`,
-  `shared_symbols`, `rotation_symbols`, `failed_only_symbols`, and
-  `reference_only_symbols` rows with target weight, selected contribution,
-  contribution delta/share, symbol lists, and diagnostics.
+- New `monthly-compare-entry-selection-rotation` reads failed/reference
+  benchmark-selection CSVs for one month and writes per-symbol rows for the
+  selected-symbol union, including selected flags, target weight, symbol return,
+  contribution delta gap, liquidity rank delta, selection diagnostics, and
+  rotation role.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
 - Generated:
-  `data/reports/regime_sideways_vs_walk_forward_001_entry_contribution_overlap_2025_01.csv`.
+  `data/reports/regime_sideways_vs_walk_forward_001_entry_selection_rotation_2025_01.csv`.
 
 Verification:
 
-- RED: focused overlap tests failed on missing analyzer/save/CLI.
+- RED: focused selection-rotation tests failed on missing analyzer/save/CLI.
 - GREEN: focused analyzer/save/CLI tests PASS (`3` tests).
-- Final verification: full `unittest` PASS (`505` tests), compile PASS,
+- Final verification: full `unittest` PASS (`508` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
@@ -91,7 +91,7 @@ Residual evidence:
 - Failed post-split delta versus reference post-split: return `-7.3175`,
   exposure `-0.5687`, shared symbols `6/12`; diagnostic:
   `reference_post_outperformed;reference_exposure_higher;symbol_rotation`.
-- New target-contribution overlap: selected-total contribution gap `+7.4578`;
+- Prior target-contribution overlap: selected-total contribution gap `+7.4578`;
   shared symbols contribute `-0.0520` of the gap, while rotation symbols
   contribute `+7.5098` (`100.6973%` of total gap).
 - Shared symbols:
@@ -99,9 +99,21 @@ Residual evidence:
 - Rotation symbols: failed-only
   `005490;010130;051910;055550;086790;105560`; reference-only
   `000100;007660;011790;196170;277810;328130`.
-- Interpretation: missed early-January timing and shared-name exposure scale
-  are not the main target-contribution cause; the January target contribution
-  gap is dominated by the six-symbol rotation.
+- New selected-symbol rotation detail: `18` selected-union rows, with `6`
+  failed-only, `6` reference-only, and `6` shared symbols.
+- Reference-only names: failed-side selection diagnostics were
+  `missed_inside_proxy_liquidity_cutoff=4` and
+  `missed_outside_proxy_liquidity_cutoff=2`; reference-side diagnostics were
+  `selected_proxy_winner=4` and `selected_proxy_loser=2`.
+- Rotation-role aggregates: failed-only average failed-period return `+0.1271`
+  and contribution-gap sum `-0.0161`; reference-only average failed-period
+  return `+26.6961` and contribution-gap sum `+7.5569`; shared contribution-gap
+  sum `-0.0300`.
+- Interpretation: missed early-January timing and shared-name exposure scale are
+  not the main target-contribution cause. The failed January proxy selection
+  omitted high-return reference-only names, including four inside the proxy
+  liquidity cutoff, under the `weak_train_neutral_breadth_proxy_trend_scaled`
+  decision.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -230,10 +242,12 @@ Pick one narrow loop:
   is not unique to the failed scenario. Window comparison now shows the blocker
   is in `2025-01-02..2025-04-17`, while the `2024-10..2024-12` pre-window has
   positive excess. January path subperiod comparison shows missed early-January
-  timing is not the main cause, and contribution-overlap comparison shows the
+  timing is not the main cause, contribution-overlap comparison shows the
   selected-target gap is dominated by six-symbol rotation rather than shared
-  symbols. Next paper-only work should explain why the reference-only names
-  `000100;007660;011790;196170;277810;328130` beat the failed-only names before
+  symbols, and selection-rotation detail shows the failed decision omitted four
+  high-return reference-only names that were already inside the proxy liquidity
+  cutoff. Next paper-only work should inspect why the weak-train proxy ranking
+  chose failed-only names over those inside-cutoff reference-only names before
   testing any rule change. Avoid broad cash, broad stop, or broad proxy cap
   reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate

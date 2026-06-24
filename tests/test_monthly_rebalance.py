@@ -59,6 +59,7 @@ from backtester.monthly_rebalance import (
     compare_monthly_benchmark_selection_window_reports,
     compare_monthly_entry_month_reports,
     compare_monthly_entry_contribution_overlap_reports,
+    compare_monthly_entry_selection_rotation_reports,
     compare_monthly_entry_path_subperiod_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
@@ -108,6 +109,7 @@ from backtester.monthly_rebalance import (
     save_monthly_benchmark_selection_window_comparison,
     save_monthly_entry_month_comparison,
     save_monthly_entry_contribution_overlap_comparison,
+    save_monthly_entry_selection_rotation_comparison,
     save_monthly_entry_path_subperiod_comparison,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
@@ -4183,6 +4185,135 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("contribution_gap_share_pct", text.splitlines()[0])
         self.assertIn("rotation_gap_dominant", text)
+
+    def test_compare_monthly_entry_selection_rotation_reports_explains_rotated_symbols(self):
+        failed_rows = [
+            {
+                "month": "2025-01",
+                "start_date": "2025-01-02",
+                "end_date": "2025-01-31",
+                "decision_as_of_date": "2025-01-02",
+                "decision_reason": "weak_train",
+                "symbol": "AAA",
+                "strategy_weight": "0.2",
+                "symbol_return_pct": "10",
+                "contribution_delta_pct": "1.8",
+                "liquidity_rank": "5",
+                "selection_diagnostic": "selected_proxy_winner",
+            },
+            {
+                "month": "2025-01",
+                "start_date": "2025-01-02",
+                "end_date": "2025-01-31",
+                "decision_as_of_date": "2025-01-02",
+                "decision_reason": "weak_train",
+                "symbol": "BBB",
+                "strategy_weight": "0.1",
+                "symbol_return_pct": "-5",
+                "contribution_delta_pct": "-0.6",
+                "liquidity_rank": "40",
+                "selection_diagnostic": "selected_proxy_loser",
+            },
+            {
+                "month": "2025-01",
+                "start_date": "2025-01-02",
+                "end_date": "2025-01-31",
+                "decision_as_of_date": "2025-01-02",
+                "decision_reason": "weak_train",
+                "symbol": "CCC",
+                "strategy_weight": "0",
+                "symbol_return_pct": "20",
+                "contribution_delta_pct": "-0.02",
+                "liquidity_rank": "35",
+                "selection_diagnostic": "missed_inside_proxy_cutoff",
+            },
+        ]
+        reference_rows = [
+            {
+                "month": "2025-01",
+                "start_date": "2025-01-14",
+                "end_date": "2025-01-31",
+                "decision_as_of_date": "2025-01-14",
+                "decision_reason": "strong_breadth",
+                "symbol": "AAA",
+                "strategy_weight": "0.4",
+                "symbol_return_pct": "12",
+                "contribution_delta_pct": "4.7",
+                "liquidity_rank": "3",
+                "selection_diagnostic": "selected_proxy_winner",
+            },
+            {
+                "month": "2025-01",
+                "start_date": "2025-01-14",
+                "end_date": "2025-01-31",
+                "decision_as_of_date": "2025-01-14",
+                "decision_reason": "strong_breadth",
+                "symbol": "BBB",
+                "strategy_weight": "0",
+                "symbol_return_pct": "-4",
+                "contribution_delta_pct": "-0.01",
+                "liquidity_rank": "44",
+                "selection_diagnostic": "avoided_benchmark_loser",
+            },
+            {
+                "month": "2025-01",
+                "start_date": "2025-01-14",
+                "end_date": "2025-01-31",
+                "decision_as_of_date": "2025-01-14",
+                "decision_reason": "strong_breadth",
+                "symbol": "CCC",
+                "strategy_weight": "0.3",
+                "symbol_return_pct": "30",
+                "contribution_delta_pct": "8.9",
+                "liquidity_rank": "7",
+                "selection_diagnostic": "selected_proxy_winner",
+            },
+        ]
+
+        rows = compare_monthly_entry_selection_rotation_reports(
+            failed_rows,
+            reference_rows,
+            failed_label="regime_sideways",
+            reference_label="walk_forward_001",
+            month="2025-01",
+        )
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["AAA"]["rotation_role"], "shared_symbols")
+        self.assertEqual(by_symbol["AAA"]["strategy_weight_delta"], "0.2")
+        self.assertEqual(by_symbol["AAA"]["symbol_return_delta"], "2")
+        self.assertEqual(by_symbol["BBB"]["rotation_role"], "failed_only_symbols")
+        self.assertEqual(by_symbol["BBB"]["failed_selected"], "true")
+        self.assertEqual(by_symbol["BBB"]["reference_selected"], "false")
+        self.assertIn("failed_selected_only", by_symbol["BBB"]["diagnostic"])
+        self.assertIn("failed_selected_loser", by_symbol["BBB"]["diagnostic"])
+        self.assertEqual(by_symbol["CCC"]["rotation_role"], "reference_only_symbols")
+        self.assertEqual(by_symbol["CCC"]["failed_selected"], "false")
+        self.assertEqual(by_symbol["CCC"]["reference_selected"], "true")
+        self.assertEqual(by_symbol["CCC"]["contribution_delta_gap_pct"], "8.92")
+        self.assertEqual(by_symbol["CCC"]["liquidity_rank_delta"], "-28")
+        self.assertIn("reference_selected_only", by_symbol["CCC"]["diagnostic"])
+        self.assertIn("reference_contribution_higher", by_symbol["CCC"]["diagnostic"])
+        self.assertIn("reference_liquidity_rank_better", by_symbol["CCC"]["diagnostic"])
+
+    def test_save_monthly_entry_selection_rotation_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "entry_selection_rotation.csv"
+            saved = save_monthly_entry_selection_rotation_comparison(
+                [
+                    {
+                        "symbol": "CCC",
+                        "rotation_role": "reference_only_symbols",
+                        "diagnostic": "reference_selected_only",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("symbol_return_delta", text.splitlines()[0])
+        self.assertIn("reference_selected_only", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

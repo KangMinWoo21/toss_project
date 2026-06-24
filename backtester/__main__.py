@@ -96,6 +96,7 @@ from .monthly_rebalance import (
     compare_monthly_benchmark_selection_summary_reports,
     compare_monthly_benchmark_selection_window_reports,
     compare_monthly_entry_contribution_overlap_reports,
+    compare_monthly_entry_selection_rotation_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_entry_month_reports,
     compare_monthly_entry_path_subperiod_reports,
@@ -139,6 +140,7 @@ from .monthly_rebalance import (
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
     save_monthly_entry_contribution_overlap_comparison,
+    save_monthly_entry_selection_rotation_comparison,
     save_monthly_entry_month_comparison,
     save_monthly_entry_path_subperiod_comparison,
     save_monthly_direct_alpha_holding_path,
@@ -1304,6 +1306,20 @@ def main() -> int:
         default="data/reports/monthly_entry_contribution_overlap_comparison.csv",
     )
 
+    monthly_compare_entry_selection_parser = subparsers.add_parser(
+        "monthly-compare-entry-selection-rotation",
+        help="Compare selected-symbol rotation details for one failed/reference entry month",
+    )
+    monthly_compare_entry_selection_parser.add_argument("--failed-selection-report", required=True)
+    monthly_compare_entry_selection_parser.add_argument("--reference-selection-report", required=True)
+    monthly_compare_entry_selection_parser.add_argument("--failed-label", default="failed")
+    monthly_compare_entry_selection_parser.add_argument("--reference-label", default="reference")
+    monthly_compare_entry_selection_parser.add_argument("--month", required=True)
+    monthly_compare_entry_selection_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_entry_selection_rotation_comparison.csv",
+    )
+
     monthly_compare_paths_parser = subparsers.add_parser(
         "monthly-compare-paths",
         help="Compare baseline and candidate daily path attribution CSV reports",
@@ -2063,6 +2079,31 @@ def main() -> int:
         print(f"comparison_rows  {saved}")
         print(f"rotation_gap_dominant_rows  {len(rotation_gap_dominant_rows)}")
         print(f"shared_gap_dominant_rows  {len(shared_gap_dominant_rows)}")
+        return 0
+
+    if args.command == "monthly-compare-entry-selection-rotation":
+        rows = compare_monthly_entry_selection_rotation_reports(
+            _read_csv_dicts(Path(args.failed_selection_report)),
+            _read_csv_dicts(Path(args.reference_selection_report)),
+            failed_label=args.failed_label,
+            reference_label=args.reference_label,
+            month=args.month,
+        )
+        saved = save_monthly_entry_selection_rotation_comparison(rows, args.output)
+        reference_only_rows = [
+            row for row in rows if row.get("rotation_role") == "reference_only_symbols"
+        ]
+        failed_only_rows = [
+            row for row in rows if row.get("rotation_role") == "failed_only_symbols"
+        ]
+        reference_winner_rows = [
+            row for row in rows if "reference_selected_winner" in str(row.get("diagnostic", ""))
+        ]
+        print(f"entry_selection_rotation_report  {args.output}")
+        print(f"comparison_rows  {saved}")
+        print(f"reference_only_rows  {len(reference_only_rows)}")
+        print(f"failed_only_rows  {len(failed_only_rows)}")
+        print(f"reference_selected_winner_rows  {len(reference_winner_rows)}")
         return 0
 
     if args.command == "monthly-compare-paths":

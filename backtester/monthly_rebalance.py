@@ -1233,6 +1233,37 @@ MONTHLY_ENTRY_CONTRIBUTION_OVERLAP_COMPARISON_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_ENTRY_SELECTION_ROTATION_COMPARISON_COLUMNS = [
+    "symbol",
+    "rotation_role",
+    "failed_label",
+    "reference_label",
+    "month",
+    "failed_selected",
+    "reference_selected",
+    "failed_start_date",
+    "reference_start_date",
+    "failed_decision_as_of_date",
+    "reference_decision_as_of_date",
+    "failed_decision_reason",
+    "reference_decision_reason",
+    "failed_strategy_weight",
+    "reference_strategy_weight",
+    "strategy_weight_delta",
+    "failed_symbol_return_pct",
+    "reference_symbol_return_pct",
+    "symbol_return_delta",
+    "failed_contribution_delta_pct",
+    "reference_contribution_delta_pct",
+    "contribution_delta_gap_pct",
+    "failed_liquidity_rank",
+    "reference_liquidity_rank",
+    "liquidity_rank_delta",
+    "failed_selection_diagnostic",
+    "reference_selection_diagnostic",
+    "diagnostic",
+]
+
 SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "symbol",
     "realized_pnl",
@@ -4217,6 +4248,194 @@ def _entry_contribution_overlap_diagnostics(
     return diagnostics
 
 
+def compare_monthly_entry_selection_rotation_reports(
+    failed_selection_rows: list[dict[str, Any]],
+    reference_selection_rows: list[dict[str, Any]],
+    *,
+    failed_label: str,
+    reference_label: str,
+    month: str,
+) -> list[dict[str, str]]:
+    failed_by_symbol = _selection_rows_by_symbol_for_month(failed_selection_rows, month)
+    reference_by_symbol = _selection_rows_by_symbol_for_month(reference_selection_rows, month)
+    selected_symbols = {
+        symbol
+        for symbol, row in failed_by_symbol.items()
+        if _selection_row_is_selected(row)
+    } | {
+        symbol
+        for symbol, row in reference_by_symbol.items()
+        if _selection_row_is_selected(row)
+    }
+    rows = [
+        _entry_selection_rotation_row(
+            symbol=symbol,
+            failed_row=failed_by_symbol.get(symbol, {}),
+            reference_row=reference_by_symbol.get(symbol, {}),
+            failed_label=failed_label,
+            reference_label=reference_label,
+            month=month,
+        )
+        for symbol in selected_symbols
+    ]
+    return sorted(
+        rows,
+        key=lambda row: (
+            _selection_rotation_role_sort_key(row.get("rotation_role", "")),
+            row.get("symbol", ""),
+        ),
+    )
+
+
+def _selection_rows_by_symbol_for_month(
+    rows: list[dict[str, Any]],
+    month: str,
+) -> dict[str, dict[str, Any]]:
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if str(row.get("month", "")).strip() != month:
+            continue
+        symbol = str(row.get("symbol", "")).strip()
+        if symbol:
+            by_symbol[symbol] = row
+    return by_symbol
+
+
+def _selection_row_is_selected(row: dict[str, Any]) -> bool:
+    return (_float_or_none(row.get("strategy_weight")) or 0.0) > 0
+
+
+def _entry_selection_rotation_row(
+    *,
+    symbol: str,
+    failed_row: dict[str, Any],
+    reference_row: dict[str, Any],
+    failed_label: str,
+    reference_label: str,
+    month: str,
+) -> dict[str, str]:
+    failed_selected = _selection_row_is_selected(failed_row)
+    reference_selected = _selection_row_is_selected(reference_row)
+    rotation_role = _entry_selection_rotation_role(
+        failed_selected=failed_selected,
+        reference_selected=reference_selected,
+    )
+    failed_weight = _float_or_none(failed_row.get("strategy_weight")) or 0.0
+    reference_weight = _float_or_none(reference_row.get("strategy_weight")) or 0.0
+    failed_return = _float_or_none(failed_row.get("symbol_return_pct"))
+    reference_return = _float_or_none(reference_row.get("symbol_return_pct"))
+    failed_contribution = _float_or_none(failed_row.get("contribution_delta_pct")) or 0.0
+    reference_contribution = _float_or_none(reference_row.get("contribution_delta_pct")) or 0.0
+    failed_rank = _float_or_none(failed_row.get("liquidity_rank"))
+    reference_rank = _float_or_none(reference_row.get("liquidity_rank"))
+    weight_delta = reference_weight - failed_weight
+    return_delta = _optional_delta(reference_return, failed_return)
+    contribution_gap = reference_contribution - failed_contribution
+    rank_delta = _optional_delta(reference_rank, failed_rank)
+    diagnostics = _entry_selection_rotation_diagnostics(
+        rotation_role=rotation_role,
+        weight_delta=weight_delta,
+        return_delta=return_delta,
+        contribution_gap=contribution_gap,
+        rank_delta=rank_delta,
+        failed_selection_diagnostic=str(failed_row.get("selection_diagnostic", "")),
+        reference_selection_diagnostic=str(reference_row.get("selection_diagnostic", "")),
+    )
+    return {
+        "symbol": symbol,
+        "rotation_role": rotation_role,
+        "failed_label": failed_label,
+        "reference_label": reference_label,
+        "month": month,
+        "failed_selected": str(failed_selected).lower(),
+        "reference_selected": str(reference_selected).lower(),
+        "failed_start_date": str(failed_row.get("start_date", "")),
+        "reference_start_date": str(reference_row.get("start_date", "")),
+        "failed_decision_as_of_date": str(failed_row.get("decision_as_of_date", "")),
+        "reference_decision_as_of_date": str(reference_row.get("decision_as_of_date", "")),
+        "failed_decision_reason": str(failed_row.get("decision_reason", "")),
+        "reference_decision_reason": str(reference_row.get("decision_reason", "")),
+        "failed_strategy_weight": _format_optional_float(failed_weight),
+        "reference_strategy_weight": _format_optional_float(reference_weight),
+        "strategy_weight_delta": _format_optional_float(weight_delta),
+        "failed_symbol_return_pct": _format_optional_float(failed_return),
+        "reference_symbol_return_pct": _format_optional_float(reference_return),
+        "symbol_return_delta": _format_optional_float(return_delta),
+        "failed_contribution_delta_pct": _format_optional_float(failed_contribution),
+        "reference_contribution_delta_pct": _format_optional_float(reference_contribution),
+        "contribution_delta_gap_pct": _format_optional_float(contribution_gap),
+        "failed_liquidity_rank": _format_optional_float(failed_rank),
+        "reference_liquidity_rank": _format_optional_float(reference_rank),
+        "liquidity_rank_delta": _format_optional_float(rank_delta),
+        "failed_selection_diagnostic": str(failed_row.get("selection_diagnostic", "")),
+        "reference_selection_diagnostic": str(reference_row.get("selection_diagnostic", "")),
+        "diagnostic": ";".join(diagnostics) if diagnostics else "balanced",
+    }
+
+
+def _entry_selection_rotation_role(
+    *,
+    failed_selected: bool,
+    reference_selected: bool,
+) -> str:
+    if failed_selected and reference_selected:
+        return "shared_symbols"
+    if failed_selected:
+        return "failed_only_symbols"
+    if reference_selected:
+        return "reference_only_symbols"
+    return "unselected"
+
+
+def _selection_rotation_role_sort_key(role: str) -> int:
+    order = {
+        "reference_only_symbols": 0,
+        "failed_only_symbols": 1,
+        "shared_symbols": 2,
+    }
+    return order.get(role, 99)
+
+
+def _entry_selection_rotation_diagnostics(
+    *,
+    rotation_role: str,
+    weight_delta: float | None,
+    return_delta: float | None,
+    contribution_gap: float | None,
+    rank_delta: float | None,
+    failed_selection_diagnostic: str,
+    reference_selection_diagnostic: str,
+) -> list[str]:
+    diagnostics: list[str] = []
+    if rotation_role == "reference_only_symbols":
+        diagnostics.append("reference_selected_only")
+    elif rotation_role == "failed_only_symbols":
+        diagnostics.append("failed_selected_only")
+    elif rotation_role == "shared_symbols":
+        diagnostics.append("shared_selection")
+    if contribution_gap is not None and contribution_gap > 0:
+        diagnostics.append("reference_contribution_higher")
+    elif contribution_gap is not None and contribution_gap < 0:
+        diagnostics.append("failed_contribution_higher")
+    if return_delta is not None and return_delta > 0:
+        diagnostics.append("reference_return_higher")
+    elif return_delta is not None and return_delta < 0:
+        diagnostics.append("failed_return_higher")
+    if weight_delta is not None and weight_delta > 0:
+        diagnostics.append("reference_exposure_higher")
+    elif weight_delta is not None and weight_delta < 0:
+        diagnostics.append("failed_exposure_higher")
+    if rank_delta is not None and rank_delta < 0:
+        diagnostics.append("reference_liquidity_rank_better")
+    elif rank_delta is not None and rank_delta > 0:
+        diagnostics.append("failed_liquidity_rank_better")
+    if reference_selection_diagnostic == "selected_proxy_winner":
+        diagnostics.append("reference_selected_winner")
+    if failed_selection_diagnostic == "selected_proxy_loser":
+        diagnostics.append("failed_selected_loser")
+    return diagnostics
+
+
 def _decision_symbol_list(row: dict[str, Any]) -> list[str]:
     symbols = [
         symbol.strip()
@@ -6097,6 +6316,17 @@ def save_monthly_entry_contribution_overlap_comparison(
         rows,
         output_path,
         columns=MONTHLY_ENTRY_CONTRIBUTION_OVERLAP_COMPARISON_COLUMNS,
+    )
+
+
+def save_monthly_entry_selection_rotation_comparison(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_ENTRY_SELECTION_ROTATION_COMPARISON_COLUMNS,
     )
 
 
