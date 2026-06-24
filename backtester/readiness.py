@@ -1844,6 +1844,18 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
         unsafe_detail = f"unsafe_followup_command={unsafe_commands[0]}"
         promotion_blocked.append(unsafe_detail)
         decision_detail += f"; promotion_blocked_decisions={unsafe_detail}"
+    unsafe_experiment_ids = [
+        str(row.get("experiment_id", "")).strip()
+        for row in pending_rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("experiment_id", "")).lower(),
+        )
+    ]
+    if unsafe_experiment_ids:
+        unsafe_detail = f"unsafe_experiment_id={unsafe_experiment_ids[0]}"
+        promotion_blocked.append(unsafe_detail)
+        decision_detail += f"; promotion_blocked_decisions={unsafe_detail}"
     unsafe_risk_notes = [
         str(row.get("risk_note", "")).strip()
         for row in pending_rows
