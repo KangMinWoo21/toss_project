@@ -1036,6 +1036,18 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
     decision_summary = ", ".join(
         f"{decision}={count}" for decision, count in sorted(decision_counts.items()) if decision
     )
+    promotion_blocked = []
+    for decision_row in decisions:
+        decision_value = str(decision_row.get("decision", "")).strip().upper()
+        proof_present, proof_status = candidate_promotion_proof_status(decision_row)
+        if decision_value == "PAPER_REVIEW":
+            promotion_blocked.append(
+                f"{decision_row.get('candidate_label', '')}:PAPER_REVIEW:promotion_blocked"
+            )
+        elif decision_value in {"ACCEPT", "PASS", "APPROVE", "APPROVED"} and not proof_present:
+            promotion_blocked.append(
+                f"{decision_row.get('candidate_label', '')}:{decision_value}:{proof_status}"
+            )
     top_decision = decisions[0] if decisions else {}
     decision_detail = ""
     if decision_summary:
@@ -1045,6 +1057,8 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
             f"candidate_failed_required={top_decision.get('candidate_failed_required', '')}; "
             f"new_failures={top_decision.get('new_failure_names', '')}"
         )
+    if promotion_blocked:
+        decision_detail += f"; promotion_blocked_decisions={'; '.join(promotion_blocked[:5])}"
     pending_detail = f"; completed={len(decisions)}; pending={len(pending_rows)}"
     if pending_rows:
         next_pending = pending_rows[0]
@@ -1068,7 +1082,8 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
         f"{decision_detail}"
         f"{pending_detail}"
     )
-    return ReadinessCheck("validation_candidate_followup", "WARN", detail)
+    status = "BLOCK" if promotion_blocked else "WARN"
+    return ReadinessCheck("validation_candidate_followup", status, detail)
 
 
 def _validation_failure_patterns_check(path: Path) -> ReadinessCheck:

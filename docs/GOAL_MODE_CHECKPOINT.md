@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 monthly risk gate evidence hardening
+Last updated: 2026-06-24 candidate followup promotion gate hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,10 +38,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `1d68efd Require PIT universe for monthly plans`.
+  `8442781 Require monthly risk gate evidence in readiness`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `529` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `530` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=348.33` observed).
+  (`age_hours=348.40` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -70,6 +70,8 @@ appending long command logs or full report lists here.
 - Production readiness now blocks monthly risk reports that omit required
   paper-operation gate evidence rows: PIT universe, market data freshness,
   universe freshness, and universe price coverage.
+- Candidate follow-up readiness now blocks completed follow-up decisions that
+  are still promotion-blocked, including proofless `ACCEPT` and `PAPER_REVIEW`.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.
 - Full historical detail is in
