@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 min_history244 paper stress review
+Last updated: 2026-06-24 candidate stress review builder
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -180,6 +180,9 @@ appending long command logs or full report lists here.
   report `monthly_validation_candidate_stress_review_neutral_loss_guard55_min_history244.csv`:
   stress failed `0/5`, duration failed `0/5`, baseline regressions `0`; still
   blocked from promotion by pending post-cutoff OOS.
+- Candidate stress/duration review now has a tested builder/saver and the
+  ignored `min_history244` review report was regenerated from validation and
+  comparison rows.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch
   wording in `suggested_action` values.
 - Validation failure action readiness now blocks unsafe live/order/trade/fetch

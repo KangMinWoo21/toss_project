@@ -70,6 +70,7 @@ from backtester.monthly_rebalance import (
     run_monthly_validation_sweep_results,
     apply_performance_guard,
     build_deployment_gate,
+    build_monthly_candidate_stress_review,
     build_monthly_performance_audit,
     build_monthly_validation_gate,
     compress_decision_to_buyable_targets,
@@ -101,6 +102,7 @@ from backtester.monthly_rebalance import (
     run_monthly_validation_suite,
     save_rebalance_state,
     save_monthly_performance_audit_rows,
+    save_monthly_candidate_stress_review,
     save_monthly_performance_concentration,
     save_monthly_benchmark_excess,
     save_monthly_benchmark_contributions,
@@ -1408,6 +1410,49 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(count, 1)
         self.assertIn("walk_forward_margin", text)
+
+    def test_build_monthly_candidate_stress_review_summarizes_paper_only_evidence(self):
+        candidate_rows = [
+            {"name": "stress_a", "category": "stress", "deployable": "True", "excess_return_pct": "12", "max_drawdown_pct": "-8"},
+            {"name": "stress_b", "category": "stress", "deployable": "True", "excess_return_pct": "9", "max_drawdown_pct": "-11"},
+            {"name": "duration_3m", "category": "duration", "deployable": "True", "excess_return_pct": "4", "max_drawdown_pct": "-6"},
+        ]
+        delta_rows = [
+            {"name": "stress_a", "excess_return_delta": "1", "max_drawdown_delta": "0.5"},
+            {"name": "stress_b", "excess_return_delta": "0", "max_drawdown_delta": "0"},
+            {"name": "duration_3m", "excess_return_delta": "2", "max_drawdown_delta": "0.2"},
+        ]
+
+        review = build_monthly_candidate_stress_review(candidate_rows, delta_rows)
+
+        self.assertEqual(review[0]["review_scope"], "stress")
+        self.assertEqual(review[0]["scenario_count"], "2")
+        self.assertEqual(review[0]["failed_count"], "0")
+        self.assertEqual(review[0]["min_excess_return_pct"], "9.0000")
+        self.assertEqual(review[0]["worst_drawdown_pct"], "-11.0000")
+        self.assertEqual(review[0]["baseline_regression_count"], "0")
+        self.assertEqual(review[0]["review_status"], "PASS_PAPER_ONLY")
+        self.assertEqual(review[1]["review_scope"], "duration")
+
+    def test_save_monthly_candidate_stress_review(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "review.csv"
+            count = save_monthly_candidate_stress_review(
+                [
+                    {
+                        "review_scope": "stress",
+                        "scenario_count": "1",
+                        "failed_count": "0",
+                        "review_status": "PASS_PAPER_ONLY",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(count, 1)
+        self.assertIn("review_scope", text)
+        self.assertIn("PASS_PAPER_ONLY", text)
 
     def test_performance_concentration_warns_when_one_month_dominates(self):
         result = MonthlyBacktestResult(

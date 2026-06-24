@@ -279,6 +279,18 @@ STATE_COLUMNS = ["last_rebalance_date", "signal_date", "mode", "selected_preset"
 
 RISK_COLUMNS = ["name", "status", "detail"]
 PERFORMANCE_AUDIT_COLUMNS = ["name", "status", "detail"]
+CANDIDATE_STRESS_REVIEW_COLUMNS = [
+    "review_scope",
+    "scenario_count",
+    "failed_count",
+    "failed_names",
+    "min_excess_return_pct",
+    "worst_drawdown_pct",
+    "baseline_regression_count",
+    "baseline_regression_names",
+    "review_status",
+    "promotion_note",
+]
 
 VALIDATION_FAILURE_COLUMNS = [
     "name",
@@ -6724,6 +6736,72 @@ def save_monthly_performance_audit_rows(rows: list[dict[str, str]], output_path:
         writer = csv.DictWriter(f, fieldnames=PERFORMANCE_AUDIT_COLUMNS)
         writer.writeheader()
         writer.writerows({column: row.get(column, "") for column in PERFORMANCE_AUDIT_COLUMNS} for row in rows)
+    return len(rows)
+
+
+def build_monthly_candidate_stress_review(
+    candidate_rows: list[dict[str, Any]],
+    delta_rows: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    def fmt(value: float | None) -> str:
+        return "" if value is None else f"{value:.4f}"
+
+    def scenario_rows(scope: str) -> list[dict[str, Any]]:
+        return [row for row in candidate_rows if str(row.get("category", "")).strip() == scope]
+
+    def delta_scope_rows(scope: str) -> list[dict[str, Any]]:
+        if scope == "stress":
+            return [row for row in delta_rows if str(row.get("name", "")).startswith("stress_")]
+        return [
+            row
+            for row in delta_rows
+            if str(row.get("name", "")).startswith("duration_") or str(row.get("name", "")) == "full_period"
+        ]
+
+    review_rows: list[dict[str, str]] = []
+    for scope in ("stress", "duration"):
+        rows = scenario_rows(scope)
+        failed_names = [str(row.get("name", "")) for row in rows if not _parse_bool(row.get("deployable", False))]
+        excess_values = [
+            value
+            for value in (_float_or_none(row.get("excess_return_pct")) for row in rows)
+            if value is not None
+        ]
+        drawdown_values = [
+            value
+            for value in (_float_or_none(row.get("max_drawdown_pct")) for row in rows)
+            if value is not None
+        ]
+        regression_names = []
+        for row in delta_scope_rows(scope):
+            excess_delta = _float_or_none(row.get("excess_return_delta")) or 0.0
+            drawdown_delta = _float_or_none(row.get("max_drawdown_delta")) or 0.0
+            if excess_delta < 0.0 or drawdown_delta < 0.0:
+                regression_names.append(str(row.get("name", "")))
+        review_rows.append(
+            {
+                "review_scope": scope,
+                "scenario_count": str(len(rows)),
+                "failed_count": str(len(failed_names)),
+                "failed_names": ";".join(failed_names),
+                "min_excess_return_pct": fmt(min(excess_values) if excess_values else None),
+                "worst_drawdown_pct": fmt(min(drawdown_values) if drawdown_values else None),
+                "baseline_regression_count": str(len(regression_names)),
+                "baseline_regression_names": ";".join(regression_names),
+                "review_status": "PASS_PAPER_ONLY" if not failed_names and not regression_names else "REVIEW_PAPER_ONLY",
+                "promotion_note": "post_cutoff_oos_pending",
+            }
+        )
+    return review_rows
+
+
+def save_monthly_candidate_stress_review(rows: list[dict[str, str]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=CANDIDATE_STRESS_REVIEW_COLUMNS)
+        writer.writeheader()
+        writer.writerows({column: row.get(column, "") for column in CANDIDATE_STRESS_REVIEW_COLUMNS} for row in rows)
     return len(rows)
 
 
