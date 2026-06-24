@@ -1145,8 +1145,8 @@ class ProductionReadinessTests(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             followup = Path(temp_dir) / "monthly_validation_candidate_followup.csv"
             followup.write_text(
-                "priority_rank,experiment_id,status,adoption_status,failed_delta,candidate_validation_args,candidate_scenario_output,candidate_gate_output,comparison_output,delta_output,decision_output,validation_command,comparison_command,risk_note\n"
-                "1,weak_cash_10_position_stop_12,IMPROVED,FULL_VALIDATION_REQUIRED,-2,--cash-buffer-weight 0.1,candidate.csv,gate.csv,comparison.csv,delta.csv,decision.csv,python -m backtester monthly-validate --cash-buffer-weight 0.1,python -m backtester monthly-compare-validation,Plan only\n",
+                "priority_rank,experiment_id,status,adoption_status,failed_delta,candidate_validation_args,candidate_scenario_output,candidate_gate_output,comparison_output,delta_output,decision_output,candidate_stress_review_output,validation_command,comparison_command,risk_note\n"
+                "1,weak_cash_10_position_stop_12,IMPROVED,FULL_VALIDATION_REQUIRED,-2,--cash-buffer-weight 0.1,candidate.csv,gate.csv,comparison.csv,delta.csv,decision.csv,stress_review.csv,python -m backtester monthly-validate --cash-buffer-weight 0.1,python -m backtester monthly-compare-validation --stress-review-output stress_review.csv,Plan only\n",
                 encoding="utf-8",
             )
 
@@ -1273,6 +1273,22 @@ class ProductionReadinessTests(unittest.TestCase):
         followup_checks = [check for check in checks if check.name == "validation_candidate_followup"]
         self.assertEqual(followup_checks[0].status, "BLOCK")
         self.assertIn("missing_stress_review_output_command", followup_checks[0].detail)
+
+    def test_validation_candidate_followup_blocks_empty_stress_review_output(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            followup = root / "monthly_validation_candidate_followup.csv"
+            followup.write_text(
+                "priority_rank,experiment_id,status,adoption_status,failed_delta,candidate_validation_args,candidate_scenario_output,candidate_gate_output,comparison_output,delta_output,decision_output,candidate_stress_review_output,validation_command,comparison_command,risk_note\n"
+                "1,weak_cash_10_position_stop_12,IMPROVED,FULL_VALIDATION_REQUIRED,-1,--candidate-flag,candidate.csv,gate.csv,comparison.csv,delta.csv,missing_decision.csv,,python -m backtester monthly-validate,python -m backtester monthly-compare-validation --stress-review-output stress_review.csv,Plan only\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_candidate_followup_path=followup)
+
+        followup_checks = [check for check in checks if check.name == "validation_candidate_followup"]
+        self.assertEqual(followup_checks[0].status, "BLOCK")
+        self.assertIn("missing_stress_review_output_path", followup_checks[0].detail)
 
     def test_validation_candidate_followup_blocks_unsafe_live_experiment_id(self):
         with TemporaryDirectory() as temp_dir:
