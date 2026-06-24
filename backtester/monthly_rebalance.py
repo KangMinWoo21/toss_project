@@ -2251,6 +2251,16 @@ def mark_order_plan_execution(
     return marked
 
 
+def candidate_decision_required_for_report_paths(paths: list[str | Path | None]) -> bool:
+    for raw_path in paths:
+        if raw_path is None:
+            continue
+        name = Path(str(raw_path)).name.lower()
+        if "candidate" in name:
+            return True
+    return False
+
+
 def validate_candidate_decision_risk(
     rows: list[dict[str, Any]] | None,
     *,

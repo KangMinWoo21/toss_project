@@ -161,6 +161,7 @@ from backtester.monthly_rebalance import (
     filter_symbols_by_event_score,
     target_weights_for_symbols,
     validate_candidate_decision_risk,
+    candidate_decision_required_for_report_paths,
     validate_report_freshness,
     validate_pre_trade_risk,
 )
@@ -844,6 +845,26 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIsNotNone(check)
         assert check is not None
         self.assertEqual(check.status, "PASS")
+
+    def test_candidate_decision_required_for_candidate_reports(self):
+        self.assertTrue(
+            candidate_decision_required_for_report_paths(
+                [
+                    "data/reports/monthly_deployment_gate_candidate_proxy_guard.csv",
+                    "data/reports/monthly_performance_audit.csv",
+                ]
+            )
+        )
+
+    def test_candidate_decision_not_required_for_canonical_reports(self):
+        self.assertFalse(
+            candidate_decision_required_for_report_paths(
+                [
+                    "data/reports/monthly_deployment_gate.csv",
+                    "data/reports/monthly_performance_audit.csv",
+                ]
+            )
+        )
 
     def test_report_freshness_blocks_stale_validation_reports(self):
         with TemporaryDirectory() as temp_dir:

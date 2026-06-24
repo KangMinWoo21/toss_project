@@ -92,6 +92,7 @@ from .monthly_rebalance import (
     build_order_plan,
     build_monthly_validation_gate,
     build_universe_filter_report,
+    candidate_decision_required_for_report_paths,
     compare_monthly_attribution_reports,
     compare_monthly_benchmark_selection_summary_reports,
     compare_monthly_benchmark_selection_window_reports,
@@ -3213,6 +3214,11 @@ def main() -> int:
         if args.candidate_decision_report:
             candidate_decision_path = Path(args.candidate_decision_report)
             candidate_decision_rows = _read_csv_dicts(candidate_decision_path) if candidate_decision_path.exists() else []
+        require_candidate_decision = (
+            args.require_candidate_decision_report
+            or bool(args.candidate_decision_report)
+            or candidate_decision_required_for_report_paths([args.deployment_gate_file, args.performance_report])
+        )
         decision = apply_performance_guard(decision, performance_guard)
         decision = compress_decision_to_buyable_targets(
             decision,
@@ -3259,7 +3265,7 @@ def main() -> int:
             require_performance_guard=args.require_performance_report,
             candidate_decision_rows=candidate_decision_rows,
             candidate_decision_source=args.candidate_decision_report or "",
-            require_candidate_decision=bool(args.candidate_decision_report) or args.require_candidate_decision_report,
+            require_candidate_decision=require_candidate_decision,
             day_start_equity=args.day_start_equity,
             current_equity=portfolio_value,
         )
