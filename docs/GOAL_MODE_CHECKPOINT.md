@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 candidate promotion proof hardening
+Last updated: 2026-06-24 monthly risk gate evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,10 +38,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `925f9e1 Require post-cutoff proof for candidate promotion`.
+  `1d68efd Require PIT universe for monthly plans`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `528` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `529` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=348.23` observed).
+  (`age_hours=348.33` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -67,6 +67,9 @@ appending long command logs or full report lists here.
   `universe_price_coverage` before strategy selection.
 - Monthly-plan now requires a point-in-time universe before paper-operation
   planning, so universe freshness/coverage gates cannot be bypassed by omission.
+- Production readiness now blocks monthly risk reports that omit required
+  paper-operation gate evidence rows: PIT universe, market data freshness,
+  universe freshness, and universe price coverage.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.
 - Full historical detail is in

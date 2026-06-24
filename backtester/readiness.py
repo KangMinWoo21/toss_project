@@ -11,6 +11,12 @@ from .data_quality import validate_dataset_freshness
 
 
 READINESS_COLUMNS = ["name", "status", "detail"]
+REQUIRED_RISK_REPORT_CHECKS = {
+    "point_in_time_universe",
+    "market_data_freshness",
+    "universe_freshness",
+    "universe_price_coverage",
+}
 
 
 @dataclass(frozen=True)
@@ -1179,6 +1185,14 @@ def _risk_report_check(path: Path) -> ReadinessCheck:
     ]
     if warned:
         return ReadinessCheck("risk_report", "WARN", "; ".join(warned[:5]))
+    names = {str(row.get("name", "")).strip() for row in rows}
+    missing = sorted(REQUIRED_RISK_REPORT_CHECKS - names)
+    if missing:
+        return ReadinessCheck(
+            "risk_report",
+            "BLOCK",
+            f"missing_required_checks={','.join(missing)}",
+        )
     return ReadinessCheck("risk_report", "PASS", f"{len(rows)} risk checks passed")
 
 

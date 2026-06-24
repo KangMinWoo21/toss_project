@@ -217,6 +217,24 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertEqual(checks[0].name, "risk_report")
         self.assertIn("deployment_gate", checks[0].detail)
 
+    def test_risk_report_missing_data_gate_rows_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            risk = Path(temp_dir) / "risk.csv"
+            risk.write_text(
+                "name,status,detail\n"
+                "kill_switch,PASS,not present\n"
+                "orders,PASS,valid\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(risk_report_path=risk)
+
+        self.assertEqual(readiness_status(checks), "BLOCK")
+        self.assertEqual(checks[0].name, "risk_report")
+        self.assertIn("missing_required_checks", checks[0].detail)
+        self.assertIn("point_in_time_universe", checks[0].detail)
+        self.assertIn("market_data_freshness", checks[0].detail)
+
     def test_performance_report_warning_warns_readiness(self):
         with TemporaryDirectory() as temp_dir:
             performance = Path(temp_dir) / "performance.csv"
