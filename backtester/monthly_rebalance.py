@@ -2269,7 +2269,12 @@ def validate_candidate_decision_risk(
 ) -> RiskCheck | None:
     if rows is None:
         if require:
-            return RiskCheck("candidate_decision", "BLOCK", f"candidate decision report is required but missing: {source}")
+            missing_source = source or "candidate artifacts detected"
+            return RiskCheck(
+                "candidate_decision",
+                "BLOCK",
+                f"candidate decision report is required but missing: {missing_source}",
+            )
         return None
     if not rows:
         return RiskCheck("candidate_decision", "BLOCK", f"empty candidate decision report: {source}")

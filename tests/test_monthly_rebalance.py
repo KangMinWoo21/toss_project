@@ -809,6 +809,14 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(check.name, "candidate_decision")
         self.assertIn("PAPER_REVIEW", check.detail)
 
+    def test_candidate_decision_risk_explains_auto_required_missing_report(self):
+        check = validate_candidate_decision_risk(None, source="", require=True)
+
+        self.assertIsNotNone(check)
+        assert check is not None
+        self.assertEqual(check.status, "BLOCK")
+        self.assertIn("candidate artifacts detected", check.detail)
+
     def test_candidate_decision_risk_requires_acceptance_proof(self):
         check = validate_candidate_decision_risk(
             [

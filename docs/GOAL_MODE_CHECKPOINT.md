@@ -43,7 +43,7 @@ appending long command logs or full report lists here.
   `Record min-history 244 validation` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `521` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `522` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -103,7 +103,7 @@ Verification:
   `risk_status_BLOCK` for all `5` generated orders.
 - Candidate-named deployment/performance reports now require a candidate
   decision report automatically; omitting it keeps monthly-plan
-  `risk_status BLOCK`.
+  `risk_status BLOCK` with detail `candidate artifacts detected`.
 
 Residual evidence:
 
