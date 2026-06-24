@@ -34,15 +34,16 @@ def candidate_promotion_proof_status(
     if oos_end_date <= baseline_date:
         return False, "post_cutoff_oos_missing"
     oos_start = _post_cutoff_oos_start_date(row, reasons)
-    if oos_start:
-        try:
-            oos_start_date = date.fromisoformat(oos_start)
-        except ValueError:
-            return False, "post_cutoff_oos_start_invalid"
-        if oos_start_date <= baseline_date:
-            return False, "post_cutoff_oos_start_not_post_cutoff"
-        if oos_start_date > oos_end_date:
-            return False, "post_cutoff_oos_date_order_invalid"
+    if not oos_start:
+        return False, "post_cutoff_oos_start_missing"
+    try:
+        oos_start_date = date.fromisoformat(oos_start)
+    except ValueError:
+        return False, "post_cutoff_oos_start_invalid"
+    if oos_start_date <= baseline_date:
+        return False, "post_cutoff_oos_start_not_post_cutoff"
+    if oos_start_date > oos_end_date:
+        return False, "post_cutoff_oos_date_order_invalid"
     return True, "not_blocked_by_decision"
 
 
