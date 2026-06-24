@@ -3138,6 +3138,23 @@ def main() -> int:
             if args.point_in_time_universe
             else None
         )
+        universe_freshness_check = _universe_freshness_risk_check(
+            point_in_time_universe,
+            as_of_date=args.as_of,
+            max_stale_days=args.max_data_stale_days,
+        )
+        if universe_freshness_check is not None and universe_freshness_check.status == "BLOCK":
+            risk_checks = [universe_freshness_check]
+            save_order_plan([], args.output)
+            save_risk_report(risk_checks, args.risk_output)
+            print("Monthly rebalance decision")
+            print(f"as_of  {args.as_of}")
+            print("orders  0")
+            print("risk_status  BLOCK")
+            _print_data_quality_exclusions(data_quality_exclusions)
+            print(f"order_plan  {args.output}")
+            print(f"risk_report  {args.risk_output}")
+            return risk_exit_code("BLOCK")
         _save_universe_filter_report_if_needed(
             symbol_candles,
             point_in_time_universe,
@@ -3302,6 +3319,8 @@ def main() -> int:
         )
         if market_data_freshness_check is not None:
             risk_checks.append(market_data_freshness_check)
+        if universe_freshness_check is not None:
+            risk_checks.append(universe_freshness_check)
         risk_checks.extend(_data_quality_exclusion_risk_checks(data_quality_exclusions))
         gate_status = risk_status(risk_checks)
         orders = mark_order_plan_execution(
@@ -4390,6 +4409,45 @@ def _market_data_freshness_risk_check(
         (
             f"latest={latest}; stale_days={max_stale}; max_stale_days={max_stale_days}; "
             f"symbols={len(latest_by_symbol)}; stale_symbols={len(stale_symbols)}; sample={sample}"
+        ),
+    )
+
+
+def _universe_freshness_risk_check(
+    point_in_time_universe: dict[str, set[str]] | None,
+    *,
+    as_of_date: str,
+    max_stale_days: int,
+) -> RiskCheck | None:
+    if point_in_time_universe is None or max_stale_days < 0:
+        return None
+    try:
+        as_of = date.fromisoformat(as_of_date)
+    except ValueError:
+        return RiskCheck("universe_freshness", "BLOCK", f"invalid as_of_date: {as_of_date}")
+    snapshots: list[date] = []
+    for raw_date in point_in_time_universe:
+        try:
+            snapshot = date.fromisoformat(str(raw_date))
+        except ValueError:
+            continue
+        if snapshot <= as_of:
+            snapshots.append(snapshot)
+    if not snapshots:
+        return RiskCheck(
+            "universe_freshness",
+            "BLOCK",
+            f"no point-in-time universe snapshot on or before as_of={as_of_date}",
+        )
+    latest_snapshot = max(snapshots)
+    stale_days = max(0, (as_of - latest_snapshot).days)
+    status = "BLOCK" if stale_days > max_stale_days else "PASS"
+    return RiskCheck(
+        "universe_freshness",
+        status,
+        (
+            f"snapshot={latest_snapshot.isoformat()}; stale_days={stale_days}; "
+            f"max_stale_days={max_stale_days}; snapshots={len(snapshots)}"
         ),
     )
 

@@ -41,7 +41,7 @@ appending long command logs or full report lists here.
   `925f9e1 Require post-cutoff proof for candidate promotion`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `525` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `526` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=348.02` observed).
+  (`age_hours=348.10` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -61,6 +61,8 @@ appending long command logs or full report lists here.
   `post_cutoff_oos_end_date` fields for that proof.
 - `84f0999`: `monthly-plan --max-data-stale-days` blocks stale included OHLCV
   before strategy selection or paper order planning.
+- Monthly-plan now also blocks stale point-in-time universe snapshots with
+  `universe_freshness` before strategy selection.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.
 - Full historical detail is in
