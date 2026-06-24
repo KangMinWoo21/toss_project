@@ -1490,6 +1490,20 @@ def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
             "BLOCK",
             f"unsafe_suggested_action={unsafe_suggested_actions[0]}",
         )
+    unsafe_candidate_args = [
+        str(row.get("candidate_validation_args", "")).strip()
+        for row in rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("candidate_validation_args", "")).lower(),
+        )
+    ]
+    if unsafe_candidate_args:
+        return ReadinessCheck(
+            "validation_sweep_results",
+            "BLOCK",
+            f"unsafe_candidate_validation_args={unsafe_candidate_args[0]}",
+        )
     unsafe_adoption_requirements = [
         str(row.get("adoption_requirements", "")).strip()
         for row in rows
