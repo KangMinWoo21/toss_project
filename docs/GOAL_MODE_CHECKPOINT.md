@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-24 January path subperiod comparison
+Last updated: 2026-06-24 January contribution overlap comparison
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -40,38 +40,39 @@ appending long command logs or full report lists here.
 - Previous pushed checkpoint/context commit before this loop:
   `9a96e5c Compact goal mode prompt context`.
 - Latest completed local goal commit:
-  `Add January path subperiod comparison` (current HEAD after this loop).
+  `Add January contribution overlap comparison` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `502` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `505` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=345.27` observed).
+  (`age_hours=345.52` observed).
 - Production remains not live-ready.
 
 ## Latest Loop
 
-Added a report-only January path subperiod comparison to split the
-`2025-01-02..2025-01-31` gap around the shared `2025-01-14` entry date between
-the failed `regime_sideways` row and passing `walk_forward_001`.
+Added a report-only January target-contribution overlap comparison to separate
+shared selected-symbol contribution from six-symbol rotation between the failed
+`regime_sideways` row and passing `walk_forward_001`.
 
 Changed behavior:
 
-- New `monthly-compare-entry-path-subperiod` reads failed/reference path
-  attribution CSVs and writes `failed_pre_split`, `failed_post_split`, and
-  `reference_post_split` rows with return, average exposure, end holdings,
-  deltas versus reference post-split, symbol rotation, and diagnostics.
+- New `monthly-compare-entry-contribution-overlap` reads failed/reference
+  benchmark-contribution CSVs for one month and writes `selected_total`,
+  `shared_symbols`, `rotation_symbols`, `failed_only_symbols`, and
+  `reference_only_symbols` rows with target weight, selected contribution,
+  contribution delta/share, symbol lists, and diagnostics.
 - No strategy default, validation gate, order, live behavior, Toss API, or
   baseline behavior changed.
 - Generated:
-  `data/reports/regime_sideways_vs_walk_forward_001_entry_path_subperiod_2025_01.csv`.
+  `data/reports/regime_sideways_vs_walk_forward_001_entry_contribution_overlap_2025_01.csv`.
 
 Verification:
 
-- RED: focused path-subperiod tests failed on missing analyzer/save/CLI.
+- RED: focused overlap tests failed on missing analyzer/save/CLI.
 - GREEN: focused analyzer/save/CLI tests PASS (`3` tests).
-- Final verification: full `unittest` PASS (`502` tests), compile PASS,
+- Final verification: full `unittest` PASS (`505` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
 
@@ -81,7 +82,7 @@ Residual evidence:
   reference monthly excess higher by `+10.2896`, target exposure higher by
   `+0.7425`, selected-proxy delta higher by `+7.4382`, and shared symbols
   `6/12`.
-- New path split shows the failed pre-split `2025-01-02..2025-01-13` return was
+- Prior path split shows the failed pre-split `2025-01-02..2025-01-13` return was
   `+1.6148`, average exposure `0.303`, and still `-6.1225` versus the
   reference post-split return.
 - On shared dates `2025-01-14..2025-01-31`, failed post-split return was only
@@ -90,8 +91,17 @@ Residual evidence:
 - Failed post-split delta versus reference post-split: return `-7.3175`,
   exposure `-0.5687`, shared symbols `6/12`; diagnostic:
   `reference_post_outperformed;reference_exposure_higher;symbol_rotation`.
-- Interpretation: missed `2025-01-02..2025-01-13` timing is not the main cause;
-  the shared-date gap is dominated by exposure scale and six-symbol rotation.
+- New target-contribution overlap: selected-total contribution gap `+7.4578`;
+  shared symbols contribute `-0.0520` of the gap, while rotation symbols
+  contribute `+7.5098` (`100.6973%` of total gap).
+- Shared symbols:
+  `000270;000660;005380;042660;068270;373220`.
+- Rotation symbols: failed-only
+  `005490;010130;051910;055550;086790;105560`; reference-only
+  `000100;007660;011790;196170;277810;328130`.
+- Interpretation: missed early-January timing and shared-name exposure scale
+  are not the main target-contribution cause; the January target contribution
+  gap is dominated by the six-symbol rotation.
 
 Prior `regime_sideways` path-summary evidence versus
 `proxy_guard_exit_short_minus5`:
@@ -220,11 +230,12 @@ Pick one narrow loop:
   is not unique to the failed scenario. Window comparison now shows the blocker
   is in `2025-01-02..2025-04-17`, while the `2024-10..2024-12` pre-window has
   positive excess. January path subperiod comparison shows missed early-January
-  timing is not the main cause; the shared `2025-01-14..2025-01-31` dates still
-  trail reference by `-7.3175` with much lower exposure and six-symbol rotation.
-  Next paper-only work should isolate strong-breadth exposure scale versus
-  symbol rotation before testing any rule change. Avoid broad cash, broad stop,
-  or broad proxy cap reuse.
+  timing is not the main cause, and contribution-overlap comparison shows the
+  selected-target gap is dominated by six-symbol rotation rather than shared
+  symbols. Next paper-only work should explain why the reference-only names
+  `000100;007660;011790;196170;277810;328130` beat the failed-only names before
+  testing any rule change. Avoid broad cash, broad stop, or broad proxy cap
+  reuse.
 - `walk_forward_003`: now passes under the best candidate. Preserve train-gate
   discipline; do not loosen rejected train windows.
 

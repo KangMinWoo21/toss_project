@@ -95,6 +95,7 @@ from .monthly_rebalance import (
     compare_monthly_attribution_reports,
     compare_monthly_benchmark_selection_summary_reports,
     compare_monthly_benchmark_selection_window_reports,
+    compare_monthly_entry_contribution_overlap_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_entry_month_reports,
     compare_monthly_entry_path_subperiod_reports,
@@ -137,6 +138,7 @@ from .monthly_rebalance import (
     save_monthly_benchmark_selection_window_comparison,
     save_monthly_decision_attribution,
     save_monthly_decision_attribution_comparison,
+    save_monthly_entry_contribution_overlap_comparison,
     save_monthly_entry_month_comparison,
     save_monthly_entry_path_subperiod_comparison,
     save_monthly_direct_alpha_holding_path,
@@ -1288,6 +1290,20 @@ def main() -> int:
         default="data/reports/monthly_entry_path_subperiod_comparison.csv",
     )
 
+    monthly_compare_entry_contribution_parser = subparsers.add_parser(
+        "monthly-compare-entry-contribution-overlap",
+        help="Compare selected-symbol contribution overlap for one failed/reference entry month",
+    )
+    monthly_compare_entry_contribution_parser.add_argument("--failed-contribution-report", required=True)
+    monthly_compare_entry_contribution_parser.add_argument("--reference-contribution-report", required=True)
+    monthly_compare_entry_contribution_parser.add_argument("--failed-label", default="failed")
+    monthly_compare_entry_contribution_parser.add_argument("--reference-label", default="reference")
+    monthly_compare_entry_contribution_parser.add_argument("--month", required=True)
+    monthly_compare_entry_contribution_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_entry_contribution_overlap_comparison.csv",
+    )
+
     monthly_compare_paths_parser = subparsers.add_parser(
         "monthly-compare-paths",
         help="Compare baseline and candidate daily path attribution CSV reports",
@@ -2026,6 +2042,27 @@ def main() -> int:
         print(f"entry_path_subperiod_report  {args.output}")
         print(f"comparison_rows  {saved}")
         print(f"reference_post_outperformance_rows  {len(reference_outperformance_rows)}")
+        return 0
+
+    if args.command == "monthly-compare-entry-contribution-overlap":
+        rows = compare_monthly_entry_contribution_overlap_reports(
+            _read_csv_dicts(Path(args.failed_contribution_report)),
+            _read_csv_dicts(Path(args.reference_contribution_report)),
+            failed_label=args.failed_label,
+            reference_label=args.reference_label,
+            month=args.month,
+        )
+        saved = save_monthly_entry_contribution_overlap_comparison(rows, args.output)
+        rotation_gap_dominant_rows = [
+            row for row in rows if "rotation_gap_dominant" in str(row.get("diagnostic", ""))
+        ]
+        shared_gap_dominant_rows = [
+            row for row in rows if "shared_gap_dominant" in str(row.get("diagnostic", ""))
+        ]
+        print(f"entry_contribution_overlap_report  {args.output}")
+        print(f"comparison_rows  {saved}")
+        print(f"rotation_gap_dominant_rows  {len(rotation_gap_dominant_rows)}")
+        print(f"shared_gap_dominant_rows  {len(shared_gap_dominant_rows)}")
         return 0
 
     if args.command == "monthly-compare-paths":

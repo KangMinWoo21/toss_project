@@ -1209,6 +1209,30 @@ MONTHLY_ENTRY_PATH_SUBPERIOD_COMPARISON_COLUMNS = [
     "diagnostic",
 ]
 
+MONTHLY_ENTRY_CONTRIBUTION_OVERLAP_COMPARISON_COLUMNS = [
+    "bucket",
+    "failed_label",
+    "reference_label",
+    "month",
+    "failed_start_date",
+    "reference_start_date",
+    "failed_end_date",
+    "reference_end_date",
+    "failed_symbol_count",
+    "reference_symbol_count",
+    "shared_symbol_count",
+    "failed_symbols",
+    "reference_symbols",
+    "failed_strategy_weight",
+    "reference_strategy_weight",
+    "strategy_weight_delta",
+    "failed_strategy_contribution_pct",
+    "reference_strategy_contribution_pct",
+    "contribution_delta_pct",
+    "contribution_gap_share_pct",
+    "diagnostic",
+]
+
 SYMBOL_REALIZED_PNL_ATTRIBUTION_COLUMNS = [
     "symbol",
     "realized_pnl",
@@ -3972,6 +3996,227 @@ def _entry_path_subperiod_diagnostics(
     return diagnostics
 
 
+def compare_monthly_entry_contribution_overlap_reports(
+    failed_contribution_rows: list[dict[str, Any]],
+    reference_contribution_rows: list[dict[str, Any]],
+    *,
+    failed_label: str,
+    reference_label: str,
+    month: str,
+) -> list[dict[str, str]]:
+    failed_selected = _selected_contribution_rows_for_month(failed_contribution_rows, month)
+    reference_selected = _selected_contribution_rows_for_month(reference_contribution_rows, month)
+    failed_symbols = set(failed_selected)
+    reference_symbols = set(reference_selected)
+    shared_symbols = failed_symbols & reference_symbols
+    failed_only_symbols = failed_symbols - reference_symbols
+    reference_only_symbols = reference_symbols - failed_symbols
+    total_gap = _contribution_delta(failed_selected.values(), reference_selected.values())
+    shared_gap = _contribution_delta(
+        (failed_selected[symbol] for symbol in shared_symbols),
+        (reference_selected[symbol] for symbol in shared_symbols),
+    )
+    rotation_gap = _contribution_delta(
+        (failed_selected[symbol] for symbol in failed_only_symbols),
+        (reference_selected[symbol] for symbol in reference_only_symbols),
+    )
+    return [
+        _entry_contribution_overlap_row(
+            bucket="selected_total",
+            failed_label=failed_label,
+            reference_label=reference_label,
+            month=month,
+            failed_rows=failed_selected.values(),
+            reference_rows=reference_selected.values(),
+            total_gap=total_gap,
+            shared_gap=shared_gap,
+            rotation_gap=rotation_gap,
+        ),
+        _entry_contribution_overlap_row(
+            bucket="shared_symbols",
+            failed_label=failed_label,
+            reference_label=reference_label,
+            month=month,
+            failed_rows=(failed_selected[symbol] for symbol in shared_symbols),
+            reference_rows=(reference_selected[symbol] for symbol in shared_symbols),
+            total_gap=total_gap,
+            shared_gap=shared_gap,
+            rotation_gap=rotation_gap,
+        ),
+        _entry_contribution_overlap_row(
+            bucket="rotation_symbols",
+            failed_label=failed_label,
+            reference_label=reference_label,
+            month=month,
+            failed_rows=(failed_selected[symbol] for symbol in failed_only_symbols),
+            reference_rows=(reference_selected[symbol] for symbol in reference_only_symbols),
+            total_gap=total_gap,
+            shared_gap=shared_gap,
+            rotation_gap=rotation_gap,
+        ),
+        _entry_contribution_overlap_row(
+            bucket="failed_only_symbols",
+            failed_label=failed_label,
+            reference_label=reference_label,
+            month=month,
+            failed_rows=(failed_selected[symbol] for symbol in failed_only_symbols),
+            reference_rows=(),
+            total_gap=total_gap,
+            shared_gap=shared_gap,
+            rotation_gap=rotation_gap,
+        ),
+        _entry_contribution_overlap_row(
+            bucket="reference_only_symbols",
+            failed_label=failed_label,
+            reference_label=reference_label,
+            month=month,
+            failed_rows=(),
+            reference_rows=(reference_selected[symbol] for symbol in reference_only_symbols),
+            total_gap=total_gap,
+            shared_gap=shared_gap,
+            rotation_gap=rotation_gap,
+        ),
+    ]
+
+
+def _selected_contribution_rows_for_month(
+    rows: list[dict[str, Any]],
+    month: str,
+) -> dict[str, dict[str, Any]]:
+    selected: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if str(row.get("month", "")).strip() != month:
+            continue
+        symbol = str(row.get("symbol", "")).strip()
+        if not symbol:
+            continue
+        strategy_weight = _float_or_none(row.get("strategy_weight")) or 0.0
+        if strategy_weight <= 0:
+            continue
+        selected[symbol] = row
+    return selected
+
+
+def _entry_contribution_overlap_row(
+    *,
+    bucket: str,
+    failed_label: str,
+    reference_label: str,
+    month: str,
+    failed_rows: Any,
+    reference_rows: Any,
+    total_gap: float | None,
+    shared_gap: float | None,
+    rotation_gap: float | None,
+) -> dict[str, str]:
+    failed_list = sorted(list(failed_rows), key=lambda row: str(row.get("symbol", "")))
+    reference_list = sorted(list(reference_rows), key=lambda row: str(row.get("symbol", "")))
+    failed_symbols = [str(row.get("symbol", "")).strip() for row in failed_list]
+    reference_symbols = [str(row.get("symbol", "")).strip() for row in reference_list]
+    failed_weight = _sum_optional_values(row.get("strategy_weight") for row in failed_list)
+    reference_weight = _sum_optional_values(row.get("strategy_weight") for row in reference_list)
+    failed_contribution = _sum_optional_values(row.get("strategy_contribution_pct") for row in failed_list)
+    reference_contribution = _sum_optional_values(row.get("strategy_contribution_pct") for row in reference_list)
+    weight_delta = _optional_delta(reference_weight, failed_weight)
+    contribution_delta = _optional_delta(reference_contribution, failed_contribution)
+    gap_share = (
+        contribution_delta / total_gap * 100.0
+        if contribution_delta is not None and total_gap not in (None, 0)
+        else None
+    )
+    diagnostics = _entry_contribution_overlap_diagnostics(
+        bucket=bucket,
+        weight_delta=weight_delta,
+        contribution_delta=contribution_delta,
+        shared_gap=shared_gap,
+        rotation_gap=rotation_gap,
+        failed_symbols=failed_symbols,
+        reference_symbols=reference_symbols,
+    )
+    return {
+        "bucket": bucket,
+        "failed_label": failed_label,
+        "reference_label": reference_label,
+        "month": month,
+        "failed_start_date": _first_nonempty_value(failed_list, "start_date"),
+        "reference_start_date": _first_nonempty_value(reference_list, "start_date"),
+        "failed_end_date": _first_nonempty_value(failed_list, "end_date"),
+        "reference_end_date": _first_nonempty_value(reference_list, "end_date"),
+        "failed_symbol_count": str(len(failed_symbols)),
+        "reference_symbol_count": str(len(reference_symbols)),
+        "shared_symbol_count": str(len(set(failed_symbols) & set(reference_symbols))),
+        "failed_symbols": ";".join(failed_symbols),
+        "reference_symbols": ";".join(reference_symbols),
+        "failed_strategy_weight": _format_optional_float(failed_weight),
+        "reference_strategy_weight": _format_optional_float(reference_weight),
+        "strategy_weight_delta": _format_optional_float(weight_delta),
+        "failed_strategy_contribution_pct": _format_optional_float(failed_contribution),
+        "reference_strategy_contribution_pct": _format_optional_float(reference_contribution),
+        "contribution_delta_pct": _format_optional_float(contribution_delta),
+        "contribution_gap_share_pct": _format_optional_float(gap_share),
+        "diagnostic": ";".join(diagnostics) if diagnostics else "balanced",
+    }
+
+
+def _sum_optional_values(values: Any) -> float:
+    numbers = [
+        value
+        for value in (_float_or_none(raw_value) for raw_value in values)
+        if value is not None
+    ]
+    return sum(numbers)
+
+
+def _contribution_delta(failed_rows: Any, reference_rows: Any) -> float | None:
+    failed = _sum_optional_values(row.get("strategy_contribution_pct") for row in failed_rows)
+    reference = _sum_optional_values(row.get("strategy_contribution_pct") for row in reference_rows)
+    return _optional_delta(reference, failed)
+
+
+def _first_nonempty_value(rows: list[dict[str, Any]], key: str) -> str:
+    for row in rows:
+        value = str(row.get(key, "")).strip()
+        if value:
+            return value
+    return ""
+
+
+def _entry_contribution_overlap_diagnostics(
+    *,
+    bucket: str,
+    weight_delta: float | None,
+    contribution_delta: float | None,
+    shared_gap: float | None,
+    rotation_gap: float | None,
+    failed_symbols: list[str],
+    reference_symbols: list[str],
+) -> list[str]:
+    diagnostics: list[str] = []
+    if contribution_delta is not None and contribution_delta > 0:
+        diagnostics.append("reference_contribution_higher")
+    elif contribution_delta is not None and contribution_delta < 0:
+        diagnostics.append("failed_contribution_higher")
+    if weight_delta is not None and weight_delta > 0:
+        diagnostics.append("reference_exposure_higher")
+    elif weight_delta is not None and weight_delta < 0:
+        diagnostics.append("failed_exposure_higher")
+    if bucket == "selected_total" and set(failed_symbols) != set(reference_symbols):
+        diagnostics.append("symbol_rotation")
+        if abs(rotation_gap or 0.0) > abs(shared_gap or 0.0):
+            diagnostics.append("rotation_gap_dominant")
+        elif abs(shared_gap or 0.0) > abs(rotation_gap or 0.0):
+            diagnostics.append("shared_gap_dominant")
+    elif bucket == "shared_symbols":
+        diagnostics.append("shared_symbol_exposure_gap")
+    elif bucket == "rotation_symbols":
+        diagnostics.append("rotation_symbol_gap")
+    elif bucket == "failed_only_symbols":
+        diagnostics.append("failed_only_rotation")
+    elif bucket == "reference_only_symbols":
+        diagnostics.append("reference_only_rotation")
+    return diagnostics
+
+
 def _decision_symbol_list(row: dict[str, Any]) -> list[str]:
     symbols = [
         symbol.strip()
@@ -5841,6 +6086,17 @@ def save_monthly_entry_path_subperiod_comparison(
         rows,
         output_path,
         columns=MONTHLY_ENTRY_PATH_SUBPERIOD_COMPARISON_COLUMNS,
+    )
+
+
+def save_monthly_entry_contribution_overlap_comparison(
+    rows: list[dict[str, Any]],
+    output_path: Path | str,
+) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=MONTHLY_ENTRY_CONTRIBUTION_OVERLAP_COMPARISON_COLUMNS,
     )
 
 

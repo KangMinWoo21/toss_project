@@ -58,6 +58,7 @@ from backtester.monthly_rebalance import (
     compare_monthly_benchmark_selection_summary_reports,
     compare_monthly_benchmark_selection_window_reports,
     compare_monthly_entry_month_reports,
+    compare_monthly_entry_contribution_overlap_reports,
     compare_monthly_entry_path_subperiod_reports,
     compare_monthly_decision_attribution_reports,
     compare_monthly_path_attribution_reports,
@@ -106,6 +107,7 @@ from backtester.monthly_rebalance import (
     save_monthly_benchmark_selection_summary_comparison,
     save_monthly_benchmark_selection_window_comparison,
     save_monthly_entry_month_comparison,
+    save_monthly_entry_contribution_overlap_comparison,
     save_monthly_entry_path_subperiod_comparison,
     save_monthly_validation_rows,
     save_monthly_validation_failures,
@@ -4099,6 +4101,88 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(saved, 1)
         self.assertIn("return_delta_vs_reference_post", text.splitlines()[0])
         self.assertIn("reference_post_outperformed", text)
+
+    def test_compare_monthly_entry_contribution_overlap_reports_splits_shared_and_rotation_gap(self):
+        failed_rows = [
+            {
+                "scenario": "regime_sideways",
+                "month": "2025-01",
+                "start_date": "2025-01-02",
+                "end_date": "2025-01-31",
+                "symbol": "AAA",
+                "strategy_weight": "0.2",
+                "strategy_contribution_pct": "2.0",
+            },
+            {
+                "scenario": "regime_sideways",
+                "month": "2025-01",
+                "start_date": "2025-01-02",
+                "end_date": "2025-01-31",
+                "symbol": "BBB",
+                "strategy_weight": "0.1",
+                "strategy_contribution_pct": "2.0",
+            },
+        ]
+        reference_rows = [
+            {
+                "scenario": "walk_forward_001",
+                "month": "2025-01",
+                "start_date": "2025-01-14",
+                "end_date": "2025-01-31",
+                "symbol": "AAA",
+                "strategy_weight": "0.4",
+                "strategy_contribution_pct": "4.0",
+            },
+            {
+                "scenario": "walk_forward_001",
+                "month": "2025-01",
+                "start_date": "2025-01-14",
+                "end_date": "2025-01-31",
+                "symbol": "CCC",
+                "strategy_weight": "0.3",
+                "strategy_contribution_pct": "9.0",
+            },
+        ]
+
+        rows = compare_monthly_entry_contribution_overlap_reports(
+            failed_rows,
+            reference_rows,
+            failed_label="regime_sideways",
+            reference_label="walk_forward_001",
+            month="2025-01",
+        )
+
+        by_bucket = {row["bucket"]: row for row in rows}
+        self.assertEqual(by_bucket["selected_total"]["failed_strategy_weight"], "0.3")
+        self.assertEqual(by_bucket["selected_total"]["reference_strategy_weight"], "0.7")
+        self.assertEqual(by_bucket["selected_total"]["contribution_delta_pct"], "9")
+        self.assertIn("rotation_gap_dominant", by_bucket["selected_total"]["diagnostic"])
+        self.assertEqual(by_bucket["shared_symbols"]["failed_symbols"], "AAA")
+        self.assertEqual(by_bucket["shared_symbols"]["reference_symbols"], "AAA")
+        self.assertEqual(by_bucket["shared_symbols"]["contribution_delta_pct"], "2")
+        self.assertEqual(by_bucket["shared_symbols"]["contribution_gap_share_pct"], "22.2222")
+        self.assertEqual(by_bucket["rotation_symbols"]["failed_symbols"], "BBB")
+        self.assertEqual(by_bucket["rotation_symbols"]["reference_symbols"], "CCC")
+        self.assertEqual(by_bucket["rotation_symbols"]["contribution_delta_pct"], "7")
+        self.assertEqual(by_bucket["rotation_symbols"]["contribution_gap_share_pct"], "77.7778")
+
+    def test_save_monthly_entry_contribution_overlap_comparison_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "entry_contribution_overlap.csv"
+            saved = save_monthly_entry_contribution_overlap_comparison(
+                [
+                    {
+                        "bucket": "rotation_symbols",
+                        "diagnostic": "rotation_gap_dominant",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("contribution_gap_share_pct", text.splitlines()[0])
+        self.assertIn("rotation_gap_dominant", text)
 
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

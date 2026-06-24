@@ -1321,6 +1321,60 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[1]["return_delta_vs_reference_post"], "-7")
         self.assertIn("reference_exposure_higher", rows[1]["diagnostic"])
 
+    def test_monthly_compare_entry_contribution_overlap_cli_writes_overlap_report(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            failed_contributions = root / "failed_contributions.csv"
+            reference_contributions = root / "reference_contributions.csv"
+            output = root / "entry_contribution_overlap.csv"
+            header = (
+                "scenario,month,start_date,end_date,decision_as_of_date,decision_reason,"
+                "symbol,contribution_role,strategy_weight,benchmark_weight,symbol_return_pct,"
+                "strategy_contribution_pct,benchmark_contribution_pct,contribution_delta_pct,diagnostic\n"
+            )
+            failed_contributions.write_text(
+                header
+                + "regime_sideways,2025-01,2025-01-02,2025-01-31,2025-01-02,weak,AAA,strategy_overweight,0.2,0,10,2,0,2,winner\n"
+                + "regime_sideways,2025-01,2025-01-02,2025-01-31,2025-01-02,weak,BBB,strategy_overweight,0.1,0,20,2,0,2,winner\n",
+                encoding="utf-8",
+            )
+            reference_contributions.write_text(
+                header
+                + "walk_forward_001,2025-01,2025-01-14,2025-01-31,2025-01-14,strong,AAA,strategy_overweight,0.4,0,10,4,0,4,winner\n"
+                + "walk_forward_001,2025-01,2025-01-14,2025-01-31,2025-01-14,strong,CCC,strategy_overweight,0.3,0,30,9,0,9,winner\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-compare-entry-contribution-overlap",
+                    "--failed-contribution-report",
+                    str(failed_contributions),
+                    "--reference-contribution-report",
+                    str(reference_contributions),
+                    "--failed-label",
+                    "regime_sideways",
+                    "--reference-label",
+                    "walk_forward_001",
+                    "--month",
+                    "2025-01",
+                    "--output",
+                    str(output),
+                ],
+            )
+            with output.open(encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("entry_contribution_overlap_report", completed.stdout)
+        self.assertIn("comparison_rows  5", completed.stdout)
+        self.assertIn("rotation_gap_dominant_rows  1", completed.stdout)
+        by_bucket = {row["bucket"]: row for row in rows}
+        self.assertEqual(by_bucket["selected_total"]["contribution_delta_pct"], "9")
+        self.assertEqual(by_bucket["rotation_symbols"]["contribution_delta_pct"], "7")
+        self.assertIn("rotation_gap_dominant", by_bucket["selected_total"]["diagnostic"])
+
     def test_monthly_compare_paths_cli_writes_daily_path_delta_report(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
