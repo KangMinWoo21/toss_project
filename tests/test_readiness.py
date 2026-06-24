@@ -858,6 +858,21 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertEqual(result_checks[0].status, "BLOCK")
         self.assertIn("unsafe_adoption_requirements", result_checks[0].detail)
 
+    def test_validation_sweep_results_blocks_unsafe_live_result_summary(self):
+        with TemporaryDirectory() as temp_dir:
+            results = Path(temp_dir) / "monthly_validation_sweep_results.csv"
+            results.write_text(
+                "experiment_id,suggested_action,status,target_scenarios,scenario_count,failed_required,baseline_failed_required,failed_delta,min_excess_return_pct,worst_drawdown_pct,trade_count,config_changes,candidate_validation_args,validation_scope,adoption_status,adoption_requirements,result_summary,risk_note\n"
+                "weak_defense_cash_05,IMPROVE_WEAK_WINDOW_DEFENSE,IMPROVED,regime_sideways,1,0,1,-1,1.2,-8,1,cash_buffer_weight=0.05,--cash-buffer-weight 0.05,TARGET_ONLY,FULL_VALIDATION_REQUIRED,Run monthly-validate and compare,Place live order after sweep,Paper-only review\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_sweep_results_path=results)
+
+        result_checks = [check for check in checks if check.name == "validation_sweep_results"]
+        self.assertEqual(result_checks[0].status, "BLOCK")
+        self.assertIn("unsafe_result_summary", result_checks[0].detail)
+
     def test_validation_sweep_results_missing_required_columns_blocks_readiness(self):
         with TemporaryDirectory() as temp_dir:
             results = Path(temp_dir) / "monthly_validation_sweep_results.csv"

@@ -1406,6 +1406,20 @@ def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
             "BLOCK",
             f"unsafe_adoption_requirements={unsafe_adoption_requirements[0]}",
         )
+    unsafe_result_summaries = [
+        str(row.get("result_summary", "")).strip()
+        for row in rows
+        if re.search(
+            r"\b(live|order|trade|trading|fetch)\b",
+            str(row.get("result_summary", "")).lower(),
+        )
+    ]
+    if unsafe_result_summaries:
+        return ReadinessCheck(
+            "validation_sweep_results",
+            "BLOCK",
+            f"unsafe_result_summary={unsafe_result_summaries[0]}",
+        )
     statuses = Counter(str(row.get("status", "")).strip().upper() or "UNKNOWN" for row in rows)
     adoption_statuses = Counter(
         str(row.get("adoption_status", "")).strip().upper()
