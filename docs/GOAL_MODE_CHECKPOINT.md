@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 follow-up stress review detail
+Last updated: 2026-06-25 checkpoint candidate count refresh
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -208,18 +208,19 @@ appending long command logs or full report lists here.
 
 ## Current Best Candidate
 
-`proxy_guard_exit_short_minus5_neutral_loss_guard55` is the best fully
-validated paper-review candidate.
+`proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244` is the
+best paper-review candidate.
 
 Result:
 
-- Current canonical baseline required failures: `4`.
-- Candidate required failures: `1`.
-- Failed delta: `-3`.
+- Current canonical baseline required failures: `5`.
+- Candidate required failures: `0`.
+- Failed delta: `-5`.
 - Decision: `PAPER_REVIEW`, not adopt/promote.
 
 Why useful:
 
+- Resolved all current required failures in the full validation run.
 - Fixed current `walk_forward_001`, `walk_forward_003`, and
   `walk_forward_005` blockers without new failures.
 - Preserved useful strong-breadth recovery participation while reducing the
@@ -227,7 +228,8 @@ Why useful:
 
 Why still blocked:
 
-- `regime_sideways` still has negative excess.
+- It relaxes the fixed point-in-time history safety gate to `244`.
+- Post-cutoff OOS evidence is still pending.
 - Production/readiness remains BLOCK and target scale stays `0`.
 
 ## Do Not Reuse As-Is
