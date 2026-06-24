@@ -45,7 +45,10 @@ appending long command logs or full report lists here.
   remain outside recent goal loops. Do not revert them.
 - Latest full tests: `python -m unittest discover -s tests` PASS, `511` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
-- Latest production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
+- Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
+- Latest candidate-overlay production-check using
+  `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
+  reports: WARN, `BLOCK=0`, `PASS=37`, `WARN=10`.
 - Latest health-check: WARN only because scalper data is stale
   (`age_hours=346.36` observed).
 - Production remains not live-ready.
@@ -76,6 +79,10 @@ Verification:
 - Final verification: full `unittest` PASS (`511` tests), compile PASS,
   production-check remains BLOCK, health-check remains WARN from stale scalper
   data only.
+- Follow-up readiness overlay generated candidate-specific failure-pattern and
+  monthly risk reports. This removes readiness BLOCKs only when all
+  production-check inputs are pointed at the candidate artifacts; the default
+  canonical check remains BLOCK and the candidate remains `PAPER_REVIEW`.
 
 Residual evidence:
 
