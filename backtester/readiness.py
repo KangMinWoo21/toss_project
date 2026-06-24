@@ -1725,7 +1725,18 @@ def _validation_failure_patterns_check(path: Path) -> ReadinessCheck:
         f"{row.get('scenario', '')}:{row.get('pattern_status', '')}:{row.get('suggested_action', '')}"
         for row in top_rows[:5]
     )
-    detail = f"{len(rows)} scenarios; statuses: {status_summary}; top={top_detail}"
+    unsafe_actions = [
+        str(row.get("suggested_action", "")).strip()
+        for row in rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("suggested_action", "")).lower(),
+        )
+    ]
+    unsafe_detail = f"; unsafe_suggested_action={unsafe_actions[0]}" if unsafe_actions else ""
+    if unsafe_actions:
+        status = "BLOCK"
+    detail = f"{len(rows)} scenarios; statuses: {status_summary}; top={top_detail}{unsafe_detail}"
     return ReadinessCheck("validation_failure_patterns", status, detail)
 
 

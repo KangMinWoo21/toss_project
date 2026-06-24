@@ -1085,6 +1085,21 @@ class ProductionReadinessTests(unittest.TestCase):
         action_text = "\n".join(f"{action.action}: {action.detail}" for action in actions)
         self.assertIn("Analyze persistent validation failures", action_text)
 
+    def test_validation_failure_patterns_block_unsafe_live_action(self):
+        with TemporaryDirectory() as temp_dir:
+            patterns = Path(temp_dir) / "monthly_validation_failure_patterns.csv"
+            patterns.write_text(
+                "scenario,baseline_failed,baseline_reason,failed_candidate_count,new_failure_candidate_count,resolved_candidate_count,unchanged_failure_candidate_count,candidate_labels_failed,candidate_labels_new_failure,candidate_labels_resolved,candidate_labels_unchanged,dominant_diagnostic,pattern_status,suggested_action,notes\n"
+                "walk_001,True,below_excess,3,0,0,3,cash_10,, ,cash_10,same_failure_persists,PERSISTENT_BLOCK,LIVE_ORDER_AFTER_REVIEW,keep paper-only\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_failure_patterns_path=patterns)
+
+        pattern_checks = [check for check in checks if check.name == "validation_failure_patterns"]
+        self.assertEqual(pattern_checks[0].status, "BLOCK")
+        self.assertIn("unsafe_suggested_action", pattern_checks[0].detail)
+
     def test_validation_failure_patterns_missing_required_columns_blocks_readiness(self):
         with TemporaryDirectory() as temp_dir:
             patterns = Path(temp_dir) / "monthly_validation_failure_patterns.csv"
