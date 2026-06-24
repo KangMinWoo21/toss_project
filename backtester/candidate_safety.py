@@ -24,7 +24,7 @@ def candidate_promotion_proof_status(
     }:
         return False, "post_cutoff_oos_pending"
     if re.search(
-        r"(?:post_cutoff_oos_start_date|post_cutoff_oos_end_date|oos_review_start_date|oos_review_end_date)\s*=\s*pending_post_cutoff_oos",
+        r"(?:post_cutoff_oos_start_date|post_cutoff_oos_end_date|oos_review_start_date|oos_review_end_date)\s*=\s*pending_post_cutoff_oos(?:[,;\s]|$)",
         reasons,
     ):
         return False, "post_cutoff_oos_pending"
