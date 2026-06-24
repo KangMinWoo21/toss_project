@@ -2095,6 +2095,12 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("monthly_performance_audit_candidate_weak_cash_10_position_stop_12.csv", row["validation_command"])
         self.assertIn("monthly-compare-validation", row["comparison_command"])
         self.assertIn("--candidate-label weak_cash_10_position_stop_12", row["comparison_command"])
+        self.assertIn(
+            "monthly_validation_candidate_stress_review_weak_cash_10_position_stop_12.csv",
+            row["candidate_stress_review_output"],
+        )
+        self.assertIn("--stress-review-output", row["comparison_command"])
+        self.assertIn("monthly_validation_candidate_stress_review_weak_cash_10_position_stop_12.csv", row["comparison_command"])
 
     def test_save_monthly_validation_candidate_followup_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:

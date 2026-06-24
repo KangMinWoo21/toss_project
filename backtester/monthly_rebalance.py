@@ -380,6 +380,7 @@ VALIDATION_CANDIDATE_FOLLOWUP_COLUMNS = [
     "comparison_output",
     "delta_output",
     "decision_output",
+    "candidate_stress_review_output",
     "validation_command",
     "comparison_command",
     "risk_note",
@@ -10639,6 +10640,9 @@ def build_monthly_validation_candidate_followup_rows(
         comparison_output = report_root / f"monthly_validation_comparison_{experiment_id}.csv"
         delta_output = report_root / f"monthly_validation_comparison_deltas_{experiment_id}.csv"
         decision_output = report_root / f"monthly_validation_candidate_decision_{experiment_id}.csv"
+        candidate_stress_review_output = (
+            report_root / f"monthly_validation_candidate_stress_review_{experiment_id}.csv"
+        )
         candidate_args = str(row.get("candidate_validation_args", "")).strip()
         validate_argv = [
             "python",
@@ -10698,6 +10702,8 @@ def build_monthly_validation_candidate_followup_rows(
             str(delta_output),
             "--decision-output",
             str(decision_output),
+            "--stress-review-output",
+            str(candidate_stress_review_output),
         ]
         rows.append(
             {
@@ -10712,6 +10718,7 @@ def build_monthly_validation_candidate_followup_rows(
                 "comparison_output": str(comparison_output),
                 "delta_output": str(delta_output),
                 "decision_output": str(decision_output),
+                "candidate_stress_review_output": str(candidate_stress_review_output),
                 "validation_command": _format_cli_command(validate_argv),
                 "comparison_command": _format_cli_command(compare_argv),
                 "risk_note": row.get("risk_note", ""),
