@@ -1359,6 +1359,17 @@ def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
             "BLOCK",
             f"missing_required_values={','.join(missing_values)}",
         )
+    unsafe_risk_notes = [
+        str(row.get("risk_note", "")).strip()
+        for row in rows
+        if re.search(r"\b(live|order|trade|trading|fetch)\b", str(row.get("risk_note", "")).lower())
+    ]
+    if unsafe_risk_notes:
+        return ReadinessCheck(
+            "validation_sweep_results",
+            "BLOCK",
+            f"unsafe_risk_note={unsafe_risk_notes[0]}",
+        )
     statuses = Counter(str(row.get("status", "")).strip().upper() or "UNKNOWN" for row in rows)
     adoption_statuses = Counter(
         str(row.get("adoption_status", "")).strip().upper()
