@@ -55,6 +55,29 @@ REQUIRED_VALIDATION_SCENARIO_COLUMNS = {
     "reason",
     "source",
 }
+REQUIRED_VALIDATION_SCENARIO_VALUE_COLUMNS = {
+    "name",
+    "category",
+    "required",
+    "start",
+    "end",
+    "slippage_multiplier",
+    "stress",
+    "final_equity",
+    "total_return_pct",
+    "buy_hold_return_pct",
+    "excess_return_pct",
+    "max_drawdown_pct",
+    "trade_count",
+    "universe_bias_warning",
+    "universe_symbol_count",
+    "universe_avg_symbol_return_pct",
+    "universe_median_symbol_return_pct",
+    "universe_extreme_return_share",
+    "deployable",
+    "reason",
+    "source",
+}
 REQUIRED_RISK_REPORT_CHECKS = {
     "point_in_time_universe",
     "market_data_freshness",
@@ -996,6 +1019,20 @@ def _validation_scenario_check(path: Path) -> ReadinessCheck:
             "validation_scenarios",
             "BLOCK",
             f"missing_required_columns={','.join(missing_columns)}",
+        )
+    missing_values = sorted(
+        {
+            column
+            for row in rows
+            for column in REQUIRED_VALIDATION_SCENARIO_VALUE_COLUMNS
+            if not str(row.get(column, "")).strip()
+        }
+    )
+    if missing_values:
+        return ReadinessCheck(
+            "validation_scenarios",
+            "BLOCK",
+            f"missing_required_values={','.join(missing_values)}",
         )
     return ReadinessCheck("validation_scenarios", "PASS", f"{len(rows)} scenarios passed")
 

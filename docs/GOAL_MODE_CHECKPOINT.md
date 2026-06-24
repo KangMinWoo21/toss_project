@@ -1,11 +1,12 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 validation failure drilldown value evidence hardening
+Last updated: 2026-06-24 validation scenario value evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
 
 - `docs/archive/GOAL_MODE_CHECKPOINT_2026-06-24_pre_token_trim.md`
+- `docs/archive/GOAL_MODE_CHECKPOINT_2026-06-24_readiness_evidence_loops.md`
 - Future short goal prompt: `docs/goal-mode-minimal-prompt.md`
 
 ## Objective
@@ -38,10 +39,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `a05b608 Require validation failure pattern value evidence`.
+  `96b7e52 Require validation failure drilldown value evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `555` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `556` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=10`, `PASS=30`, `WARN=7`.
 - Latest candidate-overlay production-check using
@@ -49,87 +50,17 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=350.22` observed).
+  (`age_hours=352.39` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
 
-- `925f9e1`: candidate `ACCEPT/APPROVE` requires marker proof plus post-cutoff
-  OOS end date after `2026-06-18`; marker-only proof blocks readiness/monthly
-  risk.
-- Candidate decision CSV now has explicit `post_cutoff_oos_start_date` and
-  `post_cutoff_oos_end_date` fields for that proof.
-- `84f0999`: `monthly-plan --max-data-stale-days` blocks stale included OHLCV
-  before strategy selection or paper order planning.
-- Monthly-plan now also blocks stale point-in-time universe snapshots with
-  `universe_freshness` before strategy selection.
-- Monthly-plan now blocks low point-in-time universe price coverage with
-  `universe_price_coverage` before strategy selection.
-- Monthly-plan now requires a point-in-time universe before paper-operation
-  planning, so universe freshness/coverage gates cannot be bypassed by omission.
-- Production readiness now blocks monthly risk reports that omit required
-  paper-operation gate evidence rows: PIT universe, market data freshness,
-  universe freshness, and universe price coverage.
-- Candidate follow-up readiness now blocks completed follow-up decisions that
-  are still promotion-blocked, including proofless `ACCEPT` and `PAPER_REVIEW`.
-- `ACCEPT`/`APPROVE` candidate decisions now also require consistency with
-  validation results: accepted candidates cannot carry rejected comparisons,
-  remaining required failures, or new failures.
-- Production readiness now blocks performance audit reports that omit required
-  evidence rows for scenarios, excess, walk-forward margin, drawdown,
-  concentration, and trade activity.
-- Production readiness now blocks performance concentration reports that omit
-  required concentration evidence columns before accepting PASS/WARN/BLOCK
-  status.
-- Production readiness now blocks drawdown attribution reports that omit
-  required monthly or symbol attribution evidence columns.
-- Production readiness now blocks validation failure and remediation reports
-  that omit required action/remediation evidence columns.
-- Production readiness now blocks validation sweep plan/result reports that omit
-  required experiment, command, adoption, or risk-note evidence columns.
-- Production readiness now blocks validation comparison and scenario delta
-  reports that omit required comparison, metric-delta, or diagnostic evidence
-  columns.
-- Production readiness now blocks validation failure pattern/drilldown reports
-  that omit required scenario, candidate, metric, diagnostic, or next-action
-  evidence columns.
-- Production readiness now blocks deployment gate reports that omit required
-  deployability, source, performance, drawdown, trade-count, or universe-bias
-  evidence columns.
-- Production readiness now blocks all-pass validation scenario reports that
-  omit required train, test-window, performance, drawdown, trade-count, source,
-  or universe-bias evidence columns.
-- Production readiness now blocks monthly risk reports whose required
-  paper-operation gate rows are present but omit detail evidence.
-- Production readiness now blocks performance audit reports whose required
-  rows are present but omit detail evidence.
-- Candidate follow-up readiness now blocks reports that omit required command,
-  artifact, adoption, decision, or risk-note evidence columns.
-- Candidate decision readiness now blocks reports that omit required comparison,
-  failure-count, failure-name, diagnostic, reason, or recommendation evidence
-  columns.
-- Validation failure readiness now blocks action reports that include required
-  columns but omit required failure, metric, severity, or action values.
-- Validation remediation readiness now blocks experiment reports that include
-  required columns but omit priority, action, failure, affected-scenario,
-  metric, hint, or next-experiment values.
-- Validation sweep plan readiness now blocks experiment plans that include
-  required columns but omit priority, action, experiment, target, expected
-  effect, or risk-note values.
-- Validation sweep results readiness now blocks result reports that include
-  required columns but omit experiment, status, scenario, candidate args,
-  adoption, result summary, or risk-note values.
-- Validation failure pattern readiness now blocks reports that include required
-  columns but omit scenario, baseline, count, diagnostic, action, or note
-  values.
-- Validation failure drilldown readiness now blocks reports that include
-  required columns but omit scenario, period, metric, diagnostic, or next-action
-  values.
-- Earlier candidate-safety loop: candidate decisions gate monthly plans and
-  production readiness; `PAPER_REVIEW` and missing candidate decisions block.
-- Full historical detail is in
-  `docs/archive/GOAL_MODE_CHECKPOINT_2026-06-24_pre_token_trim.md` and git
-  history.
+- Older safety, freshness, schema-evidence, and value-evidence loops are in
+  `docs/archive/GOAL_MODE_CHECKPOINT_2026-06-24_readiness_evidence_loops.md`.
+- Validation scenario readiness now blocks all-pass scenario reports that
+  include required columns but omit core scenario, period, performance, risk,
+  universe, deployability, reason, or source values.
+- Full historical detail is in `docs/archive/` and git history.
 
 ## Current Best Candidate
 
