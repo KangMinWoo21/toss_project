@@ -249,6 +249,19 @@ REQUIRED_VALIDATION_FAILURE_PATTERN_COLUMNS = {
     "suggested_action",
     "notes",
 }
+REQUIRED_VALIDATION_FAILURE_PATTERN_VALUE_COLUMNS = {
+    "scenario",
+    "baseline_failed",
+    "baseline_reason",
+    "failed_candidate_count",
+    "new_failure_candidate_count",
+    "resolved_candidate_count",
+    "unchanged_failure_candidate_count",
+    "dominant_diagnostic",
+    "pattern_status",
+    "suggested_action",
+    "notes",
+}
 REQUIRED_VALIDATION_FAILURE_DRILLDOWN_COLUMNS = {
     "scenario",
     "category",
@@ -1511,6 +1524,20 @@ def _validation_failure_patterns_check(path: Path) -> ReadinessCheck:
             "validation_failure_patterns",
             "BLOCK",
             f"missing required columns: {','.join(missing_columns)}",
+        )
+    missing_values = sorted(
+        {
+            column
+            for row in rows
+            for column in REQUIRED_VALIDATION_FAILURE_PATTERN_VALUE_COLUMNS
+            if not str(row.get(column, "")).strip()
+        }
+    )
+    if missing_values:
+        return ReadinessCheck(
+            "validation_failure_patterns",
+            "BLOCK",
+            f"missing_required_values={','.join(missing_values)}",
         )
 
     statuses = Counter(str(row.get("pattern_status", "")).strip().upper() for row in rows)

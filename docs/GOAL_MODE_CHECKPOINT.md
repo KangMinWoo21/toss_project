@@ -1,6 +1,6 @@
 ﻿# Goal Mode Checkpoint
 
-Last updated: 2026-06-24 validation sweep results value evidence hardening
+Last updated: 2026-06-24 validation failure patterns value evidence hardening
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -38,10 +38,10 @@ appending long command logs or full report lists here.
 ## Current State
 
 - Previous pushed goal commit before this loop:
-  `ae6fee1 Require validation sweep plan value evidence`.
+  `12ca450 Require validation sweep result value evidence`.
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `553` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `554` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=9`, `PASS=31`, `WARN=7`.
 - Latest candidate-overlay production-check using
@@ -49,7 +49,7 @@ appending long command logs or full report lists here.
   reports plus explicit candidate decision: BLOCK, `BLOCK=3`, `PASS=38`,
   `WARN=6`.
 - Latest health-check: WARN only because scalper data is stale
-  (`age_hours=350.06` observed).
+  (`age_hours=350.14` observed).
 - Production remains not live-ready.
 
 ## Recent Loops
@@ -119,6 +119,9 @@ appending long command logs or full report lists here.
 - Validation sweep results readiness now blocks result reports that include
   required columns but omit experiment, status, scenario, candidate args,
   adoption, result summary, or risk-note values.
+- Validation failure pattern readiness now blocks reports that include required
+  columns but omit scenario, baseline, count, diagnostic, action, or note
+  values.
 - Earlier candidate-safety loop: candidate decisions gate monthly plans and
   production readiness; `PAPER_REVIEW` and missing candidate decisions block.
 - Full historical detail is in
