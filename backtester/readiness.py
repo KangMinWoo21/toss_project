@@ -968,10 +968,10 @@ def _validation_comparison_delta_check(path: Path) -> ReadinessCheck:
 
 def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
     if not path.exists():
-        return ReadinessCheck("validation_candidate_decision", "WARN", f"missing: {path}")
+        return ReadinessCheck("validation_candidate_decision", "BLOCK", f"missing: {path}")
     rows = _read_csv_rows(path)
     if not rows:
-        return ReadinessCheck("validation_candidate_decision", "WARN", f"empty: {path}")
+        return ReadinessCheck("validation_candidate_decision", "BLOCK", f"empty: {path}")
 
     row = rows[-1]
     decision = str(row.get("decision", "")).strip().upper() or "UNKNOWN"

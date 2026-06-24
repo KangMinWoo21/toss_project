@@ -633,6 +633,16 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("neutral_loss_guard55_min_history244:PAPER_REVIEW", candidate_checks[0].detail)
         self.assertIn("promotion_blocked", candidate_checks[0].detail)
 
+    def test_missing_validation_candidate_decision_blocks_readiness(self):
+        with TemporaryDirectory() as temp_dir:
+            decision = Path(temp_dir) / "missing_candidate_decision.csv"
+
+            checks = evaluate_readiness(validation_candidate_decision_path=decision)
+
+        candidate_checks = [check for check in checks if check.name == "validation_candidate_decision"]
+        self.assertEqual(candidate_checks[0].status, "BLOCK")
+        self.assertIn("missing", candidate_checks[0].detail)
+
     def test_stale_validation_reports_block_readiness(self):
         with TemporaryDirectory() as temp_dir:
             performance = Path(temp_dir) / "performance.csv"
