@@ -19,6 +19,7 @@ def candidate_promotion_proof_status(
     if "PENDING_POST_CUTOFF_OOS" in {
         str(row.get("post_cutoff_oos_start_date", "")).strip().upper(),
         str(row.get("post_cutoff_oos_end_date", "")).strip().upper(),
+        str(row.get("oos_review_start_date", "")).strip().upper(),
         str(row.get("oos_review_end_date", "")).strip().upper(),
     }:
         return False, "post_cutoff_oos_pending"
