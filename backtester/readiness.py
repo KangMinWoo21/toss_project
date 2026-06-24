@@ -1462,6 +1462,20 @@ def _validation_sweep_results_check(path: Path) -> ReadinessCheck:
             "BLOCK",
             f"unsafe_risk_note={unsafe_risk_notes[0]}",
         )
+    unsafe_experiment_ids = [
+        str(row.get("experiment_id", "")).strip()
+        for row in rows
+        if re.search(
+            r"(^|[^a-z])(live|order|trade|trading|fetch)([^a-z]|$)",
+            str(row.get("experiment_id", "")).lower(),
+        )
+    ]
+    if unsafe_experiment_ids:
+        return ReadinessCheck(
+            "validation_sweep_results",
+            "BLOCK",
+            f"unsafe_experiment_id={unsafe_experiment_ids[0]}",
+        )
     unsafe_adoption_requirements = [
         str(row.get("adoption_requirements", "")).strip()
         for row in rows
