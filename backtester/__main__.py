@@ -691,6 +691,8 @@ def main() -> int:
     monthly_plan_parser.add_argument("--performance-warn-scale", type=float, default=0.1)
     monthly_plan_parser.add_argument("--performance-block-scale", type=float, default=0.0)
     monthly_plan_parser.add_argument("--require-performance-report", action="store_true")
+    monthly_plan_parser.add_argument("--candidate-decision-report", default=None)
+    monthly_plan_parser.add_argument("--require-candidate-decision-report", action="store_true")
     monthly_plan_parser.add_argument("--max-report-age-days", type=int, default=45)
     monthly_plan_parser.add_argument("--train-years", type=int, default=5)
     monthly_plan_parser.add_argument("--train-start", default=None)
@@ -3207,6 +3209,10 @@ def main() -> int:
             warn_scale=args.performance_warn_scale,
             block_scale=args.performance_block_scale,
         )
+        candidate_decision_rows = None
+        if args.candidate_decision_report:
+            candidate_decision_path = Path(args.candidate_decision_report)
+            candidate_decision_rows = _read_csv_dicts(candidate_decision_path) if candidate_decision_path.exists() else []
         decision = apply_performance_guard(decision, performance_guard)
         decision = compress_decision_to_buyable_targets(
             decision,
@@ -3251,15 +3257,21 @@ def main() -> int:
             require_deployment_gate=args.require_deployment_gate,
             performance_guard=performance_guard,
             require_performance_guard=args.require_performance_report,
+            candidate_decision_rows=candidate_decision_rows,
+            candidate_decision_source=args.candidate_decision_report or "",
+            require_candidate_decision=bool(args.candidate_decision_report) or args.require_candidate_decision_report,
             day_start_equity=args.day_start_equity,
             current_equity=portfolio_value,
         )
+        freshness_paths = {
+            "deployment_gate": args.deployment_gate_file,
+            "performance_report": args.performance_report,
+        }
+        if args.candidate_decision_report:
+            freshness_paths["candidate_decision"] = args.candidate_decision_report
         risk_checks.extend(
             validate_report_freshness(
-                {
-                    "deployment_gate": args.deployment_gate_file,
-                    "performance_report": args.performance_report,
-                },
+                freshness_paths,
                 as_of_date=args.as_of,
                 max_age_days=args.max_report_age_days,
             )

@@ -2251,6 +2251,48 @@ def mark_order_plan_execution(
     return marked
 
 
+def validate_candidate_decision_risk(
+    rows: list[dict[str, Any]] | None,
+    *,
+    source: str,
+    require: bool = False,
+) -> RiskCheck | None:
+    if rows is None:
+        if require:
+            return RiskCheck("candidate_decision", "BLOCK", f"candidate decision report is required but missing: {source}")
+        return None
+    if not rows:
+        return RiskCheck("candidate_decision", "BLOCK", f"empty candidate decision report: {source}")
+
+    row = rows[-1]
+    decision = str(row.get("decision", "")).strip().upper() or "UNKNOWN"
+    reasons = str(row.get("decision_reasons", "")).strip().lower()
+    label = str(row.get("candidate_label", source)).strip() or source
+    proof_present = "oos_review_passed" in reasons and "production_readiness_approved" in reasons
+
+    if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
+        status = "PASS" if proof_present else "BLOCK"
+        promotion_status = "not_blocked_by_decision" if proof_present else "promotion_proof_missing"
+    elif decision == "PAPER_REVIEW":
+        status = "BLOCK"
+        promotion_status = "promotion_blocked"
+    elif decision in {"REJECT", "REJECTED", "HOLD"}:
+        status = "BLOCK"
+        promotion_status = "candidate_not_approved"
+    else:
+        status = "BLOCK"
+        promotion_status = "unknown_candidate_decision"
+
+    return RiskCheck(
+        "candidate_decision",
+        status,
+        (
+            f"{label}:{decision}; source={source}; promotion_status={promotion_status}; "
+            f"reasons={row.get('decision_reasons', '')}; recommendation={row.get('recommendation', '')}"
+        ),
+    )
+
+
 def validate_pre_trade_risk(
     decision: MonthlyDecision,
     orders: list[PlannedOrder],
@@ -2261,6 +2303,9 @@ def validate_pre_trade_risk(
     require_deployment_gate: bool = False,
     performance_guard: PerformanceGuard | None = None,
     require_performance_guard: bool = False,
+    candidate_decision_rows: list[dict[str, Any]] | None = None,
+    candidate_decision_source: str = "",
+    require_candidate_decision: bool = False,
     day_start_equity: float | None = None,
     current_equity: float | None = None,
 ) -> list[RiskCheck]:
@@ -2315,6 +2360,14 @@ def validate_pre_trade_risk(
                 "BLOCK",
                 f"{performance_guard.detail}; target_scale={performance_guard.scale:.4f}",
             )
+
+    candidate_check = validate_candidate_decision_risk(
+        candidate_decision_rows,
+        source=candidate_decision_source,
+        require=require_candidate_decision,
+    )
+    if candidate_check is not None:
+        checks.append(candidate_check)
 
     try:
         age_days = (date.fromisoformat(decision.as_of_date) - date.fromisoformat(decision.signal_date)).days

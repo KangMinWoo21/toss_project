@@ -43,7 +43,7 @@ appending long command logs or full report lists here.
   `Record min-history 244 validation` (current HEAD after this loop).
 - Expected dirty worktree: many pre-existing unrelated modified/untracked files
   remain outside recent goal loops. Do not revert them.
-- Latest full tests: `python -m unittest discover -s tests` PASS, `516` tests.
+- Latest full tests: `python -m unittest discover -s tests` PASS, `519` tests.
 - Latest compile: `python -m compileall -q backtester` PASS.
 - Latest default production-check: BLOCK, `BLOCK=8`, `PASS=31`, `WARN=8`.
 - Latest candidate-overlay production-check using
@@ -95,6 +95,10 @@ Verification:
 - Accepted candidate decisions require explicit `oos_review_passed` and
   `production_readiness_approved` markers in `decision_reasons`; manual
   `ACCEPT` without those markers blocks readiness.
+- `monthly-plan` can now take `--candidate-decision-report`; when supplied,
+  paper-review/rejected candidates or accepted candidates without promotion
+  proof block the monthly risk report. The `min_history244` candidate monthly
+  plan now reports `risk_status BLOCK` from `candidate_decision:PAPER_REVIEW`.
 
 Residual evidence:
 

@@ -160,6 +160,7 @@ from backtester.monthly_rebalance import (
     event_score_multipliers,
     filter_symbols_by_event_score,
     target_weights_for_symbols,
+    validate_candidate_decision_risk,
     validate_report_freshness,
     validate_pre_trade_risk,
 )
@@ -786,6 +787,63 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertEqual(risk_status(checks), "WARN")
         self.assertIn("performance_guard", {check.name for check in checks if check.status == "WARN"})
+
+    def test_candidate_decision_risk_blocks_paper_review_candidate(self):
+        check = validate_candidate_decision_risk(
+            [
+                {
+                    "candidate_label": "neutral_loss_guard55_min_history244",
+                    "decision": "PAPER_REVIEW",
+                    "decision_reasons": "no_required_failure_regression",
+                    "recommendation": "keep paper-only",
+                }
+            ],
+            source="unit",
+            require=True,
+        )
+
+        self.assertIsNotNone(check)
+        assert check is not None
+        self.assertEqual(check.status, "BLOCK")
+        self.assertEqual(check.name, "candidate_decision")
+        self.assertIn("PAPER_REVIEW", check.detail)
+
+    def test_candidate_decision_risk_requires_acceptance_proof(self):
+        check = validate_candidate_decision_risk(
+            [
+                {
+                    "candidate_label": "manual_accept",
+                    "decision": "ACCEPT",
+                    "decision_reasons": "no_required_failure_regression",
+                    "recommendation": "manual accept",
+                }
+            ],
+            source="unit",
+            require=True,
+        )
+
+        self.assertIsNotNone(check)
+        assert check is not None
+        self.assertEqual(check.status, "BLOCK")
+        self.assertIn("promotion_proof_missing", check.detail)
+
+    def test_candidate_decision_risk_passes_acceptance_with_proof(self):
+        check = validate_candidate_decision_risk(
+            [
+                {
+                    "candidate_label": "manual_accept",
+                    "decision": "ACCEPT",
+                    "decision_reasons": "oos_review_passed;production_readiness_approved",
+                    "recommendation": "manual accept",
+                }
+            ],
+            source="unit",
+            require=True,
+        )
+
+        self.assertIsNotNone(check)
+        assert check is not None
+        self.assertEqual(check.status, "PASS")
 
     def test_report_freshness_blocks_stale_validation_reports(self):
         with TemporaryDirectory() as temp_dir:
