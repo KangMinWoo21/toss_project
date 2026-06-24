@@ -760,6 +760,21 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("experiment_id", sweep_checks[0].detail)
         self.assertIn("risk_note", sweep_checks[0].detail)
 
+    def test_validation_sweep_plan_blocks_unsafe_live_risk_note(self):
+        with TemporaryDirectory() as temp_dir:
+            sweep = Path(temp_dir) / "monthly_validation_sweep_plan.csv"
+            sweep.write_text(
+                "priority,suggested_action,experiment_id,target_scenarios,cash_buffer_weight,min_train_positive_ratio,candidate_pool_size,max_position_weight,drawdown_guard_scale,market_volatility_min_scale,expected_effect,risk_note\n"
+                "P1,IMPROVE_WEAK_WINDOW_DEFENSE,weak_defense_cash_05,regime_sideways,0.05,0.55,5,,,,Reduce weak-window exposure,Try live order after sweep\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_sweep_plan_path=sweep)
+
+        sweep_checks = [check for check in checks if check.name == "validation_sweep_plan"]
+        self.assertEqual(sweep_checks[0].status, "BLOCK")
+        self.assertIn("unsafe_risk_note", sweep_checks[0].detail)
+
     def test_validation_sweep_results_report_adds_review_check(self):
         with TemporaryDirectory() as temp_dir:
             results = Path(temp_dir) / "monthly_validation_sweep_results.csv"
