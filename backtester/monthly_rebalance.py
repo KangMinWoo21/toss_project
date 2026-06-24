@@ -457,6 +457,7 @@ VALIDATION_CANDIDATE_SUMMARY_COLUMNS = [
     "path_candidate_drawdown_breach_days",
     "path_equity_improved_drawdown_breach_days",
     "path_peak_buffer_loss_days",
+    "post_cutoff_oos_status",
     "evaluation_score",
     "resolved_failure_names",
     "new_failure_names",
@@ -11014,6 +11015,14 @@ def build_monthly_validation_candidate_summary(
             - path_higher_turnover_days
             - path_peak_buffer_loss_days * 5
         )
+        post_cutoff_oos_status = (
+            "pending"
+            if "PENDING_POST_CUTOFF_OOS" in {
+                str(decision.get("post_cutoff_oos_start_date", "")).strip(),
+                str(decision.get("post_cutoff_oos_end_date", "")).strip(),
+            }
+            else ""
+        )
         rows.append(
             {
                 "candidate_rank": "",
@@ -11047,6 +11056,7 @@ def build_monthly_validation_candidate_summary(
                 "path_candidate_drawdown_breach_days": str(path_candidate_drawdown_breach_days),
                 "path_equity_improved_drawdown_breach_days": str(path_equity_improved_drawdown_breach_days),
                 "path_peak_buffer_loss_days": str(path_peak_buffer_loss_days),
+                "post_cutoff_oos_status": post_cutoff_oos_status,
                 "evaluation_score": str(evaluation_score),
                 "resolved_failure_names": str(
                     decision.get("resolved_failure_names", "")
@@ -11067,6 +11077,7 @@ def build_monthly_validation_candidate_summary(
                     f"path_equity_regression_days={path_equity_regression_days}; "
                     f"path_drawdown_regression_days={path_drawdown_regression_days}; "
                     f"path_higher_turnover_days={path_higher_turnover_days}"
+                    f"{'; post_cutoff_oos_status=pending' if post_cutoff_oos_status == 'pending' else ''}"
                 ),
                 "recommendation": decision.get("recommendation", ""),
             }

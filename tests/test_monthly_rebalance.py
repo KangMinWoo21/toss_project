@@ -2586,6 +2586,30 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("drawdown_buffer_regressions=2", row["summary"])
         self.assertIn("path_acceptance=REJECT", row["summary"])
 
+    def test_build_monthly_validation_candidate_summary_marks_pending_oos(self):
+        rows = build_monthly_validation_candidate_summary(
+            decision_rows=[
+                {
+                    "candidate_label": "neutral_loss_guard55_min_history244",
+                    "comparison_status": "IMPROVED",
+                    "decision": "PAPER_REVIEW",
+                    "post_cutoff_oos_start_date": "PENDING_POST_CUTOFF_OOS",
+                    "post_cutoff_oos_end_date": "PENDING_POST_CUTOFF_OOS",
+                    "baseline_failed_required": "5",
+                    "candidate_failed_required": "0",
+                    "failed_delta": "-5",
+                    "resolved_count": "5",
+                    "new_failure_count": "0",
+                    "unchanged_failure_count": "0",
+                    "recommendation": "keep paper-only",
+                }
+            ],
+            delta_rows=[],
+        )
+
+        self.assertEqual(rows[0]["post_cutoff_oos_status"], "pending")
+        self.assertIn("post_cutoff_oos_status=pending", rows[0]["summary"])
+
     def test_save_monthly_validation_candidate_summary_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "candidate_summary.csv"
