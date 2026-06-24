@@ -3139,6 +3139,24 @@ def main() -> int:
             if args.point_in_time_universe
             else None
         )
+        if point_in_time_universe is None:
+            risk_checks = [
+                RiskCheck(
+                    "point_in_time_universe",
+                    "BLOCK",
+                    "point-in-time universe is required before paper-operation planning",
+                )
+            ]
+            save_order_plan([], args.output)
+            save_risk_report(risk_checks, args.risk_output)
+            print("Monthly rebalance decision")
+            print(f"as_of  {args.as_of}")
+            print("orders  0")
+            print("risk_status  BLOCK")
+            _print_data_quality_exclusions(data_quality_exclusions)
+            print(f"order_plan  {args.output}")
+            print(f"risk_report  {args.risk_output}")
+            return risk_exit_code("BLOCK")
         universe_freshness_check = _universe_freshness_risk_check(
             point_in_time_universe,
             as_of_date=args.as_of,

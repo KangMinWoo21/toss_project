@@ -2825,6 +2825,46 @@ class CliTests(unittest.TestCase):
         self.assertIn("coverage_pct=50.0000", coverage[0]["detail"])
         self.assertIn("missing_symbols=2", coverage[0]["detail"])
 
+    def test_monthly_plan_requires_point_in_time_universe_for_paper_plan(self):
+        with TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+            data_dir = cwd / "prices"
+            latest = self._write_trend_price_file(data_dir, "111111", close=100, step=1, volume=1000, rows=420)
+            self._write_trend_price_file(data_dir, "222222", close=120, step=1, volume=1000, rows=420)
+            risk_output = cwd / "risk.csv"
+
+            completed = self._run_backtester_in_cwd(
+                cwd,
+                [
+                    "monthly-plan",
+                    "--data-dir",
+                    str(data_dir),
+                    "--as-of",
+                    latest,
+                    "--train-years",
+                    "1",
+                    "--min-rows-per-window",
+                    "1",
+                    "--point-in-time-min-history-days",
+                    "1",
+                    "--max-signal-age-days",
+                    "90",
+                    "--risk-output",
+                    str(risk_output),
+                ],
+            )
+            if risk_output.exists():
+                with risk_output.open(encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+            else:
+                rows = []
+
+        universe = [row for row in rows if row["name"] == "point_in_time_universe"]
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertEqual(len(universe), 1)
+        self.assertEqual(universe[0]["status"], "BLOCK")
+        self.assertIn("required", universe[0]["detail"])
+
     def test_plan_pykrx_missing_ohlcv_writes_prioritized_targets(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
