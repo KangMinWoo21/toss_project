@@ -984,8 +984,9 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
     decision = str(row.get("decision", "")).strip().upper() or "UNKNOWN"
     comparison_status = str(row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
     promotion_proof_present, promotion_status = candidate_promotion_proof_status(row)
+    acceptance_issue = _candidate_acceptance_consistency_issue(row, comparison_status)
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
-        status = "PASS" if promotion_proof_present else "BLOCK"
+        status = "PASS" if promotion_proof_present and not acceptance_issue else "BLOCK"
     elif decision == "PAPER_REVIEW":
         status = "BLOCK"
     elif decision in {"REJECT", "REJECTED", "HOLD"}:
@@ -1005,6 +1006,7 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
         f"diagnostics={row.get('new_failure_diagnostics', '')}; "
         f"reasons={row.get('decision_reasons', '')}; "
         f"promotion_status={_candidate_promotion_status(decision, promotion_proof_present, promotion_status)}; "
+        f"acceptance_status={acceptance_issue or 'consistent'}; "
         f"recommendation={row.get('recommendation', '')}"
     )
     return ReadinessCheck("validation_candidate_decision", status, detail)
@@ -1016,6 +1018,22 @@ def _candidate_promotion_status(decision: str, promotion_proof_present: bool, pr
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"} and not promotion_proof_present:
         return proof_status
     return "not_blocked_by_decision"
+
+
+def _candidate_acceptance_consistency_issue(row: dict[str, Any], comparison_status: str) -> str:
+    allowed_statuses = {"PASS", "PASSED", "IMPROVED", "ACCEPT", "ACCEPTED", "APPROVE", "APPROVED"}
+    issues: list[str] = []
+    if comparison_status not in allowed_statuses:
+        issues.append(f"comparison_status={comparison_status}")
+    candidate_failed_required = _parse_int(row.get("candidate_failed_required", "0"))
+    if candidate_failed_required > 0:
+        issues.append(f"candidate_failed_required={candidate_failed_required}")
+    new_failure_count = _parse_int(row.get("new_failure_count", "0"))
+    if new_failure_count > 0:
+        issues.append(f"new_failure_count={new_failure_count}")
+    if not issues:
+        return ""
+    return f"acceptance_consistency_failed:{','.join(issues)}"
 
 
 def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
@@ -1039,6 +1057,7 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
     promotion_blocked = []
     for decision_row in decisions:
         decision_value = str(decision_row.get("decision", "")).strip().upper()
+        comparison_status = str(decision_row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
         proof_present, proof_status = candidate_promotion_proof_status(decision_row)
         if decision_value == "PAPER_REVIEW":
             promotion_blocked.append(
@@ -1048,6 +1067,12 @@ def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
             promotion_blocked.append(
                 f"{decision_row.get('candidate_label', '')}:{decision_value}:{proof_status}"
             )
+        elif decision_value in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
+            acceptance_issue = _candidate_acceptance_consistency_issue(decision_row, comparison_status)
+            if acceptance_issue:
+                promotion_blocked.append(
+                    f"{decision_row.get('candidate_label', '')}:{decision_value}:{acceptance_issue}"
+                )
     top_decision = decisions[0] if decisions else {}
     decision_detail = ""
     if decision_summary:

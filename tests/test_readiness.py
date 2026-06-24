@@ -553,6 +553,29 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("promotion_blocked_decisions", followup_checks[0].detail)
         self.assertIn("manual_accept:ACCEPT:promotion_proof_missing", followup_checks[0].detail)
 
+    def test_validation_candidate_followup_blocks_inconsistent_accepted_decisions(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            decision = root / "candidate_decision.csv"
+            decision.write_text(
+                "candidate_label,comparison_status,decision,decision_reasons,post_cutoff_oos_end_date,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
+                "manual_accept,REJECT,ACCEPT,oos_review_passed;production_readiness_approved,2026-06-19,1,1,0,0,1,1,,walk_forward_002,regime_sideways,train_gate_regression=1,inconsistent manual accept.\n",
+                encoding="utf-8",
+            )
+            followup = root / "monthly_validation_candidate_followup.csv"
+            followup.write_text(
+                "priority_rank,experiment_id,status,adoption_status,failed_delta,candidate_validation_args,candidate_scenario_output,candidate_gate_output,comparison_output,delta_output,decision_output,validation_command,comparison_command,risk_note\n"
+                f"1,manual_accept,IMPROVED,FULL_VALIDATION_REQUIRED,-1,--candidate-flag,candidate.csv,gate.csv,comparison.csv,delta.csv,{decision},python -m backtester monthly-validate,python -m backtester monthly-compare-validation,Plan only\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_candidate_followup_path=followup)
+
+        followup_checks = [check for check in checks if check.name == "validation_candidate_followup"]
+        self.assertEqual(followup_checks[0].status, "BLOCK")
+        self.assertIn("acceptance_consistency_failed", followup_checks[0].detail)
+        self.assertIn("manual_accept:ACCEPT", followup_checks[0].detail)
+
     def test_validation_failure_patterns_block_persistent_failures(self):
         with TemporaryDirectory() as temp_dir:
             patterns = Path(temp_dir) / "monthly_validation_failure_patterns.csv"
@@ -712,6 +735,23 @@ class ProductionReadinessTests(unittest.TestCase):
 
         candidate_checks = [check for check in checks if check.name == "validation_candidate_decision"]
         self.assertEqual(candidate_checks[0].status, "PASS")
+
+    def test_accepted_validation_candidate_blocks_inconsistent_validation_result(self):
+        with TemporaryDirectory() as temp_dir:
+            decision = Path(temp_dir) / "monthly_validation_candidate_decision.csv"
+            decision.write_text(
+                "candidate_label,comparison_status,decision,decision_reasons,post_cutoff_oos_end_date,baseline_failed_required,candidate_failed_required,failed_delta,resolved_count,new_failure_count,unchanged_failure_count,resolved_failure_names,new_failure_names,unchanged_failure_names,new_failure_diagnostics,recommendation\n"
+                "manual_accept,REJECT,ACCEPT,oos_review_passed;production_readiness_approved,2026-06-19,1,1,0,0,1,1,,walk_forward_002,regime_sideways,train_gate_regression=1,inconsistent manual accept.\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_candidate_decision_path=decision)
+
+        candidate_checks = [check for check in checks if check.name == "validation_candidate_decision"]
+        self.assertEqual(candidate_checks[0].status, "BLOCK")
+        self.assertIn("acceptance_consistency_failed", candidate_checks[0].detail)
+        self.assertIn("comparison_status=REJECT", candidate_checks[0].detail)
+        self.assertIn("new_failure_count=1", candidate_checks[0].detail)
 
     def test_accepted_validation_candidate_requires_post_cutoff_oos_date(self):
         with TemporaryDirectory() as temp_dir:
