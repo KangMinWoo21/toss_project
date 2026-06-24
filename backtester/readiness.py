@@ -976,8 +976,13 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
     row = rows[-1]
     decision = str(row.get("decision", "")).strip().upper() or "UNKNOWN"
     comparison_status = str(row.get("comparison_status", "")).strip().upper() or "UNKNOWN"
+    decision_reasons = str(row.get("decision_reasons", "")).strip().lower()
+    promotion_proof_present = (
+        "oos_review_passed" in decision_reasons
+        and "production_readiness_approved" in decision_reasons
+    )
     if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"}:
-        status = "PASS"
+        status = "PASS" if promotion_proof_present else "BLOCK"
     elif decision == "PAPER_REVIEW":
         status = "BLOCK"
     elif decision in {"REJECT", "REJECTED", "HOLD"}:
@@ -996,10 +1001,18 @@ def _validation_candidate_decision_check(path: Path) -> ReadinessCheck:
         f"unchanged_failure_names={row.get('unchanged_failure_names', '')}; "
         f"diagnostics={row.get('new_failure_diagnostics', '')}; "
         f"reasons={row.get('decision_reasons', '')}; "
-        f"promotion_status={'promotion_blocked' if decision == 'PAPER_REVIEW' else 'not_blocked_by_decision'}; "
+        f"promotion_status={_candidate_promotion_status(decision, promotion_proof_present)}; "
         f"recommendation={row.get('recommendation', '')}"
     )
     return ReadinessCheck("validation_candidate_decision", status, detail)
+
+
+def _candidate_promotion_status(decision: str, promotion_proof_present: bool) -> str:
+    if decision == "PAPER_REVIEW":
+        return "promotion_blocked"
+    if decision in {"ACCEPT", "PASS", "APPROVE", "APPROVED"} and not promotion_proof_present:
+        return "promotion_proof_missing"
+    return "not_blocked_by_decision"
 
 
 def _validation_candidate_followup_check(path: Path) -> ReadinessCheck:
