@@ -119,6 +119,37 @@ class CliTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _write_protected_candidate_oos_guard_sources(self, root: Path) -> None:
+        reports = root / "data" / "reports"
+        reports.mkdir(parents=True, exist_ok=True)
+        (reports / "post_cutoff_oos_observation_status_neutral_loss_guard55_min_history244.csv").write_text(
+            "candidate_id,observed_trading_days_after_plan,required_additional_trading_days,remaining_trading_days,review_allowed,status,reason\n"
+            "proxy_guard_exit_short_minus5_neutral_loss_guard55_min_history244,0,15,15,False,OBSERVE,candidate_remains_PAPER_REVIEW\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_candidate_research_ledger.csv").write_text(
+            "candidate_id,status,protected_from_tuning,oos_observation_active,post_cutoff_oos_used,auto_promote,review_assessment\n"
+            "proxy_guard_exit_short_minus5_neutral_loss_guard55_min_history244,PAPER_REVIEW,True,True,existing_observation_only,False,remains PAPER_REVIEW unchanged and not promoted\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_candidate_research_trial_summary.csv").write_text(
+            "row_type,candidate_id,status,protected_from_tuning,promotion_allowed,recommendation,promoted_count\n"
+            "candidate,proxy_guard_exit_short_minus5_neutral_loss_guard55_min_history244,PAPER_REVIEW,True,False,continue_observation,\n"
+            "trial_count_summary,ALL,,,,,0\n",
+            encoding="utf-8",
+        )
+        (reports / "production_block_classification.csv").write_text(
+            "check_scope,block_name,block_status,expected_block,safety_block,can_be_safely_reduced_now,block_classification,reason\n"
+            "default,overall,BLOCK,True,True,False,keep_hard_stop,Overall readiness summarizes active BLOCK checks.\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_paper_operation_consistency_audit.csv").write_text(
+            "check,status,expected,observed,reason,source\n"
+            "trading_allowed_false,PASS,trading_allowed=False,rows=11; true_present=False,no trading,packet.csv\n"
+            "production_effect_none,PASS,production_effect=none,production_effect=none,no effect,packet.csv\n",
+            encoding="utf-8",
+        )
+
     def test_compare_command_prints_strategy_table(self):
         completed = subprocess.run(
             [
@@ -215,6 +246,31 @@ class CliTests(unittest.TestCase):
             self.assertTrue(csv_output.exists())
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Review Only", md_output.read_text(encoding="utf-8"))
+
+    def test_protected_candidate_oos_review_guard_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_protected_candidate_oos_guard_sources(root)
+            csv_output = root / "data" / "reports" / "protected_candidate_oos_review_eligibility_guard.csv"
+            md_output = root / "data" / "reports" / "protected_candidate_oos_review_eligibility_guard.md"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "protected-candidate-oos-review-eligibility-guard",
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("guard_status  PASS", completed.stdout)
+            self.assertIn("review_eligibility  REVIEW_NOT_ALLOWED", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Review Not Allowed", md_output.read_text(encoding="utf-8"))
 
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(

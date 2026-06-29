@@ -253,6 +253,10 @@ from .pykrx_fetcher import (
     save_missing_ohlcv_targets,
     save_universe_fetch_report,
 )
+from .protected_candidate_oos_review_guard import (
+    build_protected_candidate_oos_review_eligibility_guard,
+    save_protected_candidate_oos_review_eligibility_guard,
+)
 from .scalper import ScalperConfig, run_paper_scalper
 from .scalp_replay import aggregate_scalp_results, format_scalp_replay_table, replay_scalp_directory
 from .study import data_files_from_dir, run_market_regime_study
@@ -1905,6 +1909,39 @@ def main() -> int:
         default="data/reports/monthly_paper_operation_consistency_audit.md",
     )
 
+    oos_review_guard_parser = subparsers.add_parser(
+        "protected-candidate-oos-review-eligibility-guard",
+        help="Audit whether the protected PAPER_REVIEW candidate remains ineligible for OOS review",
+    )
+    oos_review_guard_parser.add_argument(
+        "--observation-status-csv",
+        default="data/reports/post_cutoff_oos_observation_status_neutral_loss_guard55_min_history244.csv",
+    )
+    oos_review_guard_parser.add_argument(
+        "--candidate-ledger-csv",
+        default="data/reports/monthly_candidate_research_ledger.csv",
+    )
+    oos_review_guard_parser.add_argument(
+        "--trial-summary-csv",
+        default="data/reports/monthly_candidate_research_trial_summary.csv",
+    )
+    oos_review_guard_parser.add_argument(
+        "--production-block-csv",
+        default="data/reports/production_block_classification.csv",
+    )
+    oos_review_guard_parser.add_argument(
+        "--monthly-consistency-audit-csv",
+        default="data/reports/monthly_paper_operation_consistency_audit.csv",
+    )
+    oos_review_guard_parser.add_argument(
+        "--output",
+        default="data/reports/protected_candidate_oos_review_eligibility_guard.csv",
+    )
+    oos_review_guard_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/protected_candidate_oos_review_eligibility_guard.md",
+    )
+
     args = parser.parse_args()
     if args.command == "data-check":
         path = Path(args.path)
@@ -2902,6 +2939,26 @@ def main() -> int:
         print(f"audit_markdown  {args.markdown_output}")
         print("review_only  True")
         return 2 if status == "BLOCK" else 0
+
+    if args.command == "protected-candidate-oos-review-eligibility-guard":
+        rows = build_protected_candidate_oos_review_eligibility_guard(
+            observation_status_csv=args.observation_status_csv,
+            candidate_ledger_csv=args.candidate_ledger_csv,
+            trial_summary_csv=args.trial_summary_csv,
+            production_block_csv=args.production_block_csv,
+            monthly_consistency_audit_csv=args.monthly_consistency_audit_csv,
+        )
+        save_protected_candidate_oos_review_eligibility_guard(rows, args.output, args.markdown_output)
+        summary = rows[0] if rows else {}
+        guard_status = summary.get("guard_status", "BLOCK")
+        review_eligibility = summary.get("review_eligibility", "BLOCKED_FAIL_CLOSED")
+        print(f"guard_status  {guard_status}")
+        print(f"review_eligibility  {review_eligibility}")
+        print(f"trading_allowed  {summary.get('trading_allowed', 'False')}")
+        print(f"production_effect  {summary.get('production_effect', 'none')}")
+        print(f"guard_report  {args.output}")
+        print(f"guard_markdown  {args.markdown_output}")
+        return 2 if guard_status == "BLOCK" else 0
 
     if args.command == "fetch-toss":
         client_id = os.environ.get("TOSSINVEST_CLIENT_ID")

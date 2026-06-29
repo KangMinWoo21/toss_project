@@ -304,6 +304,16 @@ appending long command logs or full report lists here.
   retain `risk_status_BLOCK`. Verification passed: targeted audit tests, full
   `unittest` `669` tests, `compileall`, production-check BLOCK, and
   health-check WARN only for stale scalper data. No push.
+- Protected candidate OOS review eligibility guard added at
+  `data/reports/protected_candidate_oos_review_eligibility_guard.csv` and
+  `.md`. Guard is report-only and PASS with
+  `review_eligibility=REVIEW_NOT_ALLOWED`, `trading_allowed=False`, and
+  `production_effect=none`; protected candidate remains `PAPER_REVIEW`,
+  `protected_from_tuning=True`, OOS `review_allowed=False`, observed days `0`
+  of required `15`, remaining days `15`, promoted count `0`, and production
+  BLOCK is retained. Verification passed: targeted guard tests, full
+  `unittest` `676` tests, `compileall`, production-check BLOCK, and
+  health-check WARN only for stale scalper data. No push.
 - Production remains not live-ready.
 
 ## Recent Loops
