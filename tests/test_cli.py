@@ -799,6 +799,59 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / PIT Audit Only", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_financial_feature_merge_audit_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reports = root / "data" / "reports"
+            dataset = reports / "ml_baseline_feature_label_sample.csv"
+            observations = reports / "ml_financial_observations_sample.csv"
+            pit_audit = reports / "ml_financial_pit_audit.csv"
+            csv_output = reports / "ml_financial_feature_merge_audit.csv"
+            md_output = reports / "ml_financial_feature_merge_audit.md"
+            reports.mkdir(parents=True, exist_ok=True)
+            dataset.write_text(
+                "symbol,feature_date,label_end_date,return_1m,label_return,label,train_cutoff,post_cutoff_data_used_for_train,training_ran,trading_allowed,production_effect\n"
+                "005930,2026-03-31,2026-04-30,0.0100000000,0.0200000000,positive,2026-06-18,False,False,False,none\n",
+                encoding="utf-8",
+            )
+            observations.write_text(
+                "symbol,corp_code,business_year,report_code,fs_div,statement_name,account_name,current_amount,previous_amount,currency,ord,receipt_no,receipt_date,receipt_time,collected_at,usable_from,report_period_end,correction_filing_flag,original_receipt_no,source_revision,quality_status,excluded_reason,training_allowed_now,trading_allowed,production_effect\n"
+                "005930,00126380,2025,11011,CFS,income_statement,Revenue,1000,900,KRW,1,20260315000001,2026-03-15,00:00:00,2026-06-30T09:00:00,2026-06-30,2025-12-31,False,20260315000001,dart:005930:2025:11011,PASS,,False,False,none\n",
+                encoding="utf-8",
+            )
+            pit_audit.write_text(
+                "check_name,check_status,evidence,train_cutoff,post_cutoff_data_used_for_train,training_allowed_now,trading_allowed,production_effect,protected_candidate_unchanged\n"
+                "post_cutoff_train_leakage,PASS,not used for train,2026-06-18,False,False,False,none,True\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-financial-feature-merge-audit",
+                    "--dataset-csv",
+                    str(dataset),
+                    "--financial-observations-csv",
+                    str(observations),
+                    "--financial-pit-audit-csv",
+                    str(pit_audit),
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("merge_audit_status  financial_feature_merge_audit_complete", completed.stdout)
+            self.assertIn("feature_added_to_training  False", completed.stdout)
+            self.assertIn("training_allowed_now  False", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Merge Audit Only", md_output.read_text(encoding="utf-8"))
+
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(
             [

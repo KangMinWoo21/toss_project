@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML financial PIT audit
+Last updated: 2026-06-30 ML financial feature merge audit
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,16 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML financial feature merge audit:
+  `data/reports/ml_financial_feature_merge_audit.csv` and `.md`. Phase 7
+  completed a local-only merge audit against the baseline ML sample and limited
+  financial observations. The audit records `join_coverage=WARN 0/5`,
+  `missing_rate=WARN 1.0000`, `leakage_check=PASS`,
+  `post_cutoff_data_used_for_train=False`,
+  `feature_added_to_training=False`, `training_allowed_now=False`,
+  `trading_allowed=False`, `production_effect=none`, and protected candidate
+  unchanged. No fetch, training, OOS rerun, candidate compare, strategy change,
+  or production change was performed.
 - ML financial PIT audit:
   `data/reports/ml_financial_observations_sample.csv`,
   `data/reports/ml_financial_pit_audit.csv`, and
@@ -160,7 +170,7 @@ protected paper-review candidate.
 
 Recent completed loops verified:
 
-- Full `unittest`: latest recorded `691` tests passing.
+- Full `unittest`: latest recorded `720` tests passing.
 - `python -m compileall -q backtester`: passing.
 - Safe production-check: `BLOCK` retained.
 - Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper

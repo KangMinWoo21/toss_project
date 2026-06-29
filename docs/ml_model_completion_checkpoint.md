@@ -17,6 +17,10 @@ Current status:
 - Current local data is ready only for `baseline_tabular_ml`.
 - Phase 6 limited OpenDART PIT audit is complete and remains
   `training_allowed_now=False`.
+- Phase 7 financial feature merge audit is complete. The limited financial
+  sample did not join to the current baseline sample (`join_coverage=WARN 0/5`,
+  `missing_rate=WARN 1.0000`), but leakage and safety checks passed and
+  `feature_added_to_training=False`.
 - Financial features have only a limited PIT-audited sample and are not ready
   for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
@@ -269,6 +273,12 @@ Completion conditions:
 - No post-cutoff train usage.
 - `feature_added_to_training=False` unless a future explicit approval says
   otherwise.
+- Completed 2026-06-30 in
+  `data/reports/ml_financial_feature_merge_audit.csv` and `.md`.
+  Actual result: `join_coverage=WARN 0/5`, `missing_rate=WARN 1.0000`,
+  `leakage_check=PASS`, `post_cutoff_data_used_for_train=False`,
+  `feature_added_to_training=False`, `training_allowed_now=False`,
+  `trading_allowed=False`, `production_effect=none`.
 
 Forbidden in this phase:
 

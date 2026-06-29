@@ -72,6 +72,10 @@ from .ml_financial_feature_schema_plan import (
     build_ml_financial_feature_schema_plan,
     save_ml_financial_feature_schema_plan,
 )
+from .ml_financial_feature_merge_audit import (
+    build_ml_financial_feature_merge_audit,
+    save_ml_financial_feature_merge_audit,
+)
 from .ml_financial_pit_audit import (
     build_ml_financial_pit_audit_reports,
     save_ml_financial_pit_audit_reports,
@@ -2237,6 +2241,31 @@ def main() -> int:
         default="data/reports/ml_financial_feature_readiness_report.md",
     )
 
+    ml_financial_merge_parser = subparsers.add_parser(
+        "ml-financial-feature-merge-audit",
+        help="Write a local-only financial feature merge audit for the baseline ML dataset",
+    )
+    ml_financial_merge_parser.add_argument(
+        "--dataset-csv",
+        default="data/reports/ml_baseline_feature_label_sample.csv",
+    )
+    ml_financial_merge_parser.add_argument(
+        "--financial-observations-csv",
+        default="data/reports/ml_financial_observations_sample.csv",
+    )
+    ml_financial_merge_parser.add_argument(
+        "--financial-pit-audit-csv",
+        default="data/reports/ml_financial_pit_audit.csv",
+    )
+    ml_financial_merge_parser.add_argument(
+        "--output",
+        default="data/reports/ml_financial_feature_merge_audit.csv",
+    )
+    ml_financial_merge_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_financial_feature_merge_audit.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3499,6 +3528,26 @@ def main() -> int:
         print(f"financial_pit_audit  {args.audit_output}")
         print(f"financial_readiness_markdown  {args.markdown_output}")
         return 0
+
+    if args.command == "ml-financial-feature-merge-audit":
+        result = build_ml_financial_feature_merge_audit(
+            dataset_csv=args.dataset_csv,
+            financial_observations_csv=args.financial_observations_csv,
+            financial_pit_audit_csv=args.financial_pit_audit_csv,
+        )
+        save_ml_financial_feature_merge_audit(result, args.output, args.markdown_output)
+        summary = next(row for row in result.audit_rows if row["metric"] == "summary")
+        leakage = next(row for row in result.audit_rows if row["metric"] == "leakage_check")
+        print(f"merge_audit_status  {summary['status']}")
+        print(f"leakage_check  {leakage['status']}")
+        print("post_cutoff_data_used_for_train  False")
+        print("feature_added_to_training  False")
+        print("training_allowed_now  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"financial_feature_merge_audit  {args.output}")
+        print(f"financial_feature_merge_audit_markdown  {args.markdown_output}")
+        return 0 if leakage["status"] == "PASS" else 2
 
     if args.command == "fetch-toss":
         client_id = os.environ.get("TOSSINVEST_CLIENT_ID")
