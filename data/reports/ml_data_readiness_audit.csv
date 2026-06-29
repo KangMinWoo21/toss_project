@@ -1,0 +1,22 @@
+metric,status,value,reason,source,trading_allowed,production_effect
+summary,ready_for_baseline_tabular_ml,ready_for_baseline_tabular_ml,"Paper-only ML data readiness audit; no model training, OOS rerun, fetch, candidate generation, or strategy parameter change was performed.",derived,False,none
+source_files_present,PASS,all required local sources readable,Required for deterministic local-only readiness.,multiple,False,none
+available_period,PASS,2018-01-31..2026-06-18,Local price rows are clipped at the train cutoff.,data/krx_expanded,False,none
+available_symbol_count,PASS,2184,"Symbols with PASS data-quality rows, falling back to local price files.",data/reports/monthly_validation_data_quality.csv,False,none
+monthly_feature_row_count,PASS,72099,Monthly symbol rows used only for readiness aggregation.,data/krx_expanded,False,none
+monthly_label_count,PASS,69915,Next-month labels available fully on or before the train cutoff.,data/krx_expanded,False,none
+feature_candidates,PASS,return_1m;return_3m;return_6m;volatility_3m;volume_change_1m;price_vs_3m_sma;drawdown_3m,Baseline tabular technical feature candidates from local OHLCV only.,derived,False,none
+feature_missing_rates,PASS,return_1m=0.0303;return_3m=0.0909;return_6m=0.1818;volatility_3m=0.0606;volume_change_1m=0.0346;price_vs_3m_sma=0.0606;drawdown_3m=0.0000,Missing-rate denominator is monthly feature rows.,derived,False,none
+label_distribution,PASS,positive=30350;negative=38885;flat=680,Next-month return labels: positive/negative/flat.,derived,False,none
+train_cutoff,PASS,2026-06-18,Cutoff read from protected candidate ledger unless explicitly overridden.,data/reports/monthly_candidate_research_ledger.csv,False,none
+post_cutoff_data_used_for_train,PASS,False,max_feature_date=2026-06-18; max_label_end=2026-06-18,derived,False,none
+pit_universe_available,PASS,True,Requires local PIT universe metadata and PASS universe coverage report.,data/krx_metadata/krx_universe_monthly.csv;data/reports/monthly_universe_price_coverage.csv,False,none
+data_quality_exclusion_needed,WARN,True,excluded_symbols=355,data/reports/data_quality_excluded_symbols.csv,False,none
+fundamentals_status,not_ready,not_ready,Current PIT fundamentals are insufficient for baseline ML features.,data/reports/regime_sideways_fundamental_pit_availability_audit.csv,False,none
+news_status,not_ready,not_ready,No current PIT-safe news feature table is available for ML readiness.,local reports,False,none
+sentiment_status,not_ready,not_ready,No current PIT-safe sentiment feature table is available for ML readiness.,local reports,False,none
+protected_candidate_status,PASS,PAPER_REVIEW,Protected PAPER_REVIEW candidate is read-only and remains locked from tuning.,data/reports/monthly_candidate_research_ledger.csv,False,none
+recommended_model_start,PASS,baseline_tabular_ml,Start with baseline tabular ML only after review; do not train in this audit.,derived,False,none
+deep_learning_status,not_ready,not_ready,Local history and feature breadth are insufficient for deep learning.,derived,False,none
+trading_allowed,PASS,False,Readiness report only; no trading authorization.,derived,False,none
+production_effect,PASS,none,Report has no production effect.,derived,False,none

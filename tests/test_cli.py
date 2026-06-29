@@ -225,6 +225,56 @@ class CliTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _write_ml_data_readiness_sources(self, root: Path) -> None:
+        data_dir = root / "data" / "krx_expanded"
+        reports = root / "data" / "reports"
+        metadata = root / "data" / "krx_metadata"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        reports.mkdir(parents=True, exist_ok=True)
+        metadata.mkdir(parents=True, exist_ok=True)
+        dates = [
+            "2024-01-31",
+            "2024-02-29",
+            "2024-03-29",
+            "2024-04-30",
+            "2024-05-31",
+            "2024-06-28",
+            "2024-07-31",
+            "2024-08-30",
+            "2024-09-30",
+        ]
+        for symbol, step in (("111111", 2), ("222222", -2)):
+            rows = ["date,open,high,low,close,volume"]
+            for index, day in enumerate(dates):
+                close = 100 + index * step
+                rows.append(f"{day},{close - 1},{close + 1},{close - 2},{close},1000")
+            (data_dir / f"{symbol}.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+        (reports / "monthly_candidate_research_ledger.csv").write_text(
+            "candidate_id,status,protected_from_tuning,baseline_cutoff,post_cutoff_oos_used\n"
+            "proxy_guard_exit_short_minus5_neutral_loss_guard55_min_history244,PAPER_REVIEW,True,2024-08-30,existing_observation_only\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_validation_data_quality.csv").write_text(
+            "symbol,status,first_date,last_date,rows,duplicate_dates,nonpositive_price_rows,reason\n"
+            "111111,PASS,2024-01-31,2024-09-30,9,0,0,passed\n"
+            "222222,PASS,2024-01-31,2024-09-30,9,0,0,passed\n",
+            encoding="utf-8",
+        )
+        (reports / "data_quality_excluded_symbols.csv").write_text(
+            "symbol,status,reason\n999999,BLOCK,bad price\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_universe_price_coverage.csv").write_text(
+            "date,universe_symbols,price_symbols,covered_symbols,excluded_symbols,missing_symbols,coverage_pct,status,missing_preview,excluded_preview\n"
+            "2024-01-31,2,2,2,0,0,100,PASS,,\n",
+            encoding="utf-8",
+        )
+        (metadata / "krx_universe_monthly.csv").write_text("date,symbol\n2024-01-31,111111\n", encoding="utf-8")
+        (reports / "regime_sideways_fundamental_pit_availability_audit.csv").write_text(
+            "symbol,row_status,locally_usable_by_audit_as_of\n111111,future_local_collection,False\n",
+            encoding="utf-8",
+        )
+
     def test_compare_command_prints_strategy_table(self):
         completed = subprocess.run(
             [
@@ -395,6 +445,31 @@ class CliTests(unittest.TestCase):
             self.assertTrue(csv_output.exists())
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Context Audit Only", md_output.read_text(encoding="utf-8"))
+
+    def test_ml_data_readiness_audit_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_ml_data_readiness_sources(root)
+            csv_output = root / "data" / "reports" / "ml_data_readiness_audit.csv"
+            md_output = root / "data" / "reports" / "ml_data_readiness_audit.md"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-data-readiness-audit",
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("audit_status  ready_for_baseline_tabular_ml", completed.stdout)
+            self.assertIn("recommended_model_start  baseline_tabular_ml", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Data Readiness Audit Only", md_output.read_text(encoding="utf-8"))
 
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(

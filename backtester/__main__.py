@@ -47,6 +47,10 @@ from .monthly_paper_operation_audit import (
     build_monthly_paper_operation_consistency_audit,
     save_monthly_paper_operation_consistency_audit,
 )
+from .ml_data_readiness_audit import (
+    build_ml_data_readiness_audit,
+    save_ml_data_readiness_audit,
+)
 from .monthly_rebalance import (
     MonthlyRebalanceConfig,
     MonthlyValidationCase,
@@ -2020,6 +2024,45 @@ def main() -> int:
         default="data/reports/project_context_consistency_audit.md",
     )
 
+    ml_readiness_parser = subparsers.add_parser(
+        "ml-data-readiness-audit",
+        help="Audit local paper-only data readiness for baseline ML ranking research without training",
+    )
+    ml_readiness_parser.add_argument("--price-dir", default="data/krx_expanded")
+    ml_readiness_parser.add_argument(
+        "--candidate-ledger-csv",
+        default="data/reports/monthly_candidate_research_ledger.csv",
+    )
+    ml_readiness_parser.add_argument(
+        "--data-quality-csv",
+        default="data/reports/monthly_validation_data_quality.csv",
+    )
+    ml_readiness_parser.add_argument(
+        "--data-quality-exclusions-csv",
+        default="data/reports/data_quality_excluded_symbols.csv",
+    )
+    ml_readiness_parser.add_argument(
+        "--universe-coverage-csv",
+        default="data/reports/monthly_universe_price_coverage.csv",
+    )
+    ml_readiness_parser.add_argument(
+        "--pit-universe-csv",
+        default="data/krx_metadata/krx_universe_monthly.csv",
+    )
+    ml_readiness_parser.add_argument(
+        "--fundamental-pit-audit-csv",
+        default="data/reports/regime_sideways_fundamental_pit_availability_audit.csv",
+    )
+    ml_readiness_parser.add_argument("--train-cutoff")
+    ml_readiness_parser.add_argument(
+        "--output",
+        default="data/reports/ml_data_readiness_audit.csv",
+    )
+    ml_readiness_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_data_readiness_audit.md",
+    )
+
     args = parser.parse_args()
     if args.command == "data-check":
         path = Path(args.path)
@@ -3077,6 +3120,29 @@ def main() -> int:
         print(f"recommended_action  {summary.get('recommended_action', 'keep_observing_no_tuning_no_promotion')}")
         print(f"context_audit_report  {args.output}")
         print(f"context_audit_markdown  {args.markdown_output}")
+        return 2 if audit_status == "BLOCK" else 0
+
+    if args.command == "ml-data-readiness-audit":
+        rows = build_ml_data_readiness_audit(
+            price_dir=args.price_dir,
+            candidate_ledger_csv=args.candidate_ledger_csv,
+            data_quality_csv=args.data_quality_csv,
+            data_quality_exclusions_csv=args.data_quality_exclusions_csv,
+            universe_coverage_csv=args.universe_coverage_csv,
+            pit_universe_csv=args.pit_universe_csv,
+            fundamental_pit_audit_csv=args.fundamental_pit_audit_csv,
+            train_cutoff=args.train_cutoff,
+        )
+        save_ml_data_readiness_audit(rows, args.output, args.markdown_output)
+        summary = rows[0] if rows else {}
+        audit_status = summary.get("status", "partial_data_only")
+        print(f"audit_status  {audit_status}")
+        print("recommended_model_start  baseline_tabular_ml")
+        print("deep_learning_status  not_ready")
+        print(f"trading_allowed  {summary.get('trading_allowed', 'False')}")
+        print(f"production_effect  {summary.get('production_effect', 'none')}")
+        print(f"ml_readiness_report  {args.output}")
+        print(f"ml_readiness_markdown  {args.markdown_output}")
         return 2 if audit_status == "BLOCK" else 0
 
     if args.command == "fetch-toss":

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 checkpoint trim / safety status resume
+Last updated: 2026-06-30 ML data readiness audit
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,13 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- Paper-only ML data readiness audit:
+  `data/reports/ml_data_readiness_audit.csv` and `.md`.
+  Current local data is ready to start baseline tabular ML ranking research
+  only; no model training was run. Train cutoff remains `2026-06-18`,
+  post-cutoff data used for train is `False`, PIT universe is available,
+  fundamentals/news/sentiment are `not_ready`, deep learning is `not_ready`,
+  `trading_allowed=False`, and `production_effect=none`.
 - Monthly paper operation consistency audit:
   `data/reports/monthly_paper_operation_consistency_audit.csv` and `.md`.
 - Protected candidate OOS review eligibility guard:
