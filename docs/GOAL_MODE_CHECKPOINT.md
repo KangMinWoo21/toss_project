@@ -87,6 +87,8 @@ protected paper-review candidate.
   `data/reports/paper_operation_safety_status_index.csv` and `.md`.
 - Minimal resume prompt refreshed:
   `docs/goal-mode-minimal-prompt.md`.
+- GPT project context refreshed:
+  `docs/GPT_PROJECT_CONTEXT.md`.
 
 ## Verification Baseline
 

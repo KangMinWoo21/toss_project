@@ -1,121 +1,70 @@
-# GPT Project Context: Toss Securities Paper-Operation Trading System
+# GPT Project Context
 
-Last updated: 2026-06-25
+Last updated: 2026-06-30
 
-## One-Line Verdict
+## Purpose
 
-This repository is useful for paper-operation research and monitoring, but it is
-not ready for real-money automated trading. `production-check` is still
-`BLOCK`, and `health-check` is `WARN` because scalper data is stale.
+This repository is for domestic-stock paper-operation research, local reports,
+and safety monitoring. It is not live-ready, and this file does not authorize
+trading, broker submission, order execution, candidate promotion, or production
+readiness changes.
 
-## Safety Rules
+## Read First
 
-- Do not add or enable real order execution.
-- Keep live trading disabled by default.
-- Do not call Toss APIs or network services in tests.
-- Do not print, summarize, or commit `.env` secrets.
-- Treat production/readiness/risk `BLOCK` as a hard stop.
-- Use data through `2026-06-18` as fixed baseline; later data is post-cutoff
-  paper-only OOS evidence only.
+1. `docs/GOAL_MODE_CHECKPOINT.md`
+2. `docs/goal-mode-minimal-prompt.md`
+3. `data/reports/paper_operation_safety_status_index.md`
+4. `data/reports/paper_operation_safety_status_index.csv`
+5. `data/reports/protected_candidate_oos_review_eligibility_guard.csv`
+6. `data/reports/monthly_paper_operation_consistency_audit.csv`
+7. `data/reports/monthly_paper_operation_review_packet.csv`
+8. `data/reports/health_warn_classification.csv`
 
-## Current Status
+## Current Safety Status
 
-- Latest pushed commit: `0acf392 Block empty followup stress review output`.
-- Production readiness: `BLOCK=8`, `PASS=33`, `WARN=8`.
-- Health: `PASS=7`, `WARN=1`; WARN is `scalper_data`.
-- Production remains not live-ready.
-- Push to `origin master` completed through `0acf392`.
+- Production is not live-ready: `BLOCK`.
+- Safety index: `overall_status=OBSERVE`.
+- Protected candidate remains `PAPER_REVIEW`.
+- OOS review eligibility is `REVIEW_NOT_ALLOWED`.
+- `trading_allowed=False`.
+- `review_allowed=False`.
+- `production_effect=none`.
+- Actionable rows: `0`.
+- Promoted candidates: `0`.
+- Recommended action: `keep_observing_no_tuning_no_promotion`.
+- Scalper stale `WARN` is separate from monthly paper review/OOS.
 
-## Production BLOCK Names
-
-- `overall`
-- `deployment_gate`
-- `validation_scenarios`
-- `validation_failure_actions`
-- `validation_remediation`
-- `validation_failure_patterns`
-- `risk_report`
-- `performance_report`
-
-## Required Validation Failures
-
-- `stress_exclude_500pct_winners`: max drawdown breach.
-- `regime_sideways`: negative excess return.
-- `walk_forward_001`: negative excess return.
-- `walk_forward_003`: train window rejected.
-- `walk_forward_005`: negative excess return.
-
-## Current Best Candidate
+## Protected Candidate
 
 `proxy_guard_exit_short_minus5_neutral_loss_guard55 + min_history244`
 
-- Baseline failed required scenarios: `5`.
-- Candidate failed required scenarios: `0`.
-- Failed delta: `-5`.
-- Decision: `PAPER_REVIEW`, not adopt/promote.
-- Stress review: `0/5` failed, baseline regressions `0`.
-- Duration review: `0/5` failed, baseline regressions `0`.
-- Promotion remains blocked by pending post-cutoff OOS and explicit production
-  readiness requirements.
+- Keep as paper-review evidence only.
+- Do not modify, tune, promote, replace, or adopt it.
+- OOS review is not allowed yet because observed trading days remain below the
+  required trading-day threshold and remaining trading days are still positive.
 
-## Recent Progress
+## Latest Verification Baseline
 
-- Pending post-cutoff OOS proof handling was hardened.
-- Candidate decision/follow-up readiness now surfaces pending OOS markers.
-- Unsafe live/order/trade/fetch wording is blocked across candidate, sweep,
-  remediation, failure action, and drilldown reports.
-- Failure action and sweep result coverage checks were added.
-- Derived validation failure/remediation/sweep reports were refreshed.
-- Performance audit was refreshed to match validation failures:
-  `required_scenarios:5 failed of 18 required`.
-- `min_history244` paper stress/duration review now has tested builder/saver
-  support.
-- `monthly-compare-validation --stress-review-output` regenerates paper-only
-  candidate stress review reports.
-- Candidate follow-up commands now include stress review output paths.
-- Readiness blocks missing/empty stress review output wiring for new-format
-  follow-up rows.
+- Full `unittest`: latest recorded `684` tests passing.
+- `python -m compileall -q backtester`: passing.
+- Safe production-check: `BLOCK` retained.
+- Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper
+  data.
 
-## Do Not Reuse As-Is
+## Hard Stops
 
-- `proxy_chase_guard_55_med35_short30`: introduced `walk_forward_002`.
-- `neutral_breadth_proxy_cap_50`: full-period/stress-slippage regressions.
-- `proxy_guard_exit_short_minus5_neutral_breadth_cap75`: worsened
-  `regime_sideways` path.
-- `guarded_loss_position_stop_12`, `position_stop_12`,
-  `weak_cash_10_position_stop_12`, `weak_defense_cash_10`: unresolved
-  blockers/regressions.
-- `neutral_breadth_proxy_cap_75`, `target_persistence_2`: held/unchanged.
-- `proxy_reversal_guard_55_extreme60`, `proxy_guard_short5_extreme50_mdd10`:
-  paper-review only; still left required failures.
-- Buyable-only or unbuyable-cash-reserve proxy variants worsened
-  `regime_sideways` path.
+- Do not rerun OOS.
+- Do not fetch data or call network services.
+- Do not run candidate compare.
+- Do not create new candidates.
+- Do not regenerate monthly plans.
+- Do not change strategy parameters.
+- Do not open, print, summarize, or commit `.env` or secrets.
+- Do not work on live trading, Toss API, broker submission, or order execution.
+- Do not push unless the user explicitly approves it.
 
-## Current Dirty Worktree
+## Next Work Style
 
-There are many pre-existing unrelated modified/untracked files. Do not revert
-or stage them unless explicitly requested.
-
-## Core Verification Commands
-
-```powershell
-python -m unittest discover -s tests
-python -m compileall -q backtester
-python -m backtester production-check --allow-blocked-exit-zero
-python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
-```
-
-Latest verified counts before this context refresh:
-
-- Tests: `613 PASS`.
-- Compileall: PASS.
-- Production: `BLOCK=8`, `PASS=33`, `WARN=8`.
-- Health: `PASS=7`, `WARN=1`.
-
-## Next Best Work
-
-- Keep production/readiness `BLOCK` as hard stop.
-- Continue from `regime_sideways` and paper-only `min_history244` evidence.
-- Do not tune on post-cutoff data; use it only for paper-only OOS review.
-- Avoid broad cash, broad stop, or broad proxy cap reuse.
-- Keep checkpoint updates short in `docs/GOAL_MODE_CHECKPOINT.md`.
+Use a narrow Goal loop. Read the required local files first, use existing local
+reports only, keep checkpoint updates short, and commit only the files directly
+related to the requested document/report change.
