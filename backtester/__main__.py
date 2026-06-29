@@ -80,6 +80,10 @@ from .ml_financial_pit_audit import (
     build_ml_financial_pit_audit_reports,
     save_ml_financial_pit_audit_reports,
 )
+from .ml_news_event_schema_plan import (
+    build_ml_news_event_schema_plan,
+    save_ml_news_event_schema_plan,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2266,6 +2270,19 @@ def main() -> int:
         default="data/reports/ml_financial_feature_merge_audit.md",
     )
 
+    ml_news_schema_parser = subparsers.add_parser(
+        "ml-news-event-schema-plan",
+        help="Write a fetch-free PIT-safe news event schema plan",
+    )
+    ml_news_schema_parser.add_argument(
+        "--output",
+        default="data/reports/ml_news_event_schema_plan.csv",
+    )
+    ml_news_schema_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_news_event_schema_plan.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3548,6 +3565,19 @@ def main() -> int:
         print(f"financial_feature_merge_audit  {args.output}")
         print(f"financial_feature_merge_audit_markdown  {args.markdown_output}")
         return 0 if leakage["status"] == "PASS" else 2
+
+    if args.command == "ml-news-event-schema-plan":
+        rows = build_ml_news_event_schema_plan()
+        save_ml_news_event_schema_plan(rows, args.output, args.markdown_output)
+        print("news_schema_plan_status  PASS")
+        print("fetch_allowed_now  False")
+        print("training_allowed_now  False")
+        print("feature_added_to_training  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"news_schema_plan_report  {args.output}")
+        print(f"news_schema_plan_markdown  {args.markdown_output}")
+        return 0
 
     if args.command == "fetch-toss":
         client_id = os.environ.get("TOSSINVEST_CLIENT_ID")

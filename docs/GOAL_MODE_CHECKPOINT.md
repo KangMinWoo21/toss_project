@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML financial feature merge audit
+Last updated: 2026-06-30 ML news event schema plan
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,15 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML news event schema plan:
+  `data/reports/ml_news_event_schema_plan.csv` and `.md`. Phase 8 is
+  schema-only and fetch-free; it defines Naver News, GDELT, manual calendar,
+  and PIT control rows with `published_at`, `collected_at`, `visible_at`,
+  `usable_from`, deterministic `text_hash` de-duplication, source coverage
+  risk, `fetch_allowed_now=False`, `training_allowed_now=False`,
+  `feature_added_to_training=False`, `trading_allowed=False`, and
+  `production_effect=none`. No news API, network fetch, training, OOS rerun,
+  candidate compare, strategy change, or production change was performed.
 - ML financial feature merge audit:
   `data/reports/ml_financial_feature_merge_audit.csv` and `.md`. Phase 7
   completed a local-only merge audit against the baseline ML sample and limited
@@ -170,7 +179,7 @@ protected paper-review candidate.
 
 Recent completed loops verified:
 
-- Full `unittest`: latest recorded `720` tests passing.
+- Full `unittest`: latest recorded `724` tests passing.
 - `python -m compileall -q backtester`: passing.
 - Safe production-check: `BLOCK` retained.
 - Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper

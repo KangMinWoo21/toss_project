@@ -21,6 +21,8 @@ Current status:
   sample did not join to the current baseline sample (`join_coverage=WARN 0/5`,
   `missing_rate=WARN 1.0000`), but leakage and safety checks passed and
   `feature_added_to_training=False`.
+- Phase 8 news event schema plan is complete and remains fetch-free with
+  `fetch_allowed_now=False` and `feature_added_to_training=False`.
 - Financial features have only a limited PIT-audited sample and are not ready
   for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
@@ -309,6 +311,12 @@ Completion conditions:
 - `text_hash` duplicate removal rule is defined.
 - Source coverage risk is recorded.
 - `fetch_allowed_now=False`.
+- Completed 2026-06-30 in `data/reports/ml_news_event_schema_plan.csv` and
+  `.md`. Actual result: Naver News, GDELT, manual calendar, and PIT control
+  schema rows define PIT timestamps, deterministic `text_hash` de-duplication,
+  source coverage risk, `fetch_allowed_now=False`,
+  `training_allowed_now=False`, `feature_added_to_training=False`,
+  `trading_allowed=False`, and `production_effect=none`.
 
 Forbidden in this phase:
 
