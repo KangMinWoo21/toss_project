@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML model completion roadmap checkpoint
+Last updated: 2026-06-30 ML baseline feature-label dataset
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,13 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML baseline feature/label dataset audit:
+  `data/reports/ml_baseline_feature_label_dataset_audit.csv`, `.md`, and
+  sample CSV. Phase 1 is `ready_for_training_scaffold` with
+  `train_cutoff=2026-06-18`, `label_row_count=69915`,
+  `post_cutoff_data_used_for_train=False`, `training_ran=False`,
+  `trading_allowed=False`, `production_effect=none`, and protected candidate
+  unchanged.
 - Paper-only ML model completion roadmap checkpoint:
   `docs/ml_model_completion_checkpoint.md`. This is a doc-only roadmap for
   completing baseline-to-final-packet ML research loops; it does not train

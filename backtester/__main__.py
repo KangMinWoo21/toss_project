@@ -51,6 +51,10 @@ from .ml_data_readiness_audit import (
     build_ml_data_readiness_audit,
     save_ml_data_readiness_audit,
 )
+from .ml_baseline_feature_label_dataset import (
+    build_ml_baseline_feature_label_dataset,
+    save_ml_baseline_feature_label_dataset_audit,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2068,6 +2072,46 @@ def main() -> int:
         default="data/reports/ml_data_readiness_audit.md",
     )
 
+    ml_feature_label_parser = subparsers.add_parser(
+        "ml-baseline-feature-label-dataset",
+        help="Create a paper-only baseline ML feature/label dataset audit without training",
+    )
+    ml_feature_label_parser.add_argument("--price-dir", default="data/krx_expanded")
+    ml_feature_label_parser.add_argument(
+        "--candidate-ledger-csv",
+        default="data/reports/monthly_candidate_research_ledger.csv",
+    )
+    ml_feature_label_parser.add_argument(
+        "--data-quality-csv",
+        default="data/reports/monthly_validation_data_quality.csv",
+    )
+    ml_feature_label_parser.add_argument(
+        "--data-quality-exclusions-csv",
+        default="data/reports/data_quality_excluded_symbols.csv",
+    )
+    ml_feature_label_parser.add_argument(
+        "--universe-coverage-csv",
+        default="data/reports/monthly_universe_price_coverage.csv",
+    )
+    ml_feature_label_parser.add_argument(
+        "--pit-universe-csv",
+        default="data/krx_metadata/krx_universe_monthly.csv",
+    )
+    ml_feature_label_parser.add_argument("--train-cutoff")
+    ml_feature_label_parser.add_argument("--sample-limit", type=int, default=200)
+    ml_feature_label_parser.add_argument(
+        "--output",
+        default="data/reports/ml_baseline_feature_label_dataset_audit.csv",
+    )
+    ml_feature_label_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_baseline_feature_label_dataset_audit.md",
+    )
+    ml_feature_label_parser.add_argument(
+        "--sample-output",
+        default="data/reports/ml_baseline_feature_label_sample.csv",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3162,6 +3206,34 @@ def main() -> int:
         print(f"ml_readiness_report  {args.output}")
         print(f"ml_readiness_markdown  {args.markdown_output}")
         return 2 if audit_status == "BLOCK" else 0
+
+    if args.command == "ml-baseline-feature-label-dataset":
+        result = build_ml_baseline_feature_label_dataset(
+            price_dir=args.price_dir,
+            candidate_ledger_csv=args.candidate_ledger_csv,
+            data_quality_csv=args.data_quality_csv,
+            data_quality_exclusions_csv=args.data_quality_exclusions_csv,
+            universe_coverage_csv=args.universe_coverage_csv,
+            pit_universe_csv=args.pit_universe_csv,
+            train_cutoff=args.train_cutoff,
+            sample_limit=args.sample_limit,
+        )
+        save_ml_baseline_feature_label_dataset_audit(
+            result,
+            args.output,
+            args.markdown_output,
+            args.sample_output,
+        )
+        summary = result.audit_rows[0] if result.audit_rows else {}
+        dataset_status = summary.get("status", "partial_dataset_only")
+        print(f"dataset_status  {dataset_status}")
+        print("training_ran  False")
+        print(f"trading_allowed  {summary.get('trading_allowed', 'False')}")
+        print(f"production_effect  {summary.get('production_effect', 'none')}")
+        print(f"feature_label_dataset_report  {args.output}")
+        print(f"feature_label_dataset_markdown  {args.markdown_output}")
+        print(f"feature_label_sample  {args.sample_output}")
+        return 2 if dataset_status == "BLOCK" else 0
 
     if args.command == "ml-external-feature-readiness-plan":
         rows = build_ml_external_feature_readiness_plan()

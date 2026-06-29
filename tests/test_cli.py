@@ -471,6 +471,37 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Data Readiness Audit Only", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_baseline_feature_label_dataset_cli_writes_reports_and_sample(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_ml_data_readiness_sources(root)
+            csv_output = root / "data" / "reports" / "ml_baseline_feature_label_dataset_audit.csv"
+            md_output = root / "data" / "reports" / "ml_baseline_feature_label_dataset_audit.md"
+            sample_output = root / "data" / "reports" / "ml_baseline_feature_label_sample.csv"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-baseline-feature-label-dataset",
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                    "--sample-output",
+                    str(sample_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("dataset_status  ready_for_training_scaffold", completed.stdout)
+            self.assertIn("training_ran  False", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertTrue(sample_output.exists())
+            self.assertIn("Do Not Trade / Feature-Label Dataset Only", md_output.read_text(encoding="utf-8"))
+
     def test_ml_external_feature_readiness_plan_cli_writes_reports(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
