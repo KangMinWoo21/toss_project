@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML explainability failure analysis
+Last updated: 2026-06-30 ML financial feature schema plan
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,13 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML financial feature schema plan:
+  `data/reports/ml_financial_feature_schema_plan.csv` and `.md`. Phase 5 is
+  schema-only and fetch-free; it defines OpenDART financial metrics, valuation
+  metrics, disclosure correction lineage, PIT controls, `receipt_date`,
+  `receipt_time`, `collected_at`, `usable_from`, `api_key_required=True`,
+  `fetch_allowed_now=False`, `training_allowed_now=False`,
+  `trading_allowed=False`, and `production_effect=none`.
 - ML explainability and failure analysis:
   `data/reports/ml_feature_importance_report.csv` and
   `data/reports/ml_failure_analysis_report.csv`. Phase 4 records feature

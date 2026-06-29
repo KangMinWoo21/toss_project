@@ -67,6 +67,10 @@ from .ml_explainability_failure_analysis import (
     build_ml_explainability_failure_analysis_reports,
     save_ml_explainability_failure_analysis_reports,
 )
+from .ml_financial_feature_schema_plan import (
+    build_ml_financial_feature_schema_plan,
+    save_ml_financial_feature_schema_plan,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2187,6 +2191,19 @@ def main() -> int:
         default="data/reports/ml_failure_analysis_report.csv",
     )
 
+    ml_financial_schema_parser = subparsers.add_parser(
+        "ml-financial-feature-schema-plan",
+        help="Write a fetch-free PIT-safe OpenDART financial feature schema plan",
+    )
+    ml_financial_schema_parser.add_argument(
+        "--output",
+        default="data/reports/ml_financial_feature_schema_plan.csv",
+    )
+    ml_financial_schema_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_financial_feature_schema_plan.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3366,6 +3383,18 @@ def main() -> int:
         print(f"feature_importance_report  {args.feature_importance_output}")
         print(f"failure_analysis_report  {args.failure_analysis_output}")
         return 0 if explainability_ok and failure_ok else 2
+
+    if args.command == "ml-financial-feature-schema-plan":
+        rows = build_ml_financial_feature_schema_plan()
+        save_ml_financial_feature_schema_plan(rows, args.output, args.markdown_output)
+        print("schema_plan_status  PASS")
+        print("fetch_allowed_now  False")
+        print("training_allowed_now  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"financial_schema_plan_report  {args.output}")
+        print(f"financial_schema_plan_markdown  {args.markdown_output}")
+        return 0
 
     if args.command == "ml-external-feature-readiness-plan":
         rows = build_ml_external_feature_readiness_plan()
