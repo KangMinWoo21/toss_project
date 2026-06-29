@@ -59,6 +59,66 @@ class CliTests(unittest.TestCase):
         (data_dir / f"{symbol}.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
         return (start + timedelta(days=rows - 1)).date().isoformat()
 
+    def _write_paper_operation_audit_sources(self, root: Path) -> None:
+        reports = root / "data" / "reports"
+        reports.mkdir(parents=True, exist_ok=True)
+        symbols = ["000270", "016360", "028050", "088350", "161390"]
+        (reports / "monthly_paper_operation_review_packet.csv").write_text(
+            "section,status,key_value,manual_action_required,trading_allowed,reason,source_report\n"
+            "production_readiness,BLOCK,production_status=BLOCK;production_effect=none,True,False,block,source.csv\n"
+            "protected_candidate,PAPER_REVIEW,candidate=guard;promotion_allowed=False,True,False,paper review,source.csv\n"
+            "oos_observation,OBSERVE,review_allowed=False;observed_days=0,True,False,observe,source.csv\n"
+            "monthly_order_plan,BLOCKED_REVIEW_ONLY,rows=5;blocked_rows=5;actionable_rows=0,True,False,blocked,source.csv\n"
+            "do_not_trade,HARD_STOP,trading_allowed=False;broker_submission=forbidden;production_effect=none,True,False,no trade,source.md\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_order_plan_markdown_blocked_row_audit.csv").write_text(
+            "as_of_date,csv_order_rows,markdown_order_rows_visible,csv_blocked_rows,markdown_blocked_rows_visible,all_blocked_rows_explained,missing_blocked_row_count,risk_status_visible,risk_reasons_visible,production_block_visible,recommendation,reason\n"
+            "2026-06-18,5,5,5,5,True,0,True,True,True,review,risk_status_BLOCK\n",
+            encoding="utf-8",
+        )
+        order_lines = [
+            "as_of_date,symbol,action,quantity,execution_allowed,execution_mode,execution_block_reason,risk_status,risk_reasons"
+        ]
+        order_lines.extend(
+            f"2026-06-18,{symbol},BUY,{index + 1},False,blocked,risk_status_BLOCK,BLOCKED,risk_status_BLOCK"
+            for index, symbol in enumerate(symbols)
+        )
+        (reports / "monthly_order_plan_neutral_loss_guard55_min_history244.csv").write_text(
+            "\n".join(order_lines) + "\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_paper_operation_review_packet.md").write_text(
+            "Production readiness remains `BLOCK`.\n"
+            "Production effect: `none`.\n"
+            "Status: `PAPER_REVIEW`.\n"
+            "review_allowed=False\n"
+            "Actionable rows: `0`.\n",
+            encoding="utf-8",
+        )
+        blocked_symbols = ", ".join(symbols)
+        (reports / "monthly_order_plan_markdown_blocked_row_audit.md").write_text(
+            f"{blocked_symbols}\nrisk_status_BLOCK\n",
+            encoding="utf-8",
+        )
+        table_rows = "\n".join(
+            f"| {symbol} | BUY | {index + 1} | False | blocked | BLOCKED | risk_status_BLOCK |"
+            for index, symbol in enumerate(symbols)
+        )
+        (reports / "monthly_order_plan_blocked_rows_review_summary.md").write_text(
+            "Broker submission: forbidden\n"
+            "execution_allowed=False execution_mode=blocked risk_status_BLOCK\n"
+            f"{table_rows}\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_order_plan_neutral_loss_guard55_min_history244.md").write_text(
+            "Execution status: BLOCKED\n"
+            "Blocked orders: 5\n"
+            + "\n".join(f"- {symbol} BUY {index + 1}: risk_status_BLOCK" for index, symbol in enumerate(symbols))
+            + "\n",
+            encoding="utf-8",
+        )
+
     def test_compare_command_prints_strategy_table(self):
         completed = subprocess.run(
             [
@@ -131,6 +191,30 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rows[0]["observed_trading_days_after_plan"], "2")
         self.assertEqual(rows[0]["remaining_trading_days"], "13")
         self.assertEqual(rows[0]["status"], "OBSERVE")
+
+    def test_monthly_paper_operation_consistency_audit_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_paper_operation_audit_sources(root)
+            csv_output = root / "data" / "reports" / "monthly_paper_operation_consistency_audit.csv"
+            md_output = root / "data" / "reports" / "monthly_paper_operation_consistency_audit.md"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "monthly-paper-operation-consistency-audit",
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("audit_status  PASS", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Review Only", md_output.read_text(encoding="utf-8"))
 
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(

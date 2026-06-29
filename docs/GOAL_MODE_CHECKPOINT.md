@@ -295,6 +295,15 @@ appending long command logs or full report lists here.
   explicit. Verification passed: full `unittest` `661` tests and `compileall`;
   default and protected-overlay production-checks remain BLOCK; health-check
   remains WARN only for stale scalper data.
+- Monthly paper operation consistency audit added at
+  `data/reports/monthly_paper_operation_consistency_audit.csv` and `.md`.
+  Audit is review-only and PASS: production remains BLOCK, protected candidate
+  remains `PAPER_REVIEW`, `trading_allowed=False`, actionable rows remain `0`,
+  broker submission/order execution are forbidden, OOS `review_allowed=False`,
+  and all `5` blocked rows (`000270`, `016360`, `028050`, `088350`, `161390`)
+  retain `risk_status_BLOCK`. Verification passed: targeted audit tests, full
+  `unittest` `669` tests, `compileall`, production-check BLOCK, and
+  health-check WARN only for stale scalper data. No push.
 - Production remains not live-ready.
 
 ## Recent Loops

@@ -43,6 +43,10 @@ from .momentum_validation import (
     save_validation_rows,
     summarize_deployment_gate,
 )
+from .monthly_paper_operation_audit import (
+    build_monthly_paper_operation_consistency_audit,
+    save_monthly_paper_operation_consistency_audit,
+)
 from .monthly_rebalance import (
     MonthlyRebalanceConfig,
     MonthlyValidationCase,
@@ -1860,6 +1864,47 @@ def main() -> int:
         help="Return a non-zero exit code for WARN as well as BLOCK",
     )
 
+    paper_operation_audit_parser = subparsers.add_parser(
+        "monthly-paper-operation-consistency-audit",
+        help="Audit existing monthly paper-operation reports for review-only consistency",
+    )
+    paper_operation_audit_parser.add_argument(
+        "--review-packet-csv",
+        default="data/reports/monthly_paper_operation_review_packet.csv",
+    )
+    paper_operation_audit_parser.add_argument(
+        "--markdown-blocked-audit-csv",
+        default="data/reports/monthly_order_plan_markdown_blocked_row_audit.csv",
+    )
+    paper_operation_audit_parser.add_argument(
+        "--order-plan-csv",
+        default="data/reports/monthly_order_plan_neutral_loss_guard55_min_history244.csv",
+    )
+    paper_operation_audit_parser.add_argument(
+        "--review-packet-md",
+        default="data/reports/monthly_paper_operation_review_packet.md",
+    )
+    paper_operation_audit_parser.add_argument(
+        "--markdown-blocked-audit-md",
+        default="data/reports/monthly_order_plan_markdown_blocked_row_audit.md",
+    )
+    paper_operation_audit_parser.add_argument(
+        "--blocked-summary-md",
+        default="data/reports/monthly_order_plan_blocked_rows_review_summary.md",
+    )
+    paper_operation_audit_parser.add_argument(
+        "--order-plan-md",
+        default="data/reports/monthly_order_plan_neutral_loss_guard55_min_history244.md",
+    )
+    paper_operation_audit_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_paper_operation_consistency_audit.csv",
+    )
+    paper_operation_audit_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/monthly_paper_operation_consistency_audit.md",
+    )
+
     args = parser.parse_args()
     if args.command == "data-check":
         path = Path(args.path)
@@ -2836,6 +2881,27 @@ def main() -> int:
         if report.status == "WARN" and args.strict:
             return 2
         return 0
+
+    if args.command == "monthly-paper-operation-consistency-audit":
+        rows = build_monthly_paper_operation_consistency_audit(
+            review_packet_csv=args.review_packet_csv,
+            markdown_blocked_audit_csv=args.markdown_blocked_audit_csv,
+            order_plan_csv=args.order_plan_csv,
+            review_packet_md=args.review_packet_md,
+            markdown_blocked_audit_md=args.markdown_blocked_audit_md,
+            blocked_summary_md=args.blocked_summary_md,
+            order_plan_md=args.order_plan_md,
+        )
+        save_monthly_paper_operation_consistency_audit(rows, args.output, args.markdown_output)
+        block_count = sum(1 for row in rows if row.get("status") == "BLOCK")
+        warn_count = sum(1 for row in rows if row.get("status") == "WARN")
+        status = "BLOCK" if block_count else "WARN" if warn_count else "PASS"
+        print(f"audit_status  {status}")
+        print(f"audit_rows  {len(rows)}")
+        print(f"audit_report  {args.output}")
+        print(f"audit_markdown  {args.markdown_output}")
+        print("review_only  True")
+        return 2 if status == "BLOCK" else 0
 
     if args.command == "fetch-toss":
         client_id = os.environ.get("TOSSINVEST_CLIENT_ID")
