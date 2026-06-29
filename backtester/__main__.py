@@ -55,6 +55,10 @@ from .ml_baseline_feature_label_dataset import (
     build_ml_baseline_feature_label_dataset,
     save_ml_baseline_feature_label_dataset_audit,
 )
+from .ml_baseline_model_training import (
+    build_ml_baseline_model_training_report,
+    save_ml_baseline_model_training_report,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2112,6 +2116,27 @@ def main() -> int:
         default="data/reports/ml_baseline_feature_label_sample.csv",
     )
 
+    ml_baseline_training_parser = subparsers.add_parser(
+        "ml-baseline-model-training",
+        help="Train the simplest paper-only baseline ML scaffold and write reports",
+    )
+    ml_baseline_training_parser.add_argument(
+        "--dataset-csv",
+        default="data/reports/ml_baseline_feature_label_sample.csv",
+    )
+    ml_baseline_training_parser.add_argument(
+        "--dataset-audit-csv",
+        default="data/reports/ml_baseline_feature_label_dataset_audit.csv",
+    )
+    ml_baseline_training_parser.add_argument(
+        "--output",
+        default="data/reports/ml_baseline_model_training_report.csv",
+    )
+    ml_baseline_training_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_baseline_model_training_report.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3234,6 +3259,23 @@ def main() -> int:
         print(f"feature_label_dataset_markdown  {args.markdown_output}")
         print(f"feature_label_sample  {args.sample_output}")
         return 2 if dataset_status == "BLOCK" else 0
+
+    if args.command == "ml-baseline-model-training":
+        rows = build_ml_baseline_model_training_report(
+            dataset_csv=args.dataset_csv,
+            dataset_audit_csv=args.dataset_audit_csv,
+        )
+        save_ml_baseline_model_training_report(rows, args.output, args.markdown_output)
+        summary = rows[0] if rows else {}
+        training_status = summary.get("status", "training_scaffold_blocked")
+        print(f"training_status  {training_status}")
+        print("model_type  logistic_regression_sgd")
+        print("oos_data_used  False")
+        print(f"trading_allowed  {summary.get('trading_allowed', 'False')}")
+        print(f"production_effect  {summary.get('production_effect', 'none')}")
+        print(f"training_report  {args.output}")
+        print(f"training_markdown  {args.markdown_output}")
+        return 2 if training_status == "training_scaffold_blocked" else 0
 
     if args.command == "ml-external-feature-readiness-plan":
         rows = build_ml_external_feature_readiness_plan()

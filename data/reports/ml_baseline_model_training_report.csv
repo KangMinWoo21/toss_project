@@ -1,0 +1,21 @@
+metric,status,value,reason,source,trading_allowed,production_effect
+summary,paper_only_baseline_trained,paper_only_baseline_trained,"Phase 2 paper-only baseline model training scaffold; no OOS rerun, fetch, candidate compare, candidate promotion, broker call, or production linkage was performed.",derived,False,none
+source_files_present,PASS,all required local sources readable,Phase 2 consumes the Phase 1 feature/label dataset and audit only.,data/reports/ml_baseline_feature_label_sample.csv;data/reports/ml_baseline_feature_label_dataset_audit.csv,False,none
+model_type,PASS,logistic_regression_sgd,Simplest paper-only baseline implemented with standard-library deterministic SGD.,derived,False,none
+dataset_ready,PASS,True,Requires Phase 1 ready_for_training_scaffold.,data/reports/ml_baseline_feature_label_dataset_audit.csv,False,none
+train_cutoff,PASS,2026-06-18,Cutoff inherited from Phase 1 audit.,data/reports/ml_baseline_feature_label_dataset_audit.csv,False,none
+train_row_count,PASS,111,Training split uses only pre-cutoff rows.,data/reports/ml_baseline_feature_label_sample.csv,False,none
+validation_row_count,PASS,88,Validation split uses only pre-cutoff rows.,data/reports/ml_baseline_feature_label_sample.csv,False,none
+train_validation_split_cutoff_safe,PASS,True,max_train_label_end=2024-09-30; max_validation_label_end=2026-06-18,derived,False,none
+post_cutoff_data_used_for_train,PASS,False,Rows after cutoff are excluded before train/validation split.,derived,False,none
+oos_data_used,PASS,False,Post-cutoff OOS data is not used in Phase 2.,derived,False,none
+label_distribution_train,PASS,positive=50;negative=61,Binary positive/negative labels used for baseline scaffold.,derived,False,none
+label_distribution_validation,PASS,positive=37;negative=51,Validation labels are pre-cutoff only.,derived,False,none
+train_accuracy,PASS,0.5946,In-sample diagnostic only; not a production claim.,derived,False,none
+validation_accuracy,PASS,0.5909,Pre-cutoff validation diagnostic only; no OOS review performed.,derived,False,none
+model_artifact_written,PASS,False,No model artifact is written in this scaffold loop.,derived,False,none
+production_artifact_linked,PASS,False,No model artifact is connected to production.,derived,False,none
+protected_candidate_status,PASS,PAPER_REVIEW,Protected PAPER_REVIEW candidate remains unchanged.,data/reports/ml_baseline_feature_label_dataset_audit.csv,False,none
+candidate_promotion,PASS,False,Phase 2 cannot promote or tune candidates.,derived,False,none
+trading_allowed,PASS,False,Training report only; no trading authorization.,derived,False,none
+production_effect,PASS,none,Report has no production effect.,derived,False,none

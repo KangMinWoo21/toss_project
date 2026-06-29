@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML baseline feature-label dataset
+Last updated: 2026-06-30 ML baseline model training scaffold
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,13 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML baseline model training scaffold:
+  `data/reports/ml_baseline_model_training_report.csv` and `.md`. Phase 2 is
+  `paper_only_baseline_trained` with `model_type=logistic_regression_sgd`,
+  `train_cutoff=2026-06-18`, pre-cutoff train/validation split `PASS`,
+  `post_cutoff_data_used_for_train=False`, `oos_data_used=False`,
+  `production_artifact_linked=False`, `trading_allowed=False`,
+  `production_effect=none`, and protected candidate unchanged.
 - ML baseline feature/label dataset audit:
   `data/reports/ml_baseline_feature_label_dataset_audit.csv`, `.md`, and
   sample CSV. Phase 1 is `ready_for_training_scaffold` with
