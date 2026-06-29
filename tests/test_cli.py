@@ -908,6 +908,61 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Sentiment Plan Only", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_external_feature_readiness_reaudit_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reports = root / "data" / "reports"
+            financial = reports / "ml_financial_feature_merge_audit.csv"
+            news = reports / "ml_news_event_schema_plan.csv"
+            sentiment = reports / "ml_sentiment_scoring_plan.csv"
+            csv_output = reports / "ml_external_feature_readiness_reaudit.csv"
+            md_output = reports / "ml_external_feature_readiness_reaudit.md"
+            reports.mkdir(parents=True, exist_ok=True)
+            financial.write_text(
+                "metric,status,value,reason,source,post_cutoff_data_used_for_train,feature_added_to_training,training_allowed_now,trading_allowed,production_effect,protected_candidate_unchanged\n"
+                "join_coverage,WARN,0/5,coverage missing,derived,False,False,False,False,none,True\n"
+                "missing_rate,WARN,1.0000,missing all,derived,False,False,False,False,none,True\n"
+                "leakage_check,PASS,safe,derived,False,False,False,False,none,True\n",
+                encoding="utf-8",
+            )
+            news.write_text(
+                "event_group,source_name,candidate_features,schema_fields,timestamp_fields,dedupe_rule,lineage_rule,api_key_required,fetch_allowed_now,training_allowed_now,feature_added_to_training,trading_allowed,production_effect,pit_required,usable_from_required,source_coverage_risk,leakage_risk,data_quality_risk,current_status,next_safe_action\n"
+                "naver_news_events,naver_news_search_api,event_count_1m,source_id;symbol;headline;text_hash,published_at;collected_at;visible_at;usable_from,compute text_hash,append only,mixed,False,False,False,False,none,True,True,coverage risk,leakage risk,data risk,schema_plan_only,no fetch\n",
+                encoding="utf-8",
+            )
+            sentiment.write_text(
+                "component,source_name,model_version,candidate_features,schema_fields,timestamp_fields,sentiment_score_range,lineage_rule,fetch_allowed_now,training_allowed_now,model_training_allowed,feature_added_to_training,trading_allowed,production_effect,pit_required,usable_from_required,llm_risk_note,leakage_risk,data_quality_risk,current_status,next_safe_action\n"
+                "lexicon_scoring,news_events_schema_rows,rule_lexicon_v1,sentiment_score,model_version;sentiment_score,published_at;collected_at;visible_at;scored_at;usable_from,-1.0_to_1.0,score only safe rows,False,False,False,False,False,none,True,True,No FinBERT or LLM scoring,leakage risk,data risk,schema_plan_only,no training\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-external-feature-readiness-reaudit",
+                    "--financial-merge-audit-csv",
+                    str(financial),
+                    "--news-schema-plan-csv",
+                    str(news),
+                    "--sentiment-scoring-plan-csv",
+                    str(sentiment),
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("external_feature_reaudit_status  BLOCK", completed.stdout)
+            self.assertIn("training_allowed  False", completed.stdout)
+            self.assertIn("feature_added_to_training  False", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Re-Audit Only", md_output.read_text(encoding="utf-8"))
+
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(
             [

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML sentiment scoring plan
+Last updated: 2026-06-30 ML external feature readiness re-audit
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,16 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML external feature readiness re-audit:
+  `data/reports/ml_external_feature_readiness_reaudit.csv` and `.md`.
+  Phase 10 re-audits financial, news, and sentiment external features from
+  existing local reports only. Result: financial `not_ready` with
+  `missing_rate=1.0000`, news `not_ready`, sentiment `not_ready`, overall
+  `BLOCK`, leakage checks `PASS`, `training_allowed=False`,
+  `feature_added_to_training=False`, `post_cutoff_data_used_for_train=False`,
+  `trading_allowed=False`, and `production_effect=none`. No fetch, API call,
+  scoring, training, OOS rerun, candidate compare, strategy change, or
+  production change was performed.
 - ML sentiment scoring plan:
   `data/reports/ml_sentiment_scoring_plan.csv` and `.md`. Phase 9 is
   rule/lexicon plan-only; it defines `model_version=rule_lexicon_v1`,
@@ -189,7 +199,7 @@ protected paper-review candidate.
 
 Recent completed loops verified:
 
-- Full `unittest`: latest recorded `728` tests passing.
+- Full `unittest`: latest recorded `731` tests passing.
 - `python -m compileall -q backtester`: passing.
 - Safe production-check: `BLOCK` retained.
 - Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper

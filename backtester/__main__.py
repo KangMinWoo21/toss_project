@@ -88,6 +88,10 @@ from .ml_sentiment_scoring_plan import (
     build_ml_sentiment_scoring_plan,
     save_ml_sentiment_scoring_plan,
 )
+from .ml_external_feature_readiness_reaudit import (
+    build_ml_external_feature_readiness_reaudit,
+    save_ml_external_feature_readiness_reaudit,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2300,6 +2304,31 @@ def main() -> int:
         default="data/reports/ml_sentiment_scoring_plan.md",
     )
 
+    ml_external_reaudit_parser = subparsers.add_parser(
+        "ml-external-feature-readiness-reaudit",
+        help="Write a local-only readiness re-audit for financial, news, and sentiment ML features",
+    )
+    ml_external_reaudit_parser.add_argument(
+        "--financial-merge-audit-csv",
+        default="data/reports/ml_financial_feature_merge_audit.csv",
+    )
+    ml_external_reaudit_parser.add_argument(
+        "--news-schema-plan-csv",
+        default="data/reports/ml_news_event_schema_plan.csv",
+    )
+    ml_external_reaudit_parser.add_argument(
+        "--sentiment-scoring-plan-csv",
+        default="data/reports/ml_sentiment_scoring_plan.csv",
+    )
+    ml_external_reaudit_parser.add_argument(
+        "--output",
+        default="data/reports/ml_external_feature_readiness_reaudit.csv",
+    )
+    ml_external_reaudit_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_external_feature_readiness_reaudit.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3609,6 +3638,25 @@ def main() -> int:
         print("production_effect  none")
         print(f"sentiment_plan_report  {args.output}")
         print(f"sentiment_plan_markdown  {args.markdown_output}")
+        return 0
+
+    if args.command == "ml-external-feature-readiness-reaudit":
+        result = build_ml_external_feature_readiness_reaudit(
+            financial_merge_audit_csv=args.financial_merge_audit_csv,
+            news_schema_plan_csv=args.news_schema_plan_csv,
+            sentiment_scoring_plan_csv=args.sentiment_scoring_plan_csv,
+        )
+        save_ml_external_feature_readiness_reaudit(result, args.output, args.markdown_output)
+        overall = next(row for row in result.rows if row["feature_group"] == "overall")
+        print(f"external_feature_reaudit_status  {overall['readiness']}")
+        print(f"leakage_check  {overall['leakage_check']}")
+        print("training_allowed  False")
+        print("feature_added_to_training  False")
+        print("post_cutoff_data_used_for_train  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"external_feature_reaudit_report  {args.output}")
+        print(f"external_feature_reaudit_markdown  {args.markdown_output}")
         return 0
 
     if args.command == "fetch-toss":

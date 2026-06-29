@@ -26,6 +26,9 @@ Current status:
 - Phase 9 sentiment scoring plan is complete. It is rule/lexicon-only with
   `model_version=rule_lexicon_v1`, `training_allowed_now=False`, and
   FinBERT/LLM kept later-stage.
+- Phase 10 external feature readiness re-audit is complete. Financial, news,
+  and sentiment features remain `not_ready`; overall readiness is `BLOCK` and
+  `training_allowed=False`.
 - Financial features have only a limited PIT-audited sample and are not ready
   for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
@@ -385,6 +388,13 @@ Completion conditions:
 - Leakage risk is evaluated.
 - Missing rate is evaluated.
 - `training_allowed=False` until explicit approval.
+- Completed 2026-06-30 in
+  `data/reports/ml_external_feature_readiness_reaudit.csv` and `.md`.
+  Actual result: financial `not_ready` with `missing_rate=1.0000`, news
+  `not_ready`, sentiment `not_ready`, overall `BLOCK`, leakage checks `PASS`,
+  `training_allowed=False`, `feature_added_to_training=False`,
+  `post_cutoff_data_used_for_train=False`, `trading_allowed=False`, and
+  `production_effect=none`.
 
 Forbidden in this phase:
 
