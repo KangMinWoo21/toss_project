@@ -1,0 +1,8 @@
+feature,rank,coefficient,importance_abs,direction,missing_rate,overfit_risk_note,train_cutoff,leakage_check,pit_universe_check,protected_candidate_status,candidate_modified,trading_allowed,production_effect
+price_vs_3m_sma,1,0.664514,0.664514,positive,0.0503,overfit risk: feature importance is from a paper-only baseline and requires future validation before any use.,2026-06-18,PASS,PASS,PAPER_REVIEW,False,False,none
+return_3m,2,-0.538525,0.538525,negative,0.0754,overfit risk: feature importance is from a paper-only baseline and requires future validation before any use.,2026-06-18,PASS,PASS,PAPER_REVIEW,False,False,none
+drawdown_3m,3,0.445147,0.445147,positive,0.0000,overfit risk: feature importance is from a paper-only baseline and requires future validation before any use.,2026-06-18,PASS,PASS,PAPER_REVIEW,False,False,none
+return_1m,4,-0.441988,0.441988,negative,0.0251,overfit risk: feature importance is from a paper-only baseline and requires future validation before any use.,2026-06-18,PASS,PASS,PAPER_REVIEW,False,False,none
+return_6m,5,-0.218640,0.218640,negative,0.1457,overfit risk: feature importance is from a paper-only baseline and requires future validation before any use.,2026-06-18,PASS,PASS,PAPER_REVIEW,False,False,none
+volatility_3m,6,0.129136,0.129136,positive,0.0503,overfit risk: feature importance is from a paper-only baseline and requires future validation before any use.,2026-06-18,PASS,PASS,PAPER_REVIEW,False,False,none
+volume_change_1m,7,-0.110993,0.110993,negative,0.0302,overfit risk: feature importance is from a paper-only baseline and requires future validation before any use.,2026-06-18,PASS,PASS,PAPER_REVIEW,False,False,none

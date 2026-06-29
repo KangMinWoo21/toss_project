@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML baseline validation report
+Last updated: 2026-06-30 ML explainability failure analysis
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,12 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML explainability and failure analysis:
+  `data/reports/ml_feature_importance_report.csv` and
+  `data/reports/ml_failure_analysis_report.csv`. Phase 4 records feature
+  importance, regime summaries, failure months, failure symbols, and overfit
+  risk notes with leakage/PIT checks `PASS`, `trading_allowed=False`,
+  `production_effect=none`, and protected candidate unchanged.
 - ML baseline validation report:
   `data/reports/ml_baseline_validation_report.csv` and `.md`. Phase 3 is
   `paper_only_validation_complete` with leakage/PIT/feature checks `PASS`,

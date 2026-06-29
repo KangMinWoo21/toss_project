@@ -63,6 +63,10 @@ from .ml_baseline_validation import (
     build_ml_baseline_validation_report,
     save_ml_baseline_validation_report,
 )
+from .ml_explainability_failure_analysis import (
+    build_ml_explainability_failure_analysis_reports,
+    save_ml_explainability_failure_analysis_reports,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2162,6 +2166,27 @@ def main() -> int:
         default="data/reports/ml_baseline_validation_report.md",
     )
 
+    ml_explainability_parser = subparsers.add_parser(
+        "ml-explainability-failure-analysis",
+        help="Write paper-only baseline ML feature importance and failure analysis reports",
+    )
+    ml_explainability_parser.add_argument(
+        "--dataset-csv",
+        default="data/reports/ml_baseline_feature_label_sample.csv",
+    )
+    ml_explainability_parser.add_argument(
+        "--validation-report-csv",
+        default="data/reports/ml_baseline_validation_report.csv",
+    )
+    ml_explainability_parser.add_argument(
+        "--feature-importance-output",
+        default="data/reports/ml_feature_importance_report.csv",
+    )
+    ml_explainability_parser.add_argument(
+        "--failure-analysis-output",
+        default="data/reports/ml_failure_analysis_report.csv",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3320,6 +3345,27 @@ def main() -> int:
         print(f"validation_report  {args.output}")
         print(f"validation_markdown  {args.markdown_output}")
         return 2 if validation_status == "validation_blocked" else 0
+
+    if args.command == "ml-explainability-failure-analysis":
+        feature_rows, failure_rows = build_ml_explainability_failure_analysis_reports(
+            dataset_csv=args.dataset_csv,
+            validation_report_csv=args.validation_report_csv,
+        )
+        save_ml_explainability_failure_analysis_reports(
+            feature_rows,
+            failure_rows,
+            args.feature_importance_output,
+            args.failure_analysis_output,
+        )
+        explainability_ok = bool(feature_rows)
+        failure_ok = bool(failure_rows)
+        print(f"explainability_status  {'PASS' if explainability_ok else 'BLOCK'}")
+        print(f"failure_analysis_status  {'PASS' if failure_ok else 'BLOCK'}")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"feature_importance_report  {args.feature_importance_output}")
+        print(f"failure_analysis_report  {args.failure_analysis_output}")
+        return 0 if explainability_ok and failure_ok else 2
 
     if args.command == "ml-external-feature-readiness-plan":
         rows = build_ml_external_feature_readiness_plan()

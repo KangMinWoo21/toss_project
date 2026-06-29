@@ -612,6 +612,92 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Paper-Only ML Validation", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_explainability_failure_analysis_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_ml_data_readiness_sources(root)
+            feature_csv = root / "data" / "reports" / "ml_baseline_feature_label_dataset_audit.csv"
+            feature_md = root / "data" / "reports" / "ml_baseline_feature_label_dataset_audit.md"
+            sample_csv = root / "data" / "reports" / "ml_baseline_feature_label_sample.csv"
+            self.assertEqual(
+                0,
+                self._run_backtester_in_cwd(
+                    root,
+                    [
+                        "ml-baseline-feature-label-dataset",
+                        "--output",
+                        str(feature_csv),
+                        "--markdown-output",
+                        str(feature_md),
+                        "--sample-output",
+                        str(sample_csv),
+                    ],
+                ).returncode,
+            )
+            training_csv = root / "data" / "reports" / "ml_baseline_model_training_report.csv"
+            training_md = root / "data" / "reports" / "ml_baseline_model_training_report.md"
+            self.assertEqual(
+                0,
+                self._run_backtester_in_cwd(
+                    root,
+                    [
+                        "ml-baseline-model-training",
+                        "--dataset-csv",
+                        str(sample_csv),
+                        "--dataset-audit-csv",
+                        str(feature_csv),
+                        "--output",
+                        str(training_csv),
+                        "--markdown-output",
+                        str(training_md),
+                    ],
+                ).returncode,
+            )
+            validation_csv = root / "data" / "reports" / "ml_baseline_validation_report.csv"
+            validation_md = root / "data" / "reports" / "ml_baseline_validation_report.md"
+            self.assertEqual(
+                0,
+                self._run_backtester_in_cwd(
+                    root,
+                    [
+                        "ml-baseline-validation",
+                        "--dataset-csv",
+                        str(sample_csv),
+                        "--training-report-csv",
+                        str(training_csv),
+                        "--output",
+                        str(validation_csv),
+                        "--markdown-output",
+                        str(validation_md),
+                    ],
+                ).returncode,
+            )
+            feature_importance_csv = root / "data" / "reports" / "ml_feature_importance_report.csv"
+            failure_csv = root / "data" / "reports" / "ml_failure_analysis_report.csv"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-explainability-failure-analysis",
+                    "--dataset-csv",
+                    str(sample_csv),
+                    "--validation-report-csv",
+                    str(validation_csv),
+                    "--feature-importance-output",
+                    str(feature_importance_csv),
+                    "--failure-analysis-output",
+                    str(failure_csv),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("explainability_status  PASS", completed.stdout)
+            self.assertIn("failure_analysis_status  PASS", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertTrue(feature_importance_csv.exists())
+            self.assertTrue(failure_csv.exists())
+
     def test_ml_external_feature_readiness_plan_cli_writes_reports(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
