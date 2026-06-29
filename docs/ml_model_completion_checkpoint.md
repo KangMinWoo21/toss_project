@@ -31,6 +31,9 @@ Current status:
   `training_allowed=False`.
 - Phase 11 ML model experiment v1 is complete as a technical-only paper model.
   External features remain excluded because Phase 10 readiness is `BLOCK`.
+- Phase 12 shadow scoring report is complete. Scores are human-readable
+  paper-only tables with no order output, broker submission, monthly plan
+  regeneration, or candidate promotion.
 - Financial features have only a limited PIT-audited sample and are not ready
   for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
@@ -464,6 +467,11 @@ Completion conditions:
 - Protected candidate is unchanged.
 - Only human-readable score tables are produced.
 - `trading_allowed=False`.
+- Completed 2026-06-30 in `data/reports/ml_shadow_scoring_report.csv` and
+  `.md`. Actual result: latest local feature-month score table only,
+  `order_output=False`, `broker_submission=False`,
+  `monthly_plan_regenerated=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`.
 
 Forbidden in this phase:
 

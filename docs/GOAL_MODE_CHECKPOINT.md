@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML model v1 experiment
+Last updated: 2026-06-30 ML shadow scoring report
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,15 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML shadow scoring report:
+  `data/reports/ml_shadow_scoring_report.csv` and `.md`. Phase 12 applies
+  paper-only ML model v1 scores as human-readable shadow scores only. It
+  records score rows for the latest local feature month with `order_output=False`,
+  `broker_submission=False`, `monthly_plan_regenerated=False`,
+  `candidate_promotion=False`, `trading_allowed=False`, and
+  `production_effect=none`. No order output, broker work, monthly plan
+  regeneration, candidate promotion, strategy change, or production change was
+  performed.
 - ML model v1 experiment:
   `data/reports/ml_model_v1_training_report.csv`,
   `data/reports/ml_model_v1_validation_report.csv`, and
@@ -211,7 +220,7 @@ protected paper-review candidate.
 
 Recent completed loops verified:
 
-- Full `unittest`: latest recorded `734` tests passing.
+- Full `unittest`: latest recorded `737` tests passing.
 - `python -m compileall -q backtester`: passing.
 - Safe production-check: `BLOCK` retained.
 - Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper

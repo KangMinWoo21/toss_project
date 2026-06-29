@@ -1024,6 +1024,65 @@ class CliTests(unittest.TestCase):
             self.assertTrue(risk_md.exists())
             self.assertIn("Do Not Trade / Paper-Only ML Model v1", risk_md.read_text(encoding="utf-8"))
 
+    def test_ml_shadow_scoring_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reports = root / "data" / "reports"
+            dataset = reports / "ml_baseline_feature_label_sample.csv"
+            audit = reports / "ml_baseline_feature_label_dataset_audit.csv"
+            training = reports / "ml_model_v1_training_report.csv"
+            csv_output = reports / "ml_shadow_scoring_report.csv"
+            md_output = reports / "ml_shadow_scoring_report.md"
+            reports.mkdir(parents=True, exist_ok=True)
+            dataset.write_text(
+                "symbol,feature_date,label_end_date,return_1m,return_3m,return_6m,volatility_3m,volume_change_1m,price_vs_3m_sma,drawdown_3m,label_return,label,train_cutoff,post_cutoff_data_used_for_train,training_ran,trading_allowed,production_effect\n"
+                "111111,2024-01-31,2024-02-29,0.01,0.02,0.03,0.01,0.10,0.02,0.00,0.020,positive,2024-08-30,False,False,False,none\n"
+                "222222,2024-01-31,2024-02-29,-0.01,-0.02,-0.03,0.02,-0.10,-0.02,-0.03,-0.020,negative,2024-08-30,False,False,False,none\n"
+                "111111,2024-02-29,2024-03-29,0.02,0.03,0.04,0.01,0.10,0.02,0.00,0.015,positive,2024-08-30,False,False,False,none\n"
+                "222222,2024-02-29,2024-03-29,-0.02,-0.03,-0.04,0.02,-0.10,-0.02,-0.04,-0.015,negative,2024-08-30,False,False,False,none\n",
+                encoding="utf-8",
+            )
+            audit.write_text(
+                "metric,status,value,reason,source,trading_allowed,production_effect\n"
+                "summary,ready_for_training_scaffold,ready_for_training_scaffold,ok,derived,False,none\n"
+                "train_cutoff,PASS,2024-08-30,ok,ledger,False,none\n"
+                "protected_candidate_status,PASS,PAPER_REVIEW,ok,ledger,False,none\n",
+                encoding="utf-8",
+            )
+            training.write_text(
+                "metric,status,value,reason,source,post_cutoff_data_used_for_train,external_features_used,trading_allowed,production_effect,protected_candidate_unchanged\n"
+                "summary,paper_only_model_v1_trained,paper_only_model_v1_trained,ok,derived,False,False,False,none,True\n"
+                "external_features_used,PASS,False,ok,derived,False,False,False,none,True\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-shadow-scoring",
+                    "--dataset-csv",
+                    str(dataset),
+                    "--dataset-audit-csv",
+                    str(audit),
+                    "--model-v1-training-csv",
+                    str(training),
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("shadow_scoring_status  PASS", completed.stdout)
+            self.assertIn("order_output  False", completed.stdout)
+            self.assertIn("broker_submission  False", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Shadow Scoring Only", md_output.read_text(encoding="utf-8"))
+
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(
             [

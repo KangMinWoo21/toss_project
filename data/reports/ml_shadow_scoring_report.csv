@@ -1,0 +1,5 @@
+rank,symbol,feature_date,score_type,shadow_score,score_bucket,model_version,source_model_report,order_output,broker_submission,monthly_plan_regenerated,candidate_promotion,trading_allowed,production_effect,protected_candidate_unchanged
+1,000080,2026-05-29,technical_only_shadow_score,0.476057,low,ml_model_v1_technical_only,data/reports/ml_model_v1_training_report.csv,False,False,False,False,False,none,True
+2,000020,2026-05-29,technical_only_shadow_score,0.470016,low,ml_model_v1_technical_only,data/reports/ml_model_v1_training_report.csv,False,False,False,False,False,none,True
+3,000050,2026-05-29,technical_only_shadow_score,0.332913,low,ml_model_v1_technical_only,data/reports/ml_model_v1_training_report.csv,False,False,False,False,False,none,True
+4,000070,2026-05-29,technical_only_shadow_score,0.331665,low,ml_model_v1_technical_only,data/reports/ml_model_v1_training_report.csv,False,False,False,False,False,none,True

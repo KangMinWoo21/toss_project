@@ -96,6 +96,10 @@ from .ml_model_v1_experiment import (
     build_ml_model_v1_experiment_reports,
     save_ml_model_v1_experiment_reports,
 )
+from .ml_shadow_scoring import (
+    build_ml_shadow_scoring_report,
+    save_ml_shadow_scoring_report,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2362,6 +2366,31 @@ def main() -> int:
         default="data/reports/ml_model_v1_risk_report.md",
     )
 
+    ml_shadow_parser = subparsers.add_parser(
+        "ml-shadow-scoring",
+        help="Write paper-only ML shadow scoring report with no order output",
+    )
+    ml_shadow_parser.add_argument(
+        "--dataset-csv",
+        default="data/reports/ml_baseline_feature_label_sample.csv",
+    )
+    ml_shadow_parser.add_argument(
+        "--dataset-audit-csv",
+        default="data/reports/ml_baseline_feature_label_dataset_audit.csv",
+    )
+    ml_shadow_parser.add_argument(
+        "--model-v1-training-csv",
+        default="data/reports/ml_model_v1_training_report.csv",
+    )
+    ml_shadow_parser.add_argument(
+        "--output",
+        default="data/reports/ml_shadow_scoring_report.csv",
+    )
+    ml_shadow_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_shadow_scoring_report.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3715,6 +3744,24 @@ def main() -> int:
         print(f"model_v1_training_report  {args.training_output}")
         print(f"model_v1_validation_report  {args.validation_output}")
         print(f"model_v1_risk_report  {args.risk_markdown_output}")
+        return 0
+
+    if args.command == "ml-shadow-scoring":
+        rows = build_ml_shadow_scoring_report(
+            dataset_csv=args.dataset_csv,
+            dataset_audit_csv=args.dataset_audit_csv,
+            model_v1_training_csv=args.model_v1_training_csv,
+        )
+        save_ml_shadow_scoring_report(rows, args.output, args.markdown_output)
+        print("shadow_scoring_status  PASS")
+        print("order_output  False")
+        print("broker_submission  False")
+        print("monthly_plan_regenerated  False")
+        print("candidate_promotion  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"shadow_scoring_report  {args.output}")
+        print(f"shadow_scoring_markdown  {args.markdown_output}")
         return 0
 
     if args.command == "fetch-toss":
