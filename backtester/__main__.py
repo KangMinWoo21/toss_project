@@ -59,6 +59,10 @@ from .ml_baseline_model_training import (
     build_ml_baseline_model_training_report,
     save_ml_baseline_model_training_report,
 )
+from .ml_baseline_validation import (
+    build_ml_baseline_validation_report,
+    save_ml_baseline_validation_report,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2137,6 +2141,27 @@ def main() -> int:
         default="data/reports/ml_baseline_model_training_report.md",
     )
 
+    ml_baseline_validation_parser = subparsers.add_parser(
+        "ml-baseline-validation",
+        help="Write a paper-only monthly validation report for the baseline ML scaffold",
+    )
+    ml_baseline_validation_parser.add_argument(
+        "--dataset-csv",
+        default="data/reports/ml_baseline_feature_label_sample.csv",
+    )
+    ml_baseline_validation_parser.add_argument(
+        "--training-report-csv",
+        default="data/reports/ml_baseline_model_training_report.csv",
+    )
+    ml_baseline_validation_parser.add_argument(
+        "--output",
+        default="data/reports/ml_baseline_validation_report.csv",
+    )
+    ml_baseline_validation_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_baseline_validation_report.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3276,6 +3301,25 @@ def main() -> int:
         print(f"training_report  {args.output}")
         print(f"training_markdown  {args.markdown_output}")
         return 2 if training_status == "training_scaffold_blocked" else 0
+
+    if args.command == "ml-baseline-validation":
+        rows = build_ml_baseline_validation_report(
+            dataset_csv=args.dataset_csv,
+            training_report_csv=args.training_report_csv,
+        )
+        save_ml_baseline_validation_report(rows, args.output, args.markdown_output)
+        summary = rows[0] if rows else {}
+        validation_status = summary.get("status", "validation_blocked")
+        by_metric = {row.get("metric", ""): row for row in rows}
+        print(f"validation_status  {validation_status}")
+        print(f"leakage_check  {by_metric.get('leakage_check', {}).get('status', 'BLOCK')}")
+        print(f"pit_universe_check  {by_metric.get('pit_universe_check', {}).get('status', 'BLOCK')}")
+        print(f"feature_availability_check  {by_metric.get('feature_availability_check', {}).get('status', 'BLOCK')}")
+        print(f"trading_allowed  {summary.get('trading_allowed', 'False')}")
+        print(f"production_effect  {summary.get('production_effect', 'none')}")
+        print(f"validation_report  {args.output}")
+        print(f"validation_markdown  {args.markdown_output}")
+        return 2 if validation_status == "validation_blocked" else 0
 
     if args.command == "ml-external-feature-readiness-plan":
         rows = build_ml_external_feature_readiness_plan()

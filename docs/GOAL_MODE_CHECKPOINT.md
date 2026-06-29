@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML baseline model training scaffold
+Last updated: 2026-06-30 ML baseline validation report
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,13 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML baseline validation report:
+  `data/reports/ml_baseline_validation_report.csv` and `.md`. Phase 3 is
+  `paper_only_validation_complete` with leakage/PIT/feature checks `PASS`,
+  `post_cutoff_data_used_for_validation=False`, `oos_rerun=False`,
+  benchmark-relative performance, drawdown, hit-rate, and turnover recorded,
+  `trading_allowed=False`, `production_effect=none`, and protected candidate
+  unchanged.
 - ML baseline model training scaffold:
   `data/reports/ml_baseline_model_training_report.csv` and `.md`. Phase 2 is
   `paper_only_baseline_trained` with `model_type=logistic_regression_sgd`,

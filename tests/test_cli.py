@@ -548,6 +548,70 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Paper-Only Baseline Training", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_baseline_validation_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_ml_data_readiness_sources(root)
+            feature_csv = root / "data" / "reports" / "ml_baseline_feature_label_dataset_audit.csv"
+            feature_md = root / "data" / "reports" / "ml_baseline_feature_label_dataset_audit.md"
+            sample_csv = root / "data" / "reports" / "ml_baseline_feature_label_sample.csv"
+            feature_completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-baseline-feature-label-dataset",
+                    "--output",
+                    str(feature_csv),
+                    "--markdown-output",
+                    str(feature_md),
+                    "--sample-output",
+                    str(sample_csv),
+                ],
+            )
+            self.assertEqual(feature_completed.returncode, 0, feature_completed.stderr)
+            training_csv = root / "data" / "reports" / "ml_baseline_model_training_report.csv"
+            training_md = root / "data" / "reports" / "ml_baseline_model_training_report.md"
+            training_completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-baseline-model-training",
+                    "--dataset-csv",
+                    str(sample_csv),
+                    "--dataset-audit-csv",
+                    str(feature_csv),
+                    "--output",
+                    str(training_csv),
+                    "--markdown-output",
+                    str(training_md),
+                ],
+            )
+            self.assertEqual(training_completed.returncode, 0, training_completed.stderr)
+            csv_output = root / "data" / "reports" / "ml_baseline_validation_report.csv"
+            md_output = root / "data" / "reports" / "ml_baseline_validation_report.md"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-baseline-validation",
+                    "--dataset-csv",
+                    str(sample_csv),
+                    "--training-report-csv",
+                    str(training_csv),
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("validation_status  paper_only_validation_complete", completed.stdout)
+            self.assertIn("leakage_check  PASS", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Paper-Only ML Validation", md_output.read_text(encoding="utf-8"))
+
     def test_ml_external_feature_readiness_plan_cli_writes_reports(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
