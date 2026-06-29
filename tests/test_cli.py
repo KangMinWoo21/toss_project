@@ -150,6 +150,43 @@ class CliTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _write_paper_operation_safety_index_sources(self, root: Path) -> None:
+        self._write_protected_candidate_oos_guard_sources(root)
+        reports = root / "data" / "reports"
+        (reports / "protected_candidate_oos_review_eligibility_guard.csv").write_text(
+            "check,status,expected,observed,reason,source,guard_status,review_eligibility,trading_allowed,production_effect\n"
+            "summary,PASS,guard_status=PASS,guard_status=PASS,ok,derived,PASS,REVIEW_NOT_ALLOWED,False,none\n"
+            "protected_candidate_paper_review,PASS,PAPER_REVIEW,ledger=PAPER_REVIEW,ok,ledger.csv,PASS,REVIEW_NOT_ALLOWED,False,none\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_paper_operation_consistency_audit.csv").write_text(
+            "check,status,expected,observed,reason,source\n"
+            "trading_allowed_false,PASS,trading_allowed=False,rows=11; true_present=False,no trading,packet.csv\n"
+            "production_effect_none,PASS,production_effect=none,production_effect=none,no effect,packet.csv\n"
+            "actionable_rows_zero,PASS,actionable_rows=0,actionable_rows=0,zero,packet.csv\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_order_plan_neutral_loss_guard55_min_history244.csv").write_text(
+            "symbol,execution_allowed,execution_mode,risk_status,risk_reasons\n"
+            "000270,False,blocked,BLOCKED,risk_status_BLOCK\n",
+            encoding="utf-8",
+        )
+        (reports / "monthly_paper_operation_review_packet.csv").write_text(
+            "section,status,key_value,manual_action_required,trading_allowed,reason,source_report\n"
+            "production_readiness,BLOCK,default_gaps=8,True,False,blocked,prod.csv\n"
+            "protected_candidate,PAPER_REVIEW,candidate=guard;protected_from_tuning=True,True,False,paper review,ledger.csv\n"
+            "oos_observation,OBSERVE,review_allowed=False;observed_days=0;required_days=15;remaining_days=15,True,False,observe,obs.csv\n"
+            "monthly_order_plan,BLOCKED_REVIEW_ONLY,rows=1;blocked_rows=1;actionable_rows=0,True,False,blocked,order.csv\n"
+            "candidate_trials,REVIEW_ONLY,promoted=0,True,False,no promotion,trials.csv\n"
+            "do_not_trade,HARD_STOP,trading_allowed=False;production_effect=none,True,False,no trade,checklist.md\n",
+            encoding="utf-8",
+        )
+        (reports / "health_warn_classification.csv").write_text(
+            "warn_name,current_status,affects_monthly_rebalance,affects_protected_candidate_oos,affects_scalper_only,criticality,reason\n"
+            "scalper_data,WARN,False,False,True,non_critical_for_monthly_paper_review_but_blocks_future_scalper_work,old scalper data\n",
+            encoding="utf-8",
+        )
+
     def test_compare_command_prints_strategy_table(self):
         completed = subprocess.run(
             [
@@ -271,6 +308,31 @@ class CliTests(unittest.TestCase):
             self.assertTrue(csv_output.exists())
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Review Not Allowed", md_output.read_text(encoding="utf-8"))
+
+    def test_paper_operation_safety_status_index_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_paper_operation_safety_index_sources(root)
+            csv_output = root / "data" / "reports" / "paper_operation_safety_status_index.csv"
+            md_output = root / "data" / "reports" / "paper_operation_safety_status_index.md"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "paper-operation-safety-status-index",
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("overall_status  OBSERVE", completed.stdout)
+            self.assertIn("recommended_action  keep_observing_no_tuning_no_promotion", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Status Index Only", md_output.read_text(encoding="utf-8"))
 
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(

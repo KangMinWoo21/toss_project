@@ -233,6 +233,10 @@ from .news import (
     rss_to_event_rows,
     save_event_rows,
 )
+from .paper_operation_safety_status_index import (
+    build_paper_operation_safety_status_index,
+    save_paper_operation_safety_status_index,
+)
 from .pykrx_fetcher import (
     available_ohlcv_symbol_dates,
     available_ohlcv_symbols,
@@ -1942,6 +1946,47 @@ def main() -> int:
         default="data/reports/protected_candidate_oos_review_eligibility_guard.md",
     )
 
+    safety_index_parser = subparsers.add_parser(
+        "paper-operation-safety-status-index",
+        help="Summarize current paper-operation safety status from existing local reports",
+    )
+    safety_index_parser.add_argument(
+        "--production-block-csv",
+        default="data/reports/production_block_classification.csv",
+    )
+    safety_index_parser.add_argument(
+        "--oos-review-guard-csv",
+        default="data/reports/protected_candidate_oos_review_eligibility_guard.csv",
+    )
+    safety_index_parser.add_argument(
+        "--monthly-consistency-audit-csv",
+        default="data/reports/monthly_paper_operation_consistency_audit.csv",
+    )
+    safety_index_parser.add_argument(
+        "--order-plan-csv",
+        default="data/reports/monthly_order_plan_neutral_loss_guard55_min_history244.csv",
+    )
+    safety_index_parser.add_argument(
+        "--review-packet-csv",
+        default="data/reports/monthly_paper_operation_review_packet.csv",
+    )
+    safety_index_parser.add_argument(
+        "--trial-summary-csv",
+        default="data/reports/monthly_candidate_research_trial_summary.csv",
+    )
+    safety_index_parser.add_argument(
+        "--health-warn-csv",
+        default="data/reports/health_warn_classification.csv",
+    )
+    safety_index_parser.add_argument(
+        "--output",
+        default="data/reports/paper_operation_safety_status_index.csv",
+    )
+    safety_index_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/paper_operation_safety_status_index.md",
+    )
+
     args = parser.parse_args()
     if args.command == "data-check":
         path = Path(args.path)
@@ -2959,6 +3004,28 @@ def main() -> int:
         print(f"guard_report  {args.output}")
         print(f"guard_markdown  {args.markdown_output}")
         return 2 if guard_status == "BLOCK" else 0
+
+    if args.command == "paper-operation-safety-status-index":
+        rows = build_paper_operation_safety_status_index(
+            production_block_csv=args.production_block_csv,
+            oos_review_guard_csv=args.oos_review_guard_csv,
+            monthly_consistency_audit_csv=args.monthly_consistency_audit_csv,
+            order_plan_csv=args.order_plan_csv,
+            review_packet_csv=args.review_packet_csv,
+            trial_summary_csv=args.trial_summary_csv,
+            health_warn_csv=args.health_warn_csv,
+        )
+        save_paper_operation_safety_status_index(rows, args.output, args.markdown_output)
+        summary = rows[0] if rows else {}
+        overall_status = summary.get("overall_status", "BLOCK")
+        print(f"overall_status  {overall_status}")
+        print(f"trading_allowed  {summary.get('trading_allowed', 'False')}")
+        print(f"review_allowed  {summary.get('review_allowed', 'False')}")
+        print(f"production_effect  {summary.get('production_effect', 'none')}")
+        print(f"recommended_action  {summary.get('recommended_action', 'keep_observing_no_tuning_no_promotion')}")
+        print(f"safety_index_report  {args.output}")
+        print(f"safety_index_markdown  {args.markdown_output}")
+        return 2 if overall_status == "BLOCK" else 0
 
     if args.command == "fetch-toss":
         client_id = os.environ.get("TOSSINVEST_CLIENT_ID")

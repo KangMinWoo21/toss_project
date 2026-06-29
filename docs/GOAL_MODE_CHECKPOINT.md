@@ -314,6 +314,17 @@ appending long command logs or full report lists here.
   BLOCK is retained. Verification passed: targeted guard tests, full
   `unittest` `676` tests, `compileall`, production-check BLOCK, and
   health-check WARN only for stale scalper data. No push.
+- Paper operation safety status index added at
+  `data/reports/paper_operation_safety_status_index.csv` and `.md`. Index is
+  report-only and `overall_status=OBSERVE` with `trading_allowed=False`,
+  `review_allowed=False`, `production_effect=none`, and
+  `recommended_action=keep_observing_no_tuning_no_promotion`; production
+  remains BLOCK, protected candidate remains `PAPER_REVIEW`, OOS review
+  eligibility remains `REVIEW_NOT_ALLOWED`, actionable rows remain `0`, all
+  order rows are blocked, promoted count remains `0`, and scalper stale WARN
+  is separated from monthly paper review/OOS. Verification passed: targeted
+  index tests, full `unittest` `684` tests, `compileall`, production-check
+  BLOCK, and health-check WARN only for stale scalper data. No push.
 - Production remains not live-ready.
 
 ## Recent Loops
