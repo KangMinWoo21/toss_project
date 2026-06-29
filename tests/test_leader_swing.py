@@ -28,6 +28,15 @@ def _write_symbol(path: Path, closes: list[float], volume: int) -> None:
             )
 
 
+def _write_symbol_rows(path: Path, rows: list[tuple[float, float, float, float, int]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["date", "open", "high", "low", "close", "volume"])
+        for index, row in enumerate(rows):
+            row_date = date(2024, 1, 1) + timedelta(days=index)
+            writer.writerow([row_date.isoformat(), *row])
+
+
 class LeaderSwingTests(unittest.TestCase):
     def test_load_symbol_candles_reads_symbol_from_filename(self):
         with TemporaryDirectory() as temp_dir:
@@ -79,6 +88,187 @@ class LeaderSwingTests(unittest.TestCase):
         self.assertTrue(result.trades)
         self.assertTrue(all(trade.symbol == "111111" for trade in result.trades))
         self.assertGreater(result.total_return_pct, 0)
+
+    def test_leader_swing_enters_on_next_open_after_signal(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            rows = [
+                (100, 101, 99, 100, 10000),
+                (101, 102, 100, 101, 10000),
+                (102, 103, 101, 102, 10000),
+                (103, 104, 102, 103, 10000),
+                (104, 105, 103, 104, 10000),
+                (105, 106, 104, 105, 10000),
+                (106, 107, 105, 106, 10000),
+                (107, 108, 106, 107, 10000),
+                (108, 109, 107, 108, 10000),
+                (109, 110, 108, 109, 10000),
+                (110, 132, 109, 130, 10000),
+                (200, 202, 198, 200, 10000),
+            ]
+            _write_symbol_rows(root / "111111_2018_2026.csv", rows)
+
+            result = run_leader_swing_backtest(
+                load_symbol_candles(root),
+                LeaderSwingConfig(
+                    liquidity_window=3,
+                    momentum_short=3,
+                    momentum_long=5,
+                    breakout_window=5,
+                    trend_window=5,
+                    liquidity_top_n=1,
+                    max_positions=1,
+                    max_holding_days=20,
+                    min_short_return_pct=10.0,
+                    initial_cash=1_000_000,
+                    fee_rate=0.0,
+                    tax_rate=0.0,
+                    slippage_rate=0.0,
+                ),
+            )
+
+        self.assertTrue(result.trades)
+        self.assertEqual(result.trades[0].entry_date, "2024-01-12")
+        self.assertEqual(result.trades[0].entry_price, 200)
+
+    def test_buy_hold_benchmark_uses_first_open_not_first_close(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            rows = [
+                (100, 200, 100, 200, 10000),
+                (200, 200, 200, 200, 10000),
+            ]
+            _write_symbol_rows(root / "111111_2018_2026.csv", rows)
+
+            result = run_leader_swing_backtest(
+                load_symbol_candles(root),
+                LeaderSwingConfig(
+                    initial_cash=1_000,
+                    fee_rate=0.0,
+                    tax_rate=0.0,
+                    slippage_rate=0.0,
+                ),
+            )
+
+        self.assertEqual(result.buy_hold_return_pct, 100.0)
+
+    def test_buy_hold_benchmark_keeps_cash_when_first_open_is_invalid(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_symbol_rows(
+                root / "111111_2018_2026.csv",
+                [
+                    (0, 0, 0, 100, 10000),
+                    (100, 100, 100, 100, 10000),
+                ],
+            )
+            _write_symbol_rows(
+                root / "222222_2018_2026.csv",
+                [
+                    (100, 100, 100, 100, 10000),
+                    (200, 200, 200, 200, 10000),
+                ],
+            )
+
+            result = run_leader_swing_backtest(
+                load_symbol_candles(root),
+                LeaderSwingConfig(
+                    initial_cash=1_000,
+                    fee_rate=0.0,
+                    tax_rate=0.0,
+                    slippage_rate=0.0,
+                ),
+            )
+
+        self.assertEqual(result.buy_hold_return_pct, 50.0)
+
+    def test_entry_size_is_capped_by_average_trading_value_participation(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            rows = [
+                (100, 101, 99, 100, 100),
+                (101, 102, 100, 101, 100),
+                (102, 103, 101, 102, 100),
+                (103, 104, 102, 103, 100),
+                (104, 105, 103, 104, 100),
+                (105, 106, 104, 105, 100),
+                (106, 107, 105, 106, 100),
+                (107, 108, 106, 107, 100),
+                (108, 109, 107, 108, 100),
+                (109, 110, 108, 109, 100),
+                (110, 132, 109, 130, 100),
+                (200, 202, 198, 200, 100),
+            ]
+            _write_symbol_rows(root / "111111_2018_2026.csv", rows)
+
+            result = run_leader_swing_backtest(
+                load_symbol_candles(root),
+                LeaderSwingConfig(
+                    liquidity_window=3,
+                    momentum_short=3,
+                    momentum_long=5,
+                    breakout_window=5,
+                    trend_window=5,
+                    liquidity_top_n=1,
+                    max_positions=1,
+                    max_holding_days=20,
+                    min_short_return_pct=10.0,
+                    max_position_adv_pct=0.05,
+                    initial_cash=1_000_000,
+                    fee_rate=0.0,
+                    tax_rate=0.0,
+                    slippage_rate=0.0,
+                ),
+            )
+
+        self.assertTrue(result.trades)
+        self.assertLessEqual(result.trades[0].quantity, 2)
+
+    def test_entry_size_is_capped_by_per_position_loss_budget(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            rows = [
+                (100, 101, 99, 100, 100000),
+                (101, 102, 100, 101, 100000),
+                (102, 103, 101, 102, 100000),
+                (103, 104, 102, 103, 100000),
+                (104, 105, 103, 104, 100000),
+                (105, 106, 104, 105, 100000),
+                (106, 107, 105, 106, 100000),
+                (107, 108, 106, 107, 100000),
+                (108, 109, 107, 108, 100000),
+                (109, 110, 108, 109, 100000),
+                (110, 132, 109, 130, 100000),
+                (200, 202, 198, 200, 100000),
+            ]
+            _write_symbol_rows(root / "111111_2018_2026.csv", rows)
+
+            result = run_leader_swing_backtest(
+                load_symbol_candles(root),
+                LeaderSwingConfig(
+                    liquidity_window=3,
+                    momentum_short=3,
+                    momentum_long=5,
+                    breakout_window=5,
+                    trend_window=5,
+                    liquidity_top_n=1,
+                    max_positions=1,
+                    max_holding_days=20,
+                    min_short_return_pct=10.0,
+                    stop_loss_pct=-10.0,
+                    max_loss_per_position_pct=0.5,
+                    max_position_adv_pct=1.0,
+                    max_position_weight=1.0,
+                    cash_buffer_weight=0.0,
+                    initial_cash=1_000_000,
+                    fee_rate=0.0,
+                    tax_rate=0.0,
+                    slippage_rate=0.0,
+                ),
+            )
+
+        self.assertTrue(result.trades)
+        self.assertLessEqual(result.trades[0].quantity, 250)
 
     def test_cli_leader_swing_prints_summary(self):
         with TemporaryDirectory() as temp_dir:
@@ -200,10 +390,15 @@ class LeaderSwingTests(unittest.TestCase):
                     tax_rate=0.0,
                     slippage_rate=0.0,
                     symbol_weight_multipliers={"111111": 1.5},
+                    max_position_weight=1.0,
+                    max_position_adv_pct=1.0,
+                    max_loss_per_position_pct=100.0,
+                    cash_buffer_weight=0.0,
                 ),
             )
 
-        first_trades = {trade.symbol: trade.quantity for trade in result.trades if trade.entry_date == "2024-01-11"}
+        first_entry_date = min(trade.entry_date for trade in result.trades)
+        first_trades = {trade.symbol: trade.quantity for trade in result.trades if trade.entry_date == first_entry_date}
         self.assertGreater(first_trades["111111"], first_trades["222222"])
 
     def test_relative_strength_filter_blocks_market_laggard(self):

@@ -65,10 +65,12 @@ class Backtester:
         equity_curve: list[float] = []
 
         for index, candle in enumerate(candles):
-            signal = strategy.on_candle(index, candles, position)
+            signal = "HOLD"
+            if index > 0:
+                signal = strategy.on_candle(index - 1, candles, position)
 
             if signal == "BUY" and position is None:
-                fill_price = candle.close * (1 + self.config.slippage_rate)
+                fill_price = candle.open * (1 + self.config.slippage_rate)
                 budget = cash * self.config.position_fraction
                 quantity = int(budget / (fill_price * (1 + self.config.fee_rate)))
                 if quantity > 0:
@@ -78,7 +80,7 @@ class Backtester:
                     position = Position(quantity=quantity, entry_price=fill_price, entry_date=candle.date)
 
             elif signal == "SELL" and position is not None:
-                fill_price = candle.close * (1 - self.config.slippage_rate)
+                fill_price = candle.open * (1 - self.config.slippage_rate)
                 gross = position.quantity * fill_price
                 fee = gross * self.config.fee_rate
                 tax = gross * self.config.tax_rate
@@ -102,11 +104,35 @@ class Backtester:
 
             equity_curve.append(_equity(cash, position, candle.close))
 
+        if position is not None:
+            final_candle = candles[-1]
+            fill_price = final_candle.close * (1 - self.config.slippage_rate)
+            gross = position.quantity * fill_price
+            fee = gross * self.config.fee_rate
+            tax = gross * self.config.tax_rate
+            pnl = (fill_price - position.entry_price) * position.quantity - fee - tax
+            cash += gross - fee - tax
+            equity_curve[-1] = cash
+            trades.append(
+                Trade(
+                    date=final_candle.date,
+                    side="SELL",
+                    price=fill_price,
+                    quantity=position.quantity,
+                    cash_after=cash,
+                    equity_after=cash,
+                    reason=strategy.name,
+                    entry_price=position.entry_price,
+                    pnl=pnl,
+                )
+            )
+            position = None
+
         final_price = candles[-1].close
         return self.build_result(
             initial_cash=self.config.initial_cash,
             final_cash=cash,
-            final_position=position.quantity if position else 0,
+            final_position=0,
             final_price=final_price,
             equity_curve=equity_curve,
             trades=trades,

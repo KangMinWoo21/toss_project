@@ -431,7 +431,12 @@ class NewsFilteredStrategy(Strategy):
 
     def on_candle(self, index: int, candles: list[Candle], position: object | None) -> Signal:
         base_signal = self.base_strategy.on_candle(index, candles, position)
-        score = self.event_scores.score_window(self.symbol, candles[index].date, self.event_lookback_days)
+        score = self.event_scores.score_window(
+            self.symbol,
+            candles[index].date,
+            self.event_lookback_days,
+            include_target_date=False,
+        )
 
         if position is not None and score <= self.force_sell_score:
             return "SELL"
@@ -451,7 +456,7 @@ class FlowFilteredStrategy(Strategy):
 
     def on_candle(self, index: int, candles: list[Candle], position: object | None) -> Signal:
         base_signal = self.base_strategy.on_candle(index, candles, position)
-        score = self.flow_scores.score(self.symbol, candles[index].date)
+        score = self.flow_scores.latest_score_before(self.symbol, candles[index].date)
 
         if position is not None and score <= self.force_sell_score:
             return "SELL"

@@ -186,6 +186,9 @@ class MonthlyRebalanceConfig:
     min_target_value: float = 10_000.0
     max_candidate_lookback_return_pct: float = 90.0
     direct_alpha_target_persistence_signals: int = 1
+    recovery_ranking_short_lookback_days: int = 0
+    recovery_ranking_drawdown_lookback_days: int = 0
+    recovery_ranking_weight: float = 0.0
     point_in_time_liquidity_top_n: int = 100
     point_in_time_liquidity_window_days: int = 20
     liquidity_risk_reference_top_n: int = 100
@@ -477,6 +480,26 @@ VALIDATION_CANDIDATE_SUMMARY_COLUMNS = [
     "new_failure_diagnostics",
     "summary",
     "recommendation",
+]
+
+MONTHLY_VALIDATION_EXPECTANCY_COLUMNS = [
+    "candidate_id",
+    "scenario",
+    "gross_return",
+    "fee_drag",
+    "tax_drag",
+    "slippage_drag",
+    "net_return_after_costs",
+    "turnover",
+    "trade_count",
+    "win_rate",
+    "average_win",
+    "average_loss",
+    "gross_expectancy",
+    "net_expectancy",
+    "status",
+    "validation_status",
+    "reason",
 ]
 
 VALIDATION_FAILURE_PATTERN_COLUMNS = [
@@ -1829,6 +1852,82 @@ UNIVERSE_FILTER_REPORT_COLUMNS = [
     "status",
     "reason",
     "detail",
+]
+
+MIN_HISTORY_SAFETY_REVIEW_COLUMNS = [
+    "signal_date",
+    "symbol",
+    "scenario",
+    "eligible_under_baseline_history",
+    "eligible_under_min_history244",
+    "became_eligible_due_to_min_history244",
+    "available_history_days",
+    "missing_history_days",
+    "selected_by_candidate",
+    "traded_by_candidate",
+    "held_by_candidate",
+    "scenario_count_used",
+    "trade_count",
+    "holding_period_count",
+    "return_contribution_pct",
+    "positive_contribution_share_pct",
+    "negative_contribution_share_pct",
+    "avg_trading_value",
+    "data_quality_warning",
+    "dominates_improvement",
+    "usage_status",
+    "safety_status",
+    "reason",
+]
+
+MIN_HISTORY_SAFETY_SUMMARY_COLUMNS = [
+    "total_min_history244_only_symbols",
+    "actually_used_symbols",
+    "contribution_available_symbols",
+    "top_1_symbol_positive_share_pct",
+    "top_3_symbol_positive_share_pct",
+    "top_5_symbol_positive_share_pct",
+    "dominates_improvement_count",
+    "safety_status",
+    "reason",
+]
+
+POST_CUTOFF_OOS_DATA_READINESS_COLUMNS = [
+    "baseline_cutoff_date",
+    "latest_local_ohlcv_date",
+    "latest_pit_universe_date",
+    "post_cutoff_rows",
+    "missing_post_cutoff_days",
+    "required_data_sources",
+    "oos_can_run_now",
+    "warmup_history_available",
+    "scoring_rows_available",
+    "scoring_window_available",
+    "oos_trade_count",
+    "true_missing_history",
+    "wrong_windowing_short_history",
+    "no_trade_due_to_data_quality",
+    "no_trade_due_to_no_signal",
+    "data_quality_blocks_due_to_true_missing_data",
+    "data_quality_blocks_due_to_wrong_windowing",
+    "status",
+    "reason",
+]
+
+POST_CUTOFF_OOS_OBSERVATION_STATUS_COLUMNS = [
+    "candidate_id",
+    "observation_start",
+    "latest_available_date",
+    "observed_trading_days_after_plan",
+    "required_additional_trading_days",
+    "remaining_trading_days",
+    "latest_gross_return_if_available",
+    "latest_benchmark_return_if_available",
+    "latest_excess_return_if_available",
+    "latest_trade_count_if_available",
+    "review_allowed",
+    "status",
+    "reason",
 ]
 
 
@@ -6568,6 +6667,657 @@ def save_monthly_entry_selection_eligibility_comparison(
     )
 
 
+def build_min_history_safety_review(
+    baseline_filter_rows: list[dict[str, Any]],
+    candidate_filter_rows: list[dict[str, Any]],
+    *,
+    eligibility_rows: list[dict[str, Any]] | None = None,
+    selection_rows: list[dict[str, Any]] | None = None,
+    attribution_rows: list[dict[str, Any]] | None = None,
+    holding_rows: list[dict[str, Any]] | None = None,
+    order_plan_rows: list[dict[str, Any]] | None = None,
+    data_quality_rows: list[dict[str, Any]] | None = None,
+    baseline_min_history_days: int = 252,
+    candidate_min_history_days: int = 244,
+) -> list[dict[str, str]]:
+    candidate_exclusions = {
+        (str(row.get("as_of_date", "")).strip(), str(row.get("symbol", "")).strip())
+        for row in candidate_filter_rows
+        if str(row.get("symbol", "")).strip()
+    }
+    eligibility_by_key = {
+        (
+            str(row.get("failed_signal_date", row.get("signal_date", ""))).strip(),
+            str(row.get("symbol", "")).strip(),
+        ): row
+        for row in eligibility_rows or []
+        if str(row.get("symbol", "")).strip()
+    }
+    usage_rows = (selection_rows or []) + (order_plan_rows or [])
+    selected_symbols = _symbols_in_rows(usage_rows)
+    scenario_count_by_symbol = _scenario_count_by_symbol(usage_rows + (attribution_rows or []))
+    trade_count_by_symbol = _max_text_by_symbol(attribution_rows or [], "trade_count")
+    for symbol, value in _max_text_by_symbol(order_plan_rows or [], "quantity").items():
+        existing = _float_or_none(trade_count_by_symbol.get(symbol))
+        candidate = _float_or_none(value)
+        if candidate is not None and candidate > 0 and (existing is None or existing <= 0):
+            trade_count_by_symbol[symbol] = "1"
+    held_symbols = _held_symbols_from_rows((holding_rows or []) + (attribution_rows or []))
+    holding_period_count_by_symbol = _holding_period_count_by_symbol(holding_rows or [])
+    quality_by_symbol = {
+        str(row.get("symbol", "")).strip(): row
+        for row in data_quality_rows or []
+        if str(row.get("symbol", "")).strip()
+    }
+
+    candidates: list[dict[str, str]] = []
+    for row in baseline_filter_rows:
+        signal_date = str(row.get("as_of_date", "")).strip()
+        symbol = str(row.get("symbol", "")).strip()
+        if not signal_date or not symbol:
+            continue
+        if (signal_date, symbol) in candidate_exclusions:
+            continue
+        if str(row.get("reason", "")).strip() != "insufficient_history":
+            continue
+        available_history = _history_days_from_detail(row.get("detail"))
+        if available_history is None:
+            continue
+        if available_history < candidate_min_history_days or available_history >= baseline_min_history_days:
+            continue
+        enrichment = eligibility_by_key.get((signal_date, symbol), {})
+        contribution = _first_available_text(
+            enrichment,
+            "return_contribution_pct",
+            "contribution_delta_gap_pct",
+            "contribution_delta_pct",
+        )
+        if contribution == "not_available":
+            contribution = _last_text_by_symbol(
+                [row for row in (attribution_rows or []) + (selection_rows or []) if str(row.get("symbol", "")).strip() == symbol],
+                "return_contribution_pct",
+            ).get(symbol, "not_available")
+        if contribution == "not_available":
+            contribution = _last_text_by_symbol(
+                [row for row in (attribution_rows or []) + (selection_rows or []) if str(row.get("symbol", "")).strip() == symbol],
+                "contribution_delta_pct",
+            ).get(symbol, "not_available")
+        trade_count = trade_count_by_symbol.get(symbol, "not_available")
+        selected = symbol in selected_symbols
+        traded = _float_or_none(trade_count) is not None and (_float_or_none(trade_count) or 0) > 0
+        held = symbol in held_symbols
+        candidates.append(
+            {
+                "signal_date": signal_date,
+                "symbol": symbol,
+                "scenario": _first_available_text(enrichment, "scenario", "failed_label", "name"),
+                "available_history_days": str(available_history),
+                "missing_history_days": str(max(0, baseline_min_history_days - available_history)),
+                "selected_by_candidate": str(selected),
+                "traded_by_candidate": str(traded),
+                "held_by_candidate": str(held),
+                "scenario_count_used": _format_count_or_not_available(scenario_count_by_symbol.get(symbol)),
+                "trade_count": trade_count,
+                "holding_period_count": _format_count_or_not_available(holding_period_count_by_symbol.get(symbol)),
+                "return_contribution_pct": contribution,
+                "avg_trading_value": _first_available_text(
+                    enrichment,
+                    "avg_trading_value",
+                    "average_trading_value",
+                    "scheduled_average_trading_value",
+                    "train_end_average_trading_value",
+                ),
+                "data_quality_warning": _min_history_data_quality_warning(quality_by_symbol.get(symbol, {})),
+            }
+        )
+
+    positive_contribution_values = {
+        row["symbol"]: value
+        for row in candidates
+        for value in [_float_or_none(row.get("return_contribution_pct"))]
+        if value is not None and value > 0
+    }
+    negative_contribution_values = {
+        row["symbol"]: abs(value)
+        for row in candidates
+        for value in [_float_or_none(row.get("return_contribution_pct"))]
+        if value is not None and value < 0
+    }
+    total_positive_contribution = sum(positive_contribution_values.values())
+    total_negative_contribution = sum(negative_contribution_values.values())
+    rows: list[dict[str, str]] = []
+    for row in candidates:
+        contribution = positive_contribution_values.get(row["symbol"])
+        positive_share_pct = (
+            contribution / total_positive_contribution * 100
+            if contribution is not None and total_positive_contribution > 0
+            else None
+        )
+        negative_contribution = negative_contribution_values.get(row["symbol"])
+        negative_share_pct = (
+            negative_contribution / total_negative_contribution * 100
+            if negative_contribution is not None and total_negative_contribution > 0
+            else None
+        )
+        dominates = positive_share_pct is not None and positive_share_pct >= 50.0
+        usage_status = _min_history_usage_status(row)
+        safety_status = _min_history_concentration_status(positive_share_pct)
+        reason_parts = [
+            f"baseline_min_history_days={baseline_min_history_days}",
+            f"candidate_min_history_days={candidate_min_history_days}",
+            "paper_only_no_promotion",
+        ]
+        if positive_share_pct is not None:
+            reason_parts.append(f"contribution_share_pct={_format_optional_float(positive_share_pct)}")
+        elif _float_or_none(row.get("return_contribution_pct")) is not None:
+            reason_parts.append("contribution_available_non_positive")
+        else:
+            reason_parts.append("return_contribution_not_available")
+        reason_parts.append(f"usage_status={usage_status}")
+        rows.append(
+            {
+                "signal_date": row["signal_date"],
+                "symbol": row["symbol"],
+                "scenario": row["scenario"],
+                "eligible_under_baseline_history": "False",
+                "eligible_under_min_history244": "True",
+                "became_eligible_due_to_min_history244": "True",
+                "available_history_days": row["available_history_days"],
+                "missing_history_days": row["missing_history_days"],
+                "selected_by_candidate": row["selected_by_candidate"],
+                "traded_by_candidate": row["traded_by_candidate"],
+                "held_by_candidate": row["held_by_candidate"],
+                "scenario_count_used": row["scenario_count_used"],
+                "trade_count": row["trade_count"],
+                "holding_period_count": row["holding_period_count"],
+                "return_contribution_pct": row["return_contribution_pct"],
+                "positive_contribution_share_pct": _format_optional_float(positive_share_pct)
+                if positive_share_pct is not None
+                else "not_available",
+                "negative_contribution_share_pct": _format_optional_float(negative_share_pct)
+                if negative_share_pct is not None
+                else "not_available",
+                "avg_trading_value": row["avg_trading_value"],
+                "data_quality_warning": row["data_quality_warning"],
+                "dominates_improvement": str(dominates),
+                "usage_status": usage_status,
+                "safety_status": safety_status,
+                "reason": ";".join(reason_parts),
+            }
+        )
+    return sorted(rows, key=lambda item: (item["signal_date"], item["symbol"]))
+
+
+def save_min_history_safety_review(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MIN_HISTORY_SAFETY_REVIEW_COLUMNS)
+
+
+def build_min_history_safety_summary(rows: list[dict[str, Any]]) -> dict[str, str]:
+    symbols = {str(row.get("symbol", "")).strip() for row in rows if str(row.get("symbol", "")).strip()}
+    actually_used = {
+        str(row.get("symbol", "")).strip()
+        for row in rows
+        if str(row.get("symbol", "")).strip()
+        and (
+            _parse_bool(row.get("selected_by_candidate"))
+            or _parse_bool(row.get("traded_by_candidate"))
+            or _parse_bool(row.get("held_by_candidate"))
+        )
+    }
+    positive_shares = sorted(
+        [
+            value
+            for row in rows
+            for value in [_float_or_none(row.get("positive_contribution_share_pct"))]
+            if value is not None and value > 0
+        ],
+        reverse=True,
+    )
+    contribution_symbols = {
+        str(row.get("symbol", "")).strip()
+        for row in rows
+        if str(row.get("symbol", "")).strip()
+        and _float_or_none(row.get("return_contribution_pct")) is not None
+    }
+    top_1 = sum(positive_shares[:1])
+    top_3 = sum(positive_shares[:3])
+    top_5 = sum(positive_shares[:5])
+    dominates_count = sum(1 for row in rows if _parse_bool(row.get("dominates_improvement")))
+    safety_status = _min_history_summary_safety_status(top_1, bool(positive_shares), len(contribution_symbols), len(symbols))
+    reason_parts = [
+        "paper_only_no_promotion",
+        f"actually_used_symbols={len(actually_used)}",
+        f"contribution_available_symbols={len(contribution_symbols)}",
+    ]
+    if safety_status == "evidence_incomplete":
+        reason_parts.append("contribution_or_usage_evidence_incomplete")
+    else:
+        reason_parts.append(f"top_1_symbol_positive_share_pct={_format_optional_float(top_1)}")
+    return {
+        "total_min_history244_only_symbols": str(len(symbols)),
+        "actually_used_symbols": str(len(actually_used)),
+        "contribution_available_symbols": str(len(contribution_symbols)),
+        "top_1_symbol_positive_share_pct": _format_optional_float(top_1) if positive_shares else "not_available",
+        "top_3_symbol_positive_share_pct": _format_optional_float(top_3) if positive_shares else "not_available",
+        "top_5_symbol_positive_share_pct": _format_optional_float(top_5) if positive_shares else "not_available",
+        "dominates_improvement_count": str(dominates_count),
+        "safety_status": safety_status,
+        "reason": ";".join(reason_parts),
+    }
+
+
+def save_min_history_safety_summary(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(rows, output_path, columns=MIN_HISTORY_SAFETY_SUMMARY_COLUMNS)
+
+
+def build_post_cutoff_oos_data_readiness_report(
+    ohlcv_rows: list[dict[str, Any]],
+    pit_universe_rows: list[dict[str, Any]],
+    *,
+    baseline_cutoff_date: str = "2026-06-18",
+    as_of_date: str | None = None,
+    required_data_sources: list[str] | None = None,
+) -> list[dict[str, str]]:
+    cutoff = _parse_iso_date_or_none(baseline_cutoff_date)
+    if cutoff is None:
+        raise ValueError("baseline_cutoff_date must be YYYY-MM-DD")
+    as_of = _parse_iso_date_or_none(as_of_date) if as_of_date else date.today()
+    if as_of is None:
+        raise ValueError("as_of_date must be YYYY-MM-DD")
+    latest_ohlcv = _latest_row_date(ohlcv_rows)
+    latest_pit = _latest_row_date(pit_universe_rows)
+    post_cutoff_rows = sum(
+        1
+        for row in ohlcv_rows
+        for row_date in [_row_date_or_none(row)]
+        if row_date is not None and row_date > cutoff
+    )
+    latest_available = latest_ohlcv if latest_ohlcv is not None else cutoff
+    missing_days = max(0, (as_of - max(cutoff, latest_available)).days)
+    pit_after_cutoff = latest_pit is not None and latest_pit > cutoff
+    oos_can_run = post_cutoff_rows > 0 and pit_after_cutoff
+    status = "ready" if oos_can_run else "blocked_by_missing_data"
+    sources = required_data_sources or ["local_ohlcv", "point_in_time_universe"]
+    reason_parts = ["paper_only_no_promotion", "no_fetch_performed"]
+    if oos_can_run:
+        reason_parts.append("post-cutoff data available")
+    else:
+        if post_cutoff_rows == 0:
+            reason_parts.append("no post-cutoff OHLCV rows")
+        if not pit_after_cutoff:
+            reason_parts.append("no post-cutoff PIT universe rows")
+    return [
+        {
+            "baseline_cutoff_date": cutoff.isoformat(),
+            "latest_local_ohlcv_date": latest_ohlcv.isoformat() if latest_ohlcv else "not_available",
+            "latest_pit_universe_date": latest_pit.isoformat() if latest_pit else "not_available",
+            "post_cutoff_rows": str(post_cutoff_rows),
+            "missing_post_cutoff_days": str(missing_days),
+            "required_data_sources": ";".join(str(source) for source in sources),
+            "oos_can_run_now": str(oos_can_run),
+            "status": status,
+            "reason": ";".join(reason_parts),
+        }
+    ]
+
+
+def save_post_cutoff_oos_data_readiness_report(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=POST_CUTOFF_OOS_DATA_READINESS_COLUMNS,
+    )
+
+
+def build_post_cutoff_oos_observation_status_report(
+    observation_plan_rows: list[dict[str, Any]],
+    oos_proof_rows: list[dict[str, Any]] | None,
+    ohlcv_rows: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    if not observation_plan_rows:
+        raise ValueError("observation_plan_rows must contain at least one row")
+    plan = observation_plan_rows[0]
+    proof = (oos_proof_rows or [{}])[0] if oos_proof_rows is not None else {}
+    plan_end = _parse_iso_date_or_none(plan.get("current_oos_end"))
+    if plan_end is None:
+        raise ValueError("current_oos_end must be YYYY-MM-DD")
+    required_days = _safe_int(plan.get("minimum_additional_trading_days"), default=15)
+    observed_dates = sorted(
+        {
+            row_date
+            for row in ohlcv_rows
+            for row_date in [_row_date_or_none(row)]
+            if row_date is not None and row_date > plan_end
+        }
+    )
+    latest_available = _latest_row_date(ohlcv_rows) or plan_end
+    observed_days = len(observed_dates)
+    remaining_days = max(0, required_days - observed_days)
+    review_allowed = observed_days >= required_days
+    status = "READY_FOR_REVIEW" if review_allowed else "OBSERVE"
+    reason_parts = [
+        "paper_only_no_promotion",
+        "candidate_remains_PAPER_REVIEW",
+        "no_strategy_or_parameter_change",
+    ]
+    if review_allowed:
+        reason_parts.append("minimum_additional_trading_days_met")
+    else:
+        reason_parts.append("oos_rerun_skipped_until_minimum_additional_trading_days")
+    return [
+        {
+            "candidate_id": str(plan.get("candidate_id", "")).strip(),
+            "observation_start": (plan_end + timedelta(days=1)).isoformat(),
+            "latest_available_date": latest_available.isoformat(),
+            "observed_trading_days_after_plan": str(observed_days),
+            "required_additional_trading_days": str(required_days),
+            "remaining_trading_days": str(remaining_days),
+            "latest_gross_return_if_available": str(
+                proof.get("gross_return") or plan.get("current_gross_return_pct") or "not_available"
+            ),
+            "latest_benchmark_return_if_available": str(
+                proof.get("benchmark_return") or plan.get("current_benchmark_return_pct") or "not_available"
+            ),
+            "latest_excess_return_if_available": str(
+                proof.get("excess_return") or plan.get("current_excess_return_pct") or "not_available"
+            ),
+            "latest_trade_count_if_available": str(
+                proof.get("trade_count") or plan.get("current_trade_count") or "not_available"
+            ),
+            "review_allowed": str(review_allowed),
+            "status": status,
+            "reason": ";".join(reason_parts),
+        }
+    ]
+
+
+def save_post_cutoff_oos_observation_status_report(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    return save_monthly_attribution_rows(
+        rows,
+        output_path,
+        columns=POST_CUTOFF_OOS_OBSERVATION_STATUS_COLUMNS,
+    )
+
+
+def build_post_cutoff_oos_warmup_readiness_report(
+    ohlcv_rows: list[dict[str, Any]],
+    *,
+    data_quality_rows: list[dict[str, Any]] | None = None,
+    baseline_cutoff_date: str = "2026-06-18",
+    scoring_start_date: str | None = None,
+    scoring_end_date: str | None = None,
+    min_warmup_rows: int = 244,
+    oos_trade_count: int | str | None = None,
+) -> list[dict[str, str]]:
+    cutoff = _parse_iso_date_or_none(baseline_cutoff_date)
+    if cutoff is None:
+        raise ValueError("baseline_cutoff_date must be YYYY-MM-DD")
+    scoring_start = _parse_iso_date_or_none(scoring_start_date) if scoring_start_date else cutoff + timedelta(days=1)
+    scoring_end = _parse_iso_date_or_none(scoring_end_date) if scoring_end_date else _latest_row_date(ohlcv_rows)
+    if scoring_start is None:
+        raise ValueError("scoring_start_date must be YYYY-MM-DD")
+    if scoring_end is None:
+        scoring_end = scoring_start
+
+    rows_by_symbol: dict[str, list[dict[str, Any]]] = {}
+    for row in ohlcv_rows:
+        symbol = str(row.get("symbol", "")).strip()
+        row_date = _row_date_or_none(row)
+        if not symbol or row_date is None:
+            continue
+        rows_by_symbol.setdefault(symbol, []).append(row)
+
+    warmup_ready_symbols: set[str] = set()
+    scoring_symbols: set[str] = set()
+    for symbol, symbol_rows in rows_by_symbol.items():
+        warmup_rows = [
+            row
+            for row in symbol_rows
+            for row_date in [_row_date_or_none(row)]
+            if row_date is not None and row_date <= scoring_end
+        ]
+        scoring_rows = [
+            row
+            for row in symbol_rows
+            for row_date in [_row_date_or_none(row)]
+            if row_date is not None and scoring_start <= row_date <= scoring_end
+        ]
+        if len(warmup_rows) >= min_warmup_rows:
+            warmup_ready_symbols.add(symbol)
+        if scoring_rows:
+            scoring_symbols.add(symbol)
+
+    wrong_windowing_blocks = 0
+    true_missing_blocks = 0
+    for row in data_quality_rows or []:
+        if str(row.get("status", "")).upper() != "BLOCK":
+            continue
+        reason = str(row.get("reason", ""))
+        if "short_history" not in reason:
+            continue
+        symbol = str(row.get("symbol", "")).strip()
+        if symbol in warmup_ready_symbols and symbol in scoring_symbols:
+            wrong_windowing_blocks += 1
+        else:
+            true_missing_blocks += 1
+
+    warmup_available = bool(warmup_ready_symbols)
+    scoring_available = bool(scoring_symbols)
+    trade_count_text = str(oos_trade_count if oos_trade_count is not None else "not_available")
+    try:
+        trade_count_value = int(float(trade_count_text))
+    except ValueError:
+        trade_count_value = None
+    no_trade = trade_count_value == 0
+    no_trade_due_to_data_quality = no_trade and true_missing_blocks > 0
+    no_trade_due_to_no_signal = (
+        no_trade
+        and not true_missing_blocks
+        and not wrong_windowing_blocks
+        and warmup_available
+        and scoring_available
+    )
+    if wrong_windowing_blocks:
+        status = "warmup_windowing_issue"
+    elif true_missing_blocks:
+        status = "blocked_by_missing_data"
+    elif no_trade_due_to_no_signal:
+        status = "no_trade_due_to_no_signal"
+    elif warmup_available and scoring_available:
+        status = "ready"
+    else:
+        status = "blocked_by_missing_data"
+
+    reason_parts = [
+        "paper_only_no_promotion",
+        "pre_cutoff_history_for_warmup_only",
+        "post_cutoff_dates_for_scoring_only",
+        f"warmup_ready_symbols={len(warmup_ready_symbols)}",
+        f"scoring_window_symbols={len(scoring_symbols)}",
+    ]
+    if wrong_windowing_blocks:
+        reason_parts.append(f"wrong_windowing_short_history={wrong_windowing_blocks}")
+    if true_missing_blocks:
+        reason_parts.append(f"true_missing_history={true_missing_blocks}")
+    if no_trade_due_to_data_quality:
+        reason_parts.append("no_trade_due_to_data_quality=True")
+    if no_trade_due_to_no_signal:
+        reason_parts.append("no_trade_due_to_no_signal=True")
+    return [
+        {
+            "warmup_history_available": str(warmup_available),
+            "scoring_rows_available": str(scoring_available),
+            "scoring_window_available": str(scoring_available),
+            "oos_trade_count": trade_count_text,
+            "true_missing_history": str(true_missing_blocks),
+            "wrong_windowing_short_history": str(wrong_windowing_blocks),
+            "no_trade_due_to_data_quality": str(no_trade_due_to_data_quality),
+            "no_trade_due_to_no_signal": str(no_trade_due_to_no_signal),
+            "data_quality_blocks_due_to_true_missing_data": str(true_missing_blocks),
+            "data_quality_blocks_due_to_wrong_windowing": str(wrong_windowing_blocks),
+            "status": status,
+            "reason": ";".join(reason_parts),
+        }
+    ]
+
+
+def _latest_row_date(rows: list[dict[str, Any]]) -> date | None:
+    dates = [_row_date_or_none(row) for row in rows]
+    dates = [row_date for row_date in dates if row_date is not None]
+    return max(dates) if dates else None
+
+
+def _row_date_or_none(row: dict[str, Any]) -> date | None:
+    for column in ("date", "as_of_date", "signal_date", "snapshot_date", "end_date", "last_date"):
+        parsed = _parse_iso_date_or_none(row.get(column))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _parse_iso_date_or_none(value: Any) -> date | None:
+    text = str(value or "").strip()[:10]
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _symbols_in_rows(rows: list[dict[str, Any]]) -> set[str]:
+    symbols: set[str] = set()
+    for row in rows:
+        symbol = str(row.get("symbol", "")).strip()
+        if symbol:
+            symbols.add(symbol)
+        for column in ("position_symbols", "position_quantities", "selected_symbols", "symbols", "target_weights"):
+            for value in _split_semicolon_values(str(row.get(column, ""))):
+                name = value.split(":", 1)[0].strip()
+                if name:
+                    symbols.add(name)
+    return symbols
+
+
+def _scenario_count_by_symbol(rows: list[dict[str, Any]]) -> dict[str, int]:
+    scenarios: dict[str, set[str]] = {}
+    for row in rows:
+        scenario = _first_available_text(row, "scenario", "name", "month", "date")
+        if scenario == "not_available":
+            continue
+        for symbol in _symbols_in_rows([row]):
+            scenarios.setdefault(symbol, set()).add(scenario)
+    return {symbol: len(values) for symbol, values in scenarios.items()}
+
+
+def _held_symbols_from_rows(rows: list[dict[str, Any]]) -> set[str]:
+    held = set()
+    for row in rows:
+        open_quantity = _float_or_none(row.get("open_quantity"))
+        if open_quantity is not None and open_quantity > 0:
+            symbol = str(row.get("symbol", "")).strip()
+            if symbol:
+                held.add(symbol)
+        for symbol in _symbols_in_rows([row]):
+            if "position_symbols" in row:
+                held.add(symbol)
+    return held
+
+
+def _holding_period_count_by_symbol(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        for symbol in _symbols_in_rows([row]):
+            if "position_symbols" in row:
+                counts[symbol] = counts.get(symbol, 0) + 1
+    return counts
+
+
+def _max_text_by_symbol(rows: list[dict[str, Any]], column: str) -> dict[str, str]:
+    values: dict[str, float] = {}
+    text_values: dict[str, str] = {}
+    for row in rows:
+        symbol = str(row.get("symbol", "")).strip()
+        value = _float_or_none(row.get(column))
+        if not symbol or value is None:
+            continue
+        if symbol not in values or value > values[symbol]:
+            values[symbol] = value
+            text_values[symbol] = _format_optional_float(value)
+    return text_values
+
+
+def _format_count_or_not_available(value: int | None) -> str:
+    return str(value) if value is not None else "not_available"
+
+
+def _min_history_usage_status(row: dict[str, Any]) -> str:
+    if _float_or_none(row.get("return_contribution_pct")) is not None:
+        return "contribution_available"
+    if _parse_bool(row.get("traded_by_candidate")):
+        return "eligible_and_traded"
+    if _parse_bool(row.get("selected_by_candidate")):
+        return "eligible_and_selected"
+    if _parse_bool(row.get("held_by_candidate")):
+        return "eligible_and_traded"
+    return "eligible_only_not_used"
+
+
+def _min_history_concentration_status(positive_share_pct: float | None) -> str:
+    if positive_share_pct is None:
+        return "evidence_incomplete"
+    if positive_share_pct >= 50.0:
+        return "highly_concentrated"
+    if positive_share_pct >= 25.0:
+        return "moderately_concentrated"
+    return "broad"
+
+
+def _min_history_summary_safety_status(
+    top_1_share_pct: float,
+    has_positive_contribution: bool,
+    contribution_available_count: int,
+    total_symbol_count: int,
+) -> str:
+    if not has_positive_contribution or contribution_available_count == 0:
+        return "evidence_incomplete"
+    if contribution_available_count < total_symbol_count:
+        return "evidence_incomplete"
+    if top_1_share_pct >= 50.0:
+        return "highly_concentrated"
+    if top_1_share_pct >= 25.0:
+        return "moderately_concentrated"
+    return "broad"
+
+
+def _history_days_from_detail(detail: Any) -> int | None:
+    for part in str(detail or "").split(";"):
+        key, separator, value = part.strip().partition("=")
+        if separator and key.strip() == "history_rows":
+            return _safe_int(value)
+    return None
+
+
+def _last_text_by_symbol(rows: list[dict[str, Any]], column: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for row in rows:
+        symbol = str(row.get("symbol", "")).strip()
+        value = _first_available_text(row, column)
+        if symbol and value != "not_available":
+            values[symbol] = value
+    return values
+
+
+def _min_history_data_quality_warning(row: dict[str, Any]) -> str:
+    if not row:
+        return "not_available"
+    status = str(row.get("status", "")).strip()
+    reason = str(row.get("reason", "")).strip()
+    if not status and not reason:
+        return "not_available"
+    if status.upper() in {"PASS", "OK"}:
+        return "not_available"
+    return f"{status}:{reason}".strip(":")
+
+
 def save_monthly_decision_attribution_comparison(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     return save_monthly_attribution_rows(
         rows,
@@ -7530,10 +8280,16 @@ def audit_monthly_validation_data(
     start: str,
     end: str,
     min_rows: int = 252,
+    history_start: str | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    audit_start = history_start or start
     for symbol, candles in sorted(symbol_candles.items()):
-        period = [candle for candle in sorted(candles, key=lambda candle: candle.date) if start <= candle.date <= end]
+        period = [
+            candle
+            for candle in sorted(candles, key=lambda candle: candle.date)
+            if audit_start <= candle.date <= end
+        ]
         dates = [candle.date for candle in period]
         duplicate_dates = len(dates) - len(set(dates))
         nonpositive_price_rows = sum(
@@ -11188,6 +11944,108 @@ def save_monthly_validation_candidate_summary(rows: list[dict[str, Any]], output
     return len(rows)
 
 
+def build_monthly_validation_expectancy_report(
+    validation_rows: list[dict[str, Any]],
+    *,
+    candidate_id: str,
+    cost_rows_by_scenario: dict[str, list[dict[str, Any]]] | None = None,
+    fee_rate: float = 0.00015,
+    tax_rate: float = 0.0018,
+    slippage_rate: float = 0.0005,
+) -> list[dict[str, str]]:
+    cost_rows_by_scenario = cost_rows_by_scenario or {}
+    rows: list[dict[str, str]] = []
+    for row in validation_rows:
+        scenario = _first_available_text(row, "scenario", "name")
+        cost_estimate = _monthly_validation_scenario_cost_estimate(
+            row,
+            cost_rows_by_scenario.get(scenario, []),
+            fee_rate=fee_rate,
+            tax_rate=tax_rate,
+            slippage_rate=slippage_rate,
+        )
+        validation_status = _monthly_validation_expectancy_validation_status(row)
+        source_reason = _first_available_text(row, "reason", "status_reason", "diagnostic")
+        report_status, report_reason = _monthly_validation_expectancy_report_status_and_reason(
+            validation_status=validation_status,
+            source_reason=source_reason,
+            cost_estimate=cost_estimate,
+            net_return_after_costs=_first_available_text(
+                row,
+                "net_return_after_costs",
+                "net_return_after_costs_pct",
+                "total_return_pct",
+            ),
+            separated_costs_available=all(
+                _first_available_text(row, *columns) != "not_available"
+                for columns in (
+                    ("fee_drag", "fee_drag_pct", "fee_cost", "total_fee"),
+                    ("tax_drag", "tax_drag_pct", "tax_cost", "total_tax"),
+                    ("slippage_drag", "slippage_drag_pct", "slippage_cost", "total_slippage"),
+                )
+            ),
+        )
+        rows.append(
+            {
+                "candidate_id": candidate_id,
+                "scenario": scenario,
+                "gross_return": _monthly_validation_expectancy_gross_return(row, cost_estimate),
+                "fee_drag": _monthly_validation_expectancy_cost_field(
+                    row,
+                    cost_estimate,
+                    "fee_drag",
+                    "fee_drag_pct",
+                    "fee_cost",
+                    "total_fee",
+                ),
+                "tax_drag": _monthly_validation_expectancy_cost_field(
+                    row,
+                    cost_estimate,
+                    "tax_drag",
+                    "tax_drag_pct",
+                    "tax_cost",
+                    "total_tax",
+                ),
+                "slippage_drag": _monthly_validation_expectancy_cost_field(
+                    row,
+                    cost_estimate,
+                    "slippage_drag",
+                    "slippage_drag_pct",
+                    "slippage_cost",
+                    "total_slippage",
+                ),
+                "net_return_after_costs": _first_available_text(
+                    row,
+                    "net_return_after_costs",
+                    "net_return_after_costs_pct",
+                    "total_return_pct",
+                ),
+                "turnover": _monthly_validation_expectancy_turnover(row, cost_rows_by_scenario.get(scenario, [])),
+                "trade_count": _first_available_text(row, "trade_count", "closed_trade_count", "trades"),
+                "win_rate": _first_available_text(row, "win_rate", "win_rate_pct", "win_pct"),
+                "average_win": _first_available_text(row, "average_win", "avg_win", "avg_win_pct"),
+                "average_loss": _first_available_text(row, "average_loss", "avg_loss", "avg_loss_pct"),
+                "gross_expectancy": _first_available_text(row, "gross_expectancy", "gross_expectancy_pct"),
+                "net_expectancy": _first_available_text(row, "net_expectancy", "net_expectancy_pct"),
+                "status": report_status,
+                "validation_status": validation_status,
+                "reason": report_reason,
+            }
+        )
+    return rows
+
+
+def save_monthly_validation_expectancy_report(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MONTHLY_VALIDATION_EXPECTANCY_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in MONTHLY_VALIDATION_EXPECTANCY_COLUMNS})
+    return len(rows)
+
+
 def analyze_monthly_validation_failure_patterns(
     baseline_rows: list[dict[str, Any]],
     delta_rows: list[dict[str, Any]],
@@ -12002,6 +12860,138 @@ def _failed_required_names(rows: list[dict[str, Any]]) -> set[str]:
     }
 
 
+def _first_available_text(row: dict[str, Any], *columns: str) -> str:
+    for column in columns:
+        value = row.get(column)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return "not_available"
+
+
+def _monthly_validation_expectancy_validation_status(row: dict[str, Any]) -> str:
+    status = str(row.get("status", "")).strip().upper()
+    if status:
+        return status
+    if "deployable" in row:
+        return "PASS" if _parse_bool(row.get("deployable", False)) else "BLOCK"
+    return "not_available"
+
+
+def _monthly_validation_expectancy_report_status_and_reason(
+    *,
+    validation_status: str,
+    source_reason: str,
+    cost_estimate: dict[str, str],
+    net_return_after_costs: str,
+    separated_costs_available: bool,
+) -> tuple[str, str]:
+    if validation_status == "BLOCK":
+        reason = source_reason if source_reason != "not_available" else "validation report blocked"
+        return "blocked_by_validation", f"validation blocked: {reason}"
+    has_estimated_costs = all(
+        cost_estimate.get(column, "not_available") != "not_available"
+        for column in ("fee_drag", "tax_drag", "slippage_drag")
+    )
+    if has_estimated_costs or separated_costs_available:
+        return "cost_estimated", "scenario-level cost estimate from validation/path attribution fields"
+    if net_return_after_costs != "not_available":
+        return (
+            "partial_cost_estimated",
+            "net return after costs available; separated fee/tax/slippage drag not available",
+        )
+    return "not_available", "cost and return fields not available"
+
+
+def _monthly_validation_expectancy_cost_field(
+    row: dict[str, Any],
+    cost_estimate: dict[str, str],
+    estimate_column: str,
+    *source_columns: str,
+) -> str:
+    source_value = _first_available_text(row, estimate_column, *source_columns)
+    if source_value != "not_available":
+        return source_value
+    return cost_estimate.get(estimate_column, "not_available")
+
+
+def _monthly_validation_expectancy_gross_return(
+    row: dict[str, Any],
+    cost_estimate: dict[str, str],
+) -> str:
+    source_value = _first_available_text(row, "gross_return", "gross_return_pct")
+    if source_value != "not_available":
+        return source_value
+    net_return = _float_or_none(_first_available_text(row, "net_return_after_costs", "total_return_pct"))
+    fee_drag = _float_or_none(_first_available_text(row, "fee_drag", "fee_drag_pct", "fee_cost", "total_fee"))
+    tax_drag = _float_or_none(_first_available_text(row, "tax_drag", "tax_drag_pct", "tax_cost", "total_tax"))
+    slippage_drag = _float_or_none(
+        _first_available_text(row, "slippage_drag", "slippage_drag_pct", "slippage_cost", "total_slippage")
+    )
+    explicit_costs = [fee_drag, tax_drag, slippage_drag]
+    if net_return is not None and all(value is not None for value in explicit_costs):
+        return _format_optional_float(net_return + sum(value for value in explicit_costs if value is not None))
+    return cost_estimate.get("gross_return", "not_available")
+
+
+def _monthly_validation_scenario_cost_estimate(
+    row: dict[str, Any],
+    cost_rows: list[dict[str, Any]],
+    *,
+    fee_rate: float,
+    tax_rate: float,
+    slippage_rate: float,
+) -> dict[str, str]:
+    if not cost_rows:
+        return {}
+    net_return = _float_or_none(_first_available_text(row, "net_return_after_costs", "total_return_pct"))
+    final_equity = _float_or_none(_first_available_text(row, "final_equity"))
+    if net_return is None or final_equity is None:
+        return {}
+    initial_equity = final_equity / (1 + net_return / 100)
+    if initial_equity <= 0:
+        return {}
+
+    buy_value = _sum_numeric(_first_available_text(cost_row, "buy_value") for cost_row in cost_rows)
+    sell_value = _sum_numeric(_first_available_text(cost_row, "sell_value") for cost_row in cost_rows)
+    turnover = _sum_numeric(
+        _first_available_text(cost_row, "turnover", "turnover_value", "total_turnover")
+        for cost_row in cost_rows
+    )
+    if buy_value is None or sell_value is None:
+        return {}
+    if turnover is None:
+        turnover = buy_value + sell_value
+
+    slippage_multiplier = _float_or_none(_first_available_text(row, "slippage_multiplier")) or 1.0
+    fee_drag = turnover * max(0.0, fee_rate) / initial_equity * 100
+    tax_drag = sell_value * max(0.0, tax_rate) / initial_equity * 100
+    slippage_drag = turnover * max(0.0, slippage_rate) * max(0.0, slippage_multiplier) / initial_equity * 100
+    gross_return = net_return + fee_drag + tax_drag + slippage_drag
+    return {
+        "gross_return": _format_optional_float(gross_return),
+        "fee_drag": _format_optional_float(fee_drag),
+        "tax_drag": _format_optional_float(tax_drag),
+        "slippage_drag": _format_optional_float(slippage_drag),
+    }
+
+
+def _monthly_validation_expectancy_turnover(
+    row: dict[str, Any],
+    cost_rows: list[dict[str, Any]],
+) -> str:
+    source_turnover = _first_available_text(row, "turnover", "turnover_value", "total_turnover")
+    if source_turnover != "not_available":
+        return source_turnover
+    path_turnover = _sum_numeric(
+        _first_available_text(cost_row, "turnover", "turnover_value", "total_turnover")
+        for cost_row in cost_rows
+    )
+    return _format_optional_float(path_turnover) if path_turnover is not None else "not_available"
+
+
 def _min_numeric(values: Any) -> float | None:
     numeric_values = [_float_or_none(value) for value in values]
     numeric_values = [value for value in numeric_values if value is not None]
@@ -12368,10 +13358,18 @@ def _monthly_preset_configs(config: MonthlyRebalanceConfig) -> dict[str, Momentu
 def _monthly_preset_config_for_name(config: MonthlyRebalanceConfig, preset: str) -> MomentumRotationConfig:
     preset_config = momentum_rotation_config_for_preset(preset)
     if config.direct_alpha_target_persistence_signals == preset_config.target_persistence_signals:
-        return preset_config
+        if (
+            config.recovery_ranking_short_lookback_days == preset_config.recovery_ranking_short_lookback_days
+            and config.recovery_ranking_drawdown_lookback_days == preset_config.recovery_ranking_drawdown_lookback_days
+            and config.recovery_ranking_weight == preset_config.recovery_ranking_weight
+        ):
+            return preset_config
     return replace(
         preset_config,
         target_persistence_signals=config.direct_alpha_target_persistence_signals,
+        recovery_ranking_short_lookback_days=config.recovery_ranking_short_lookback_days,
+        recovery_ranking_drawdown_lookback_days=config.recovery_ranking_drawdown_lookback_days,
+        recovery_ranking_weight=config.recovery_ranking_weight,
     )
 
 
@@ -12848,6 +13846,17 @@ def load_point_in_time_universe(path: Path | str) -> PointInTimeUniverse:
                     tradable=str(row.get("tradable", "") or "").strip(),
                 )
             )
+    return PointInTimeUniverse(snapshots, members_by_date=members_by_date)
+
+
+def merge_point_in_time_universes(universes: list[PointInTimeUniverse]) -> PointInTimeUniverse:
+    snapshots: dict[str, set[str]] = {}
+    members_by_date: dict[str, list[UniverseMember]] = {}
+    for universe in universes:
+        for snapshot_date, symbols in universe.items():
+            snapshots.setdefault(snapshot_date, set()).update(symbols)
+        for snapshot_date, members in getattr(universe, "members_by_date", {}).items():
+            members_by_date.setdefault(snapshot_date, []).extend(members)
     return PointInTimeUniverse(snapshots, members_by_date=members_by_date)
 
 

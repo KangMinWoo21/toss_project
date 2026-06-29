@@ -5,6 +5,7 @@ from pathlib import Path
 
 from backtester.data import load_candles
 from backtester.engine import BacktestConfig, Backtester, Trade
+from backtester.models import Candle
 from backtester.strategies import BuyAndHoldStrategy, MarketRegimeEnsembleStrategy, MovingAverageCrossStrategy
 
 
@@ -36,6 +37,27 @@ class BacktesterEngineTests(unittest.TestCase):
         self.assertEqual(result.trades[0].side, "SELL")
         self.assertGreater(result.trades[0].pnl, 0)
         self.assertEqual(result.win_rate_pct, 100.0)
+
+    def test_backtester_executes_signal_on_next_open(self):
+        class FirstDaySignalStrategy:
+            name = "first_day_signal"
+
+            def on_candle(self, index, candles, position):
+                if index == 0 and position is None:
+                    return "BUY"
+                return "HOLD"
+
+        candles = [
+            Candle("2026-01-02", 100, 100, 100, 100, 1000),
+            Candle("2026-01-05", 150, 150, 150, 150, 1000),
+        ]
+
+        result = Backtester(
+            config=BacktestConfig(initial_cash=1_000_000, fee_rate=0.0, tax_rate=0.0, slippage_rate=0.0)
+        ).run(candles, FirstDaySignalStrategy())
+
+        self.assertAlmostEqual(result.final_equity, 1_000_000)
+        self.assertEqual(result.trades[0].entry_price, 150)
 
     def test_moving_average_strategy_does_not_look_ahead(self):
         candles = load_candles(Path("data/sample_kr_stock.csv"))

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from .scalper import ScalperConfig, run_paper_scalper
+from .scalper import ScalperConfig, ScalperState, run_paper_scalper
 from .toss import fetch_tick_snapshot
 
 
@@ -74,6 +74,15 @@ def run_auto_scalper_once(
     return rows
 
 
+def auto_scalper_sleep_seconds(
+    rows: list[tuple[str, str, int]],
+    *,
+    interval_seconds: float,
+    idle_seconds: float,
+) -> float:
+    return interval_seconds if rows else idle_seconds
+
+
 def run_auto_scalper_loop(
     access_token: str,
     kr_calendar_fetcher: Callable[[], dict[str, object]],
@@ -86,6 +95,7 @@ def run_auto_scalper_loop(
     idle_seconds: float,
     config: ScalperConfig,
 ) -> None:
+    states: dict[str, ScalperState] = {}
     while True:
         now = datetime.now(KST)
         kr_calendar = kr_calendar_fetcher()
@@ -100,6 +110,7 @@ def run_auto_scalper_loop(
                 config=config,
                 append=True,
                 required_date=required_date,
+                state=states.setdefault(symbol, ScalperState()),
             )
             return len(rows)
 
@@ -117,7 +128,13 @@ def run_auto_scalper_loop(
                 print(f"{now.isoformat()} market={market} symbol={symbol} saved={saved}", flush=True)
         else:
             print(f"{now.isoformat()} market=closed sleeping={idle_seconds}", flush=True)
-            time.sleep(idle_seconds)
+        sleep_seconds = auto_scalper_sleep_seconds(
+            rows,
+            interval_seconds=interval_seconds,
+            idle_seconds=idle_seconds,
+        )
+        if sleep_seconds > 0:
+            time.sleep(sleep_seconds)
 
 
 def _calendar_days(calendar: dict[str, object]) -> list[dict[str, object]]:

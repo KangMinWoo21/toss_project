@@ -24,6 +24,9 @@ class MomentumRotationConfig:
     max_trade_participation_rate: float = 0.0
     max_lookback_return_pct: float = 0.0
     target_persistence_signals: int = 1
+    recovery_ranking_short_lookback_days: int = 0
+    recovery_ranking_drawdown_lookback_days: int = 0
+    recovery_ranking_weight: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -119,6 +122,12 @@ def run_momentum_rotation_backtest(
         raise ValueError("max_lookback_return_pct cannot be negative")
     if cfg.target_persistence_signals <= 0:
         raise ValueError("target_persistence_signals must be positive")
+    if cfg.recovery_ranking_short_lookback_days < 0:
+        raise ValueError("recovery_ranking_short_lookback_days cannot be negative")
+    if cfg.recovery_ranking_drawdown_lookback_days < 0:
+        raise ValueError("recovery_ranking_drawdown_lookback_days cannot be negative")
+    if cfg.recovery_ranking_weight < 0:
+        raise ValueError("recovery_ranking_weight cannot be negative")
 
     candles_by_symbol = {
         symbol: sorted(candles, key=lambda candle: candle.date) for symbol, candles in symbol_candles.items()
@@ -300,7 +309,8 @@ def _rank_momentum_symbols(
             trend_average = sum(candle.close for candle in trend_values) / len(trend_values)
             if signal_close < trend_average:
                 continue
-        rows.append((symbol, momentum))
+        ranking_score = momentum + _recovery_ranking_bonus(candles, signal_index, cfg)
+        rows.append((symbol, ranking_score))
     rows.sort(key=lambda row: row[1], reverse=True)
     return [symbol for symbol, _ in rows[:selected_top_n]]
 
@@ -339,9 +349,40 @@ def _rank_momentum_symbols_on_signal_date(
             trend_average = sum(candle.close for candle in trend_values) / len(trend_values)
             if signal_close < trend_average:
                 continue
-        rows.append((symbol, momentum))
+        ranking_score = momentum + _recovery_ranking_bonus(candles, signal_index, cfg)
+        rows.append((symbol, ranking_score))
     rows.sort(key=lambda row: row[1], reverse=True)
     return [symbol for symbol, _ in rows[:top_n]]
+
+
+def _recovery_ranking_bonus(
+    candles: list[Candle],
+    signal_index: int,
+    cfg: MomentumRotationConfig,
+) -> float:
+    if (
+        cfg.recovery_ranking_weight <= 0
+        or cfg.recovery_ranking_short_lookback_days <= 0
+        or cfg.recovery_ranking_drawdown_lookback_days <= 0
+    ):
+        return 0.0
+    short_days = cfg.recovery_ranking_short_lookback_days
+    drawdown_days = cfg.recovery_ranking_drawdown_lookback_days
+    if signal_index < short_days or signal_index + 1 < drawdown_days:
+        return 0.0
+    signal_close = candles[signal_index].close
+    short_base = candles[signal_index - short_days].close
+    if short_base <= 0:
+        return 0.0
+    recent_return = signal_close / short_base - 1
+    drawdown_window = candles[signal_index - drawdown_days + 1 : signal_index + 1]
+    trough_close = min(candle.close for candle in drawdown_window)
+    if trough_close <= 0:
+        return 0.0
+    trough_recovery = signal_close / trough_close - 1
+    if recent_return <= 0 or trough_recovery <= 0:
+        return 0.0
+    return cfg.recovery_ranking_weight * (recent_return + trough_recovery)
 
 
 def _filter_persistent_targets(

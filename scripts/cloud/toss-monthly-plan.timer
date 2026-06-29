@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Toss Invest monthly paper rebalance plan
+
+[Timer]
+OnCalendar=*-*-01 09:10:00 Asia/Seoul
+Persistent=true
+Unit=toss-monthly-plan.service
+
+[Install]
+WantedBy=timers.target

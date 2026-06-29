@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 
 
+TRUTHY_VALUES = {"1", "true", "yes", "y", "on"}
+
+
 def load_env_file(path: Path | str = ".env") -> dict[str, str]:
     env_path = Path(path)
     if not env_path.exists():
@@ -20,6 +23,11 @@ def load_env_file(path: Path | str = ".env") -> dict[str, str]:
 def load_env_into_process(path: Path | str = ".env") -> None:
     for key, value in load_env_file(path).items():
         os.environ.setdefault(key, value)
+
+
+def is_production_trading_enabled(env: dict[str, str] | None = None) -> bool:
+    values = env if env is not None else os.environ
+    return str(values.get("PRODUCTION_TRADING_ENABLED", "")).strip().casefold() in TRUTHY_VALUES
 
 
 def _unquote(value: str) -> str:

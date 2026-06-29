@@ -1,6 +1,7 @@
 import csv
 import time
 from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Callable
 
@@ -34,6 +35,12 @@ class ScalperConfig:
 class ScalpSignal:
     action: str
     reason: str
+
+
+@dataclass
+class ScalperState:
+    history: list[TickSnapshot] = field(default_factory=list)
+    position: dict[str, object] | None = None
 
 
 def decide_scalp_signal(
@@ -91,10 +98,12 @@ def run_paper_scalper(
     config: ScalperConfig | None = None,
     append: bool = False,
     required_date: str | None = None,
+    state: ScalperState | None = None,
 ) -> list[dict[str, object]]:
     scalper_config = config or ScalperConfig()
-    history: list[TickSnapshot] = []
-    position: dict[str, object] | None = None
+    scalper_state = state or ScalperState()
+    history = scalper_state.history
+    position = scalper_state.position
     rows: list[dict[str, object]] = []
 
     for tick in range(iterations):
@@ -112,6 +121,7 @@ def run_paper_scalper(
             entry_price = float(position["entry_price"])
             realized_pnl_pct = (snapshot.last_price / entry_price - 1) * 100
             position = None
+        scalper_state.position = position
 
         metrics = snapshot_metrics(snapshot)
         rows.append(
@@ -128,7 +138,7 @@ def run_paper_scalper(
             }
         )
         history.append(snapshot)
-        history = history[-30:]
+        del history[:-30]
         if tick < iterations - 1 and interval_seconds > 0:
             time.sleep(interval_seconds)
 

@@ -6,6 +6,8 @@ from tempfile import TemporaryDirectory
 
 from backtester.data import load_candles
 from backtester.pykrx_fetcher import (
+    available_ohlcv_symbol_dates,
+    build_missing_ohlcv_fetch_plan,
     build_missing_ohlcv_targets,
     fetch_missing_ohlcv_batches,
     fetch_pykrx_ohlcv_universe_csv,
@@ -13,10 +15,13 @@ from backtester.pykrx_fetcher import (
     monthly_snapshot_dates,
     normalize_pykrx_market_snapshot_frames,
     normalize_pykrx_universe_snapshot,
+    load_universe_snapshot_rows,
     load_symbol_universe,
     normalize_pykrx_ohlcv_frame,
     normalize_pykrx_trading_value_frame,
     run_missing_ohlcv_batch_subprocess_loop,
+    save_missing_ohlcv_fetch_plan,
+    save_missing_ohlcv_loop_summary,
     save_market_snapshot_rows,
     save_missing_ohlcv_targets,
     save_universe_snapshot_rows,
@@ -25,6 +30,21 @@ from backtester.pykrx_fetcher import (
 
 
 class PykrxFetcherTests(unittest.TestCase):
+    def test_load_universe_snapshot_rows_accepts_snapshot_date_alias(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "universe.csv"
+            path.write_text(
+                "snapshot_date,symbol,name,market,tradable\n"
+                "2024-01-31,5930,Samsung,KOSPI,true\n",
+                encoding="utf-8",
+            )
+
+            rows = load_universe_snapshot_rows(path)
+
+        self.assertEqual(rows[0]["date"], "2024-01-31")
+        self.assertEqual(rows[0]["symbol"], "005930")
+        self.assertEqual(rows[0]["tradable"], "true")
+
     def test_normalize_pykrx_trading_value_frame_accepts_dict_rows(self):
         rows = normalize_pykrx_trading_value_frame(
             symbol="005930",
@@ -166,6 +186,20 @@ class PykrxFetcherTests(unittest.TestCase):
 
         self.assertEqual(symbols, {"005930", "000660"})
 
+    def test_available_ohlcv_symbol_dates_reads_candle_dates_by_symbol(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "000660.csv").write_text(
+                "date,open,high,low,close,volume\n"
+                "2024-02-01,1,1,1,1,1\n"
+                "2024-02-02,1,1,1,1,1\n",
+                encoding="utf-8",
+            )
+
+            dates = available_ohlcv_symbol_dates(root)
+
+        self.assertEqual(dates["000660"], {"2024-02-01", "2024-02-02"})
+
     def test_build_missing_ohlcv_targets_prioritizes_repeated_missing_symbols(self):
         targets = build_missing_ohlcv_targets(
             [
@@ -181,6 +215,43 @@ class PykrxFetcherTests(unittest.TestCase):
         self.assertEqual(targets[0]["missing_snapshots"], 2)
         self.assertEqual(targets[0]["first_missing_date"], "2024-01-31")
         self.assertEqual(targets[0]["last_missing_date"], "2024-02-29")
+
+    def test_build_missing_ohlcv_targets_excludes_untradable_metadata(self):
+        targets = build_missing_ohlcv_targets(
+            [
+                {"date": "2024-01-31", "symbol": "000660", "name": "Hynix", "market": "KOSPI"},
+                {"date": "2024-01-31", "symbol": "123450", "name": "Blocked", "tradable": "false"},
+                {"date": "2024-01-31", "symbol": "234560", "name": "Suspended", "is_suspended": "true"},
+                {"date": "2024-01-31", "symbol": "345670", "name": "Managed", "is_managed": "true"},
+                {"date": "2024-01-31", "symbol": "456780", "name": "Inactive", "is_active": "false"},
+                {"date": "2024-01-31", "symbol": "474930", "name": "신한제13호스팩"},
+                {"date": "2024-01-31", "symbol": "111112", "name": "Some Preferred", "is_preferred": "true"},
+                {"date": "2024-01-31", "symbol": "222223", "name": "Delisted", "delisted_date": "2024-01-31"},
+                {"date": "2024-01-31", "symbol": "333334", "name": "Future", "listed_date": "2024-02-01"},
+            ],
+            available_symbols=set(),
+        )
+
+        self.assertEqual([row["symbol"] for row in targets], ["000660"])
+
+    def test_build_missing_ohlcv_targets_uses_snapshot_date_coverage_when_available(self):
+        targets = build_missing_ohlcv_targets(
+            [
+                {"date": "2024-01-31", "symbol": "000660", "name": "Hynix", "market": "KOSPI"},
+                {"date": "2024-02-29", "symbol": "000660", "name": "Hynix", "market": "KOSPI"},
+                {"date": "2024-02-29", "symbol": "005930", "name": "Samsung", "market": "KOSPI"},
+            ],
+            available_symbols={"000660", "005930"},
+            available_symbol_dates={
+                "000660": {"2024-02-01"},
+                "005930": {"2024-01-02"},
+            },
+        )
+
+        self.assertEqual([row["symbol"] for row in targets], ["000660"])
+        self.assertEqual(targets[0]["missing_snapshots"], 1)
+        self.assertEqual(targets[0]["first_missing_date"], "2024-01-31")
+        self.assertEqual(targets[0]["last_missing_date"], "2024-01-31")
 
     def test_save_missing_ohlcv_targets_writes_loadable_symbols_file(self):
         with TemporaryDirectory() as temp_dir:
@@ -312,6 +383,84 @@ class PykrxFetcherTests(unittest.TestCase):
         self.assertEqual(summary["timed_out_batches"], 1)
         self.assertEqual(summary["remaining_targets"], 1)
         self.assertEqual(summary["status"], "timed_out")
+
+    def test_build_missing_ohlcv_fetch_plan_estimates_safe_batches(self):
+        plan = build_missing_ohlcv_fetch_plan(
+            [
+                {"symbol": "000660", "missing_snapshots": "5"},
+                {"symbol": "035420", "missing_snapshots": "3"},
+                {"symbol": "005930", "missing_snapshots": "1"},
+            ],
+            batch_size=2,
+            max_batches=1,
+            batch_timeout_seconds=120,
+            batch_pause_seconds=5,
+            universe_file="data/krx_metadata/krx_universe_monthly.csv",
+            data_dir="data/krx_expanded",
+            targets_output="data/reports/krx_missing_ohlcv_targets.csv",
+            report_dir="data/reports",
+            start="2024-01-01",
+            end="2026-06-18",
+        )
+
+        self.assertEqual(plan[0]["plan_id"], "missing_ohlcv_fetch")
+        self.assertEqual(plan[0]["status"], "READY")
+        self.assertEqual(plan[0]["target_count"], 3)
+        self.assertEqual(plan[0]["planned_batches"], 1)
+        self.assertEqual(plan[0]["planned_symbols"], 2)
+        self.assertEqual(plan[0]["remaining_after_plan"], 1)
+        self.assertEqual(plan[0]["top_symbols"], "000660:5; 035420:3; 005930:1")
+        self.assertIn("fetch-pykrx-missing-ohlcv-loop", plan[0]["recommended_command"])
+
+    def test_save_missing_ohlcv_fetch_plan_writes_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "fetch_plan.csv"
+            rows = build_missing_ohlcv_fetch_plan(
+                [{"symbol": "000660", "missing_snapshots": "5"}],
+                batch_size=50,
+                max_batches=1,
+                batch_timeout_seconds=120,
+                batch_pause_seconds=5,
+                universe_file="universe.csv",
+                data_dir="prices",
+                targets_output="targets.csv",
+                report_dir="reports",
+                start="2024-01-01",
+                end="2026-06-18",
+            )
+            saved = save_missing_ohlcv_fetch_plan(rows, output)
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("recommended_command", text.splitlines()[0])
+        self.assertIn("fetch-pykrx-missing-ohlcv-loop", text)
+
+    def test_save_missing_ohlcv_loop_summary_writes_operational_csv(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "loop_summary.csv"
+            saved = save_missing_ohlcv_loop_summary(
+                {
+                    "status": "timed_out",
+                    "attempted_batches": 2,
+                    "completed_batches": 1,
+                    "timed_out_batches": 1,
+                    "failed_batches": 0,
+                    "saved": 50,
+                    "remaining_targets": 347,
+                    "commands": [["python", "-m", "backtester"]],
+                    "outputs": [
+                        {"stdout": "saved 50\nremaining_targets 347\n", "stderr": ""},
+                        {"stdout": "", "stderr": "timeout"},
+                    ],
+                },
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("remaining_targets", text.splitlines()[0])
+        self.assertIn("timed_out", text)
+        self.assertIn("timeout", text)
 
     def test_normalize_pykrx_universe_snapshot_records_symbols_names_and_market(self):
         rows = normalize_pykrx_universe_snapshot(

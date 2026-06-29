@@ -1,0 +1,31 @@
+[Unit]
+Description=Toss Invest monthly paper rebalance plan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=minwoo0180
+Group=minwoo0180
+WorkingDirectory=%h/toss-stock-bot
+Environment=REPO_DIR=%h/toss-stock-bot
+Environment=DATA_DIR=data/krx_expanded
+Environment=CASH=10000000
+Environment=POINT_IN_TIME_UNIVERSE=data/krx_metadata/krx_universe_monthly.csv
+Environment=PERFORMANCE_REPORT=data/reports/monthly_performance_audit.csv
+Environment=DEPLOYMENT_GATE_FILE=data/reports/monthly_deployment_gate_pit_universe.csv
+Environment=MAX_REPORT_AGE_DAYS=45
+Environment=STATE_FILE=data/reports/monthly_rebalance_state_cloud.csv
+Environment=OUTPUT=data/reports/monthly_order_plan_cloud.csv
+Environment=DECISION_OUTPUT=data/reports/monthly_decision_cloud.csv
+Environment=RISK_OUTPUT=data/reports/monthly_risk_report_cloud.csv
+Environment=EVENTS=data/events/krx15_dart_2018_2026.csv
+Environment=EVENT_SOURCE_WEIGHTS=dart=0.5
+Environment=EVENT_LOOKBACK_DAYS=20
+Environment=MIN_ENTRY_EVENT_SCORE=-0.4
+Environment=EVENT_WEIGHT=0.25
+EnvironmentFile=-%h/toss-stock-bot/.env
+ExecStart=/usr/bin/bash %h/toss-stock-bot/scripts/cloud/run_monthly_plan.sh
+
+[Install]
+WantedBy=multi-user.target

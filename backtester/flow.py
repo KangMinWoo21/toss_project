@@ -1,5 +1,6 @@
 import csv
 from dataclasses import dataclass
+from datetime import date as Date
 from pathlib import Path
 
 
@@ -9,6 +10,17 @@ class FlowScoreStore:
 
     def score(self, symbol: str, date: str) -> float:
         return self.scores.get((symbol, date), 0.0)
+
+    def latest_score_before(self, symbol: str, date: str) -> float:
+        target_date = Date.fromisoformat(date)
+        prior = [
+            (Date.fromisoformat(row_date), score)
+            for (row_symbol, row_date), score in self.scores.items()
+            if row_symbol == symbol and Date.fromisoformat(row_date) < target_date
+        ]
+        if not prior:
+            return 0.0
+        return max(prior, key=lambda row: row[0])[1]
 
 
 def load_flow_scores(path: Path | str, scale_value: float = 100_000_000.0) -> FlowScoreStore:

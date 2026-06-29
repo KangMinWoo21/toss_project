@@ -42,6 +42,39 @@ MISSING_OHLCV_TARGET_COLUMNS = [
     "first_missing_date",
     "last_missing_date",
 ]
+MISSING_OHLCV_FETCH_PLAN_COLUMNS = [
+    "plan_id",
+    "status",
+    "target_count",
+    "batch_size",
+    "max_batches",
+    "planned_batches",
+    "planned_symbols",
+    "remaining_after_plan",
+    "batch_timeout_seconds",
+    "batch_pause_seconds",
+    "top_symbols",
+    "start",
+    "end",
+    "universe_file",
+    "data_dir",
+    "targets_output",
+    "report_dir",
+    "recommended_command",
+    "risk_note",
+]
+MISSING_OHLCV_LOOP_SUMMARY_COLUMNS = [
+    "status",
+    "attempted_batches",
+    "completed_batches",
+    "timed_out_batches",
+    "failed_batches",
+    "saved",
+    "remaining_targets",
+    "command_count",
+    "last_stdout_tail",
+    "last_stderr_tail",
+]
 
 DATE_KEY = "\ub0a0\uc9dc"
 TICKER_KEY = "\ud2f0\ucee4"
@@ -237,16 +270,37 @@ def available_ohlcv_symbols(data_dir: Path | str) -> set[str]:
     return symbols
 
 
+def available_ohlcv_symbol_dates(data_dir: Path | str) -> dict[str, set[str]]:
+    root = Path(data_dir)
+    dates_by_symbol: dict[str, set[str]] = {}
+    for path in root.glob("*.csv"):
+        symbol = _normalize_symbol_code(path.stem.split("_")[0])
+        if not symbol:
+            continue
+        dates: set[str] = set()
+        try:
+            with path.open(newline="", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    row_date = _normalize_date(row.get("date", ""))
+                    if row_date:
+                        dates.add(row_date)
+        except (OSError, csv.Error, UnicodeDecodeError):
+            dates = set()
+        dates_by_symbol[symbol] = dates
+    return dates_by_symbol
+
+
 def load_universe_snapshot_rows(path: Path | str) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     with Path(path).open(newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        required = {"date", "symbol"}
-        if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
-            raise RuntimeError("universe snapshot CSV must include date and symbol columns")
+        fieldnames = set(reader.fieldnames or [])
+        if not fieldnames or "symbol" not in fieldnames or not ({"date", "snapshot_date"} & fieldnames):
+            raise RuntimeError("universe snapshot CSV must include date/snapshot_date and symbol columns")
         for raw in reader:
             symbol = _normalize_symbol_code(raw.get("symbol", ""))
-            date = _normalize_date(raw.get("date", ""))
+            date = _normalize_date(raw.get("snapshot_date") or raw.get("date", ""))
             if not symbol or not date:
                 continue
             row = {key: (value or "").strip() for key, value in raw.items() if key is not None}
@@ -260,14 +314,21 @@ def build_missing_ohlcv_targets(
     universe_rows: list[dict[str, Any]],
     *,
     available_symbols: set[str],
+    available_symbol_dates: dict[str, set[str]] | None = None,
+    exclude_untradable: bool = True,
 ) -> list[dict[str, Any]]:
     available = {_normalize_symbol_code(symbol) for symbol in available_symbols}
+    coverage_dates = _normalize_available_symbol_dates(available_symbol_dates)
     grouped: dict[str, dict[str, Any]] = {}
     seen_symbol_dates: set[tuple[str, str]] = set()
     for raw in universe_rows:
         symbol = _normalize_symbol_code(raw.get("symbol", ""))
         snapshot_date = _normalize_date(raw.get("date", ""))
-        if not symbol or not snapshot_date or symbol in available:
+        if not symbol or not snapshot_date:
+            continue
+        if exclude_untradable and _missing_ohlcv_target_exclusion_reason(raw, snapshot_date):
+            continue
+        if _has_ohlcv_on_or_before_snapshot(symbol, snapshot_date, available, coverage_dates):
             continue
         key = (symbol, snapshot_date)
         if key in seen_symbol_dates:
@@ -296,6 +357,58 @@ def build_missing_ohlcv_targets(
     )
 
 
+def _missing_ohlcv_target_exclusion_reason(row: dict[str, Any], snapshot_date: str) -> str:
+    name = str(row.get("name", "") or "").strip()
+    listed_date = _normalize_date(row.get("listed_date", ""))
+    delisted_date = _normalize_date(row.get("delisted_date", ""))
+    if listed_date and listed_date > snapshot_date:
+        return "not_listed"
+    if delisted_date and delisted_date <= snapshot_date:
+        return "delisted"
+    if _metadata_is_false(row.get("is_active", "")):
+        return "inactive"
+    if _metadata_is_false(row.get("tradable", "")):
+        return "not_tradable"
+    if _metadata_is_true(row.get("is_suspended", "")):
+        return "suspended"
+    if _metadata_is_true(row.get("is_managed", "")):
+        return "managed"
+    if _metadata_is_true(row.get("is_spac", "")) or _looks_like_spac(name):
+        return "spac"
+    if _metadata_is_true(row.get("is_preferred", "")) or _looks_like_preferred_stock(name):
+        return "preferred"
+    return ""
+
+
+def _normalize_available_symbol_dates(
+    available_symbol_dates: dict[str, set[str]] | None,
+) -> dict[str, set[str]] | None:
+    if available_symbol_dates is None:
+        return None
+    normalized: dict[str, set[str]] = {}
+    for raw_symbol, raw_dates in available_symbol_dates.items():
+        symbol = _normalize_symbol_code(raw_symbol)
+        if not symbol:
+            continue
+        normalized[symbol] = {
+            normalized_date
+            for raw_date in raw_dates
+            if (normalized_date := _normalize_date(raw_date))
+        }
+    return normalized
+
+
+def _has_ohlcv_on_or_before_snapshot(
+    symbol: str,
+    snapshot_date: str,
+    available_symbols: set[str],
+    available_symbol_dates: dict[str, set[str]] | None,
+) -> bool:
+    if available_symbol_dates is None:
+        return symbol in available_symbols
+    return any(row_date <= snapshot_date for row_date in available_symbol_dates.get(symbol, set()))
+
+
 def save_missing_ohlcv_targets(rows: list[dict[str, Any]], output_path: Path | str) -> int:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -304,6 +417,114 @@ def save_missing_ohlcv_targets(rows: list[dict[str, Any]], output_path: Path | s
         writer.writeheader()
         writer.writerows({column: row.get(column, "") for column in MISSING_OHLCV_TARGET_COLUMNS} for row in rows)
     return len(rows)
+
+
+def build_missing_ohlcv_fetch_plan(
+    target_rows: list[dict[str, Any]],
+    *,
+    batch_size: int,
+    max_batches: int,
+    batch_timeout_seconds: float,
+    batch_pause_seconds: float,
+    universe_file: Path | str,
+    data_dir: Path | str,
+    targets_output: Path | str,
+    report_dir: Path | str,
+    start: str,
+    end: str,
+) -> list[dict[str, Any]]:
+    if batch_size <= 0:
+        raise ValueError("batch_size must be greater than zero")
+    if max_batches <= 0:
+        raise ValueError("max_batches must be greater than zero")
+    if batch_timeout_seconds <= 0:
+        raise ValueError("batch_timeout_seconds must be greater than zero")
+
+    sorted_targets = sorted(
+        target_rows,
+        key=lambda row: (-_safe_int(row.get("missing_snapshots", 0)), str(row.get("symbol", ""))),
+    )
+    target_count = len(sorted_targets)
+    planned_symbols = min(target_count, batch_size * max_batches)
+    planned_batches = 0
+    if planned_symbols > 0:
+        planned_batches = min(max_batches, (planned_symbols + batch_size - 1) // batch_size)
+    remaining_after_plan = max(0, target_count - planned_symbols)
+    top_symbols = "; ".join(
+        f"{str(row.get('symbol', '')).strip()}:{_safe_int(row.get('missing_snapshots', 0))}"
+        for row in sorted_targets[:5]
+        if str(row.get("symbol", "")).strip()
+    )
+    status = "READY" if target_count else "COMPLETE"
+    command = (
+        "python -m backtester fetch-pykrx-missing-ohlcv-loop "
+        f"--universe-file \"{universe_file}\" --start {start} --end {end} "
+        f"--data-dir \"{data_dir}\" --targets-output \"{targets_output}\" "
+        f"--report-dir \"{report_dir}\" --batch-size {batch_size} --max-batches {max_batches} "
+        f"--batch-timeout-seconds {batch_timeout_seconds:g} --batch-pause-seconds {batch_pause_seconds:g}"
+    )
+    risk_note = (
+        "Plan only; run during off-hours or with conservative batch/timeouts. "
+        "Rerun production-check and monthly-validate after fetch completion."
+    )
+    return [
+        {
+            "plan_id": "missing_ohlcv_fetch",
+            "status": status,
+            "target_count": target_count,
+            "batch_size": batch_size,
+            "max_batches": max_batches,
+            "planned_batches": planned_batches,
+            "planned_symbols": planned_symbols,
+            "remaining_after_plan": remaining_after_plan,
+            "batch_timeout_seconds": batch_timeout_seconds,
+            "batch_pause_seconds": batch_pause_seconds,
+            "top_symbols": top_symbols,
+            "start": start,
+            "end": end,
+            "universe_file": str(universe_file),
+            "data_dir": str(data_dir),
+            "targets_output": str(targets_output),
+            "report_dir": str(report_dir),
+            "recommended_command": command,
+            "risk_note": risk_note,
+        }
+    ]
+
+
+def save_missing_ohlcv_fetch_plan(rows: list[dict[str, Any]], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MISSING_OHLCV_FETCH_PLAN_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in MISSING_OHLCV_FETCH_PLAN_COLUMNS})
+    return len(rows)
+
+
+def save_missing_ohlcv_loop_summary(summary: dict[str, Any], output_path: Path | str) -> int:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    outputs = list(summary.get("outputs", []) or [])
+    last_output = outputs[-1] if outputs else {}
+    row = {
+        "status": summary.get("status", ""),
+        "attempted_batches": summary.get("attempted_batches", 0),
+        "completed_batches": summary.get("completed_batches", 0),
+        "timed_out_batches": summary.get("timed_out_batches", 0),
+        "failed_batches": summary.get("failed_batches", 0),
+        "saved": summary.get("saved", 0),
+        "remaining_targets": summary.get("remaining_targets", 0),
+        "command_count": len(summary.get("commands", []) or []),
+        "last_stdout_tail": _text_tail(last_output.get("stdout", "")),
+        "last_stderr_tail": _text_tail(last_output.get("stderr", "")),
+    }
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MISSING_OHLCV_LOOP_SUMMARY_COLUMNS)
+        writer.writeheader()
+        writer.writerow(row)
+    return 1
 
 
 def fetch_missing_ohlcv_batches(
@@ -344,6 +565,7 @@ def fetch_missing_ohlcv_batches(
         targets = build_missing_ohlcv_targets(
             load_universe_snapshot_rows(universe_file),
             available_symbols=available_ohlcv_symbols(data_dir),
+            available_symbol_dates=available_ohlcv_symbol_dates(data_dir),
         )
         save_missing_ohlcv_targets(targets, targets_output)
         if not targets:
@@ -375,6 +597,7 @@ def fetch_missing_ohlcv_batches(
     remaining = build_missing_ohlcv_targets(
         load_universe_snapshot_rows(universe_file),
         available_symbols=available_ohlcv_symbols(data_dir),
+        available_symbol_dates=available_ohlcv_symbol_dates(data_dir),
     )
     summary["remaining_targets"] = save_missing_ohlcv_targets(remaining, targets_output)
     return summary
@@ -708,6 +931,35 @@ def _normalize_symbol_code(value: Any) -> str:
     return text.upper()
 
 
+def _metadata_is_true(value: Any) -> bool:
+    return str(value).strip().casefold() in {"1", "true", "yes", "y", "t", "active", "pass"}
+
+
+def _metadata_is_false(value: Any) -> bool:
+    return str(value).strip().casefold() in {"0", "false", "no", "n", "f", "inactive", "blocked"}
+
+
+def _looks_like_spac(name: str) -> bool:
+    normalized = str(name or "").replace(" ", "").upper()
+    return "스팩" in normalized or "SPAC" in normalized
+
+
+def _looks_like_preferred_stock(name: str) -> bool:
+    normalized = str(name or "").replace(" ", "").upper()
+    if not normalized:
+        return False
+    return (
+        normalized.endswith("우")
+        or normalized.endswith("우B")
+        or normalized.endswith("1우")
+        or normalized.endswith("2우")
+        or normalized.endswith("3우")
+        or normalized.endswith("1우B")
+        or normalized.endswith("2우B")
+        or normalized.endswith("3우B")
+    )
+
+
 def _symbol_entry_to_row(entry: dict[str, str] | str) -> dict[str, str]:
     if isinstance(entry, str):
         return {"symbol": _normalize_symbol_code(entry), "name": "", "market": ""}
@@ -738,6 +990,20 @@ def _extract_summary_int(text: str, key: str) -> int:
             except ValueError:
                 return 0
     return 0
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(float(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _text_tail(value: Any, *, max_chars: int = 500) -> str:
+    text = str(value or "").replace("\r\n", "\n").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
 
 
 def _number(value: Any) -> float:

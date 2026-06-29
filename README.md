@@ -229,3 +229,10 @@ python -m backtester paper-scalp --symbol 005930 --iterations 30 --interval-seco
 - 보유 중 익절/손절 조건 도달 시 가상 청산
 
 이 명령은 실제 주문을 내지 않습니다. 장중 테스트와 로그 검증을 먼저 한 뒤, 실주문 연결은 별도 안전장치가 준비된 뒤에만 진행해야 합니다.
+## Safe operation note
+
+This repository is a research and paper-operation toolkit. Real live order
+execution is intentionally not implemented. See
+`docs/safe-research-operation.md` for the current safe workflow, including
+`PRODUCTION_TRADING_ENABLED`, `data-check`, `production-check`, monthly paper
+order plans, event `available_date`, and cloud collection guidance.

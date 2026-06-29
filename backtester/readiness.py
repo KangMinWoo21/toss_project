@@ -1055,6 +1055,7 @@ def _validation_scenario_check(path: Path) -> ReadinessCheck:
             for row in rows
             for column in REQUIRED_VALIDATION_SCENARIO_VALUE_COLUMNS
             if not str(row.get(column, "")).strip()
+            and (column != "stress" or _is_stress_validation_row(row))
         }
     )
     if missing_values:
@@ -1064,6 +1065,12 @@ def _validation_scenario_check(path: Path) -> ReadinessCheck:
             f"missing_required_values={','.join(missing_values)}",
         )
     return ReadinessCheck("validation_scenarios", "PASS", f"{len(rows)} scenarios passed")
+
+
+def _is_stress_validation_row(row: dict[str, Any]) -> bool:
+    category = str(row.get("category", "")).strip()
+    name = str(row.get("name", "")).strip()
+    return category == "stress" or name.startswith("stress_")
 
 
 def _walk_forward_train_candidate_coverage_check(path: Path) -> ReadinessCheck:

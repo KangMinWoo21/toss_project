@@ -139,6 +139,36 @@ class ProductionReadinessTests(unittest.TestCase):
         self.assertIn("excess_return_pct", scenario_checks[0].detail)
         self.assertIn("source", scenario_checks[0].detail)
 
+    def test_validation_scenarios_requires_stress_value_only_for_stress_rows(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,train_start,train_end,selected_preset,train_excess_return_pct,train_candidate_scores,train_candidate_decision_profiles,train_candidate_direct_scores,train_direct_diagnostics,start,end,slippage_multiplier,stress,final_equity,total_return_pct,buy_hold_return_pct,excess_return_pct,max_drawdown_pct,trade_count,universe_bias_warning,universe_bias_reasons,universe_symbol_count,universe_avg_symbol_return_pct,universe_median_symbol_return_pct,universe_extreme_return_symbols,universe_extreme_return_share,deployable,reason,source\n"
+                "duration_3m,duration,True,,,,,,,,,2025-01-01,2025-03-31,1.0,,1010000,1,0,1,-5,3,False,,120,1,0.5,0,0,True,passed,monthly-validate\n"
+                "stress_slippage_x3,stress,True,,,,,,,,,2025-01-01,2025-12-31,3.0,slippage_x3,1020000,2,0,2,-5,4,False,,120,1,0.5,0,0,True,passed,monthly-validate\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        scenario_checks = [check for check in checks if check.name == "validation_scenarios"]
+        self.assertEqual(scenario_checks[0].status, "PASS")
+
+    def test_validation_scenarios_stress_row_missing_stress_value_blocks(self):
+        with TemporaryDirectory() as temp_dir:
+            scenarios = Path(temp_dir) / "scenarios.csv"
+            scenarios.write_text(
+                "name,category,required,train_start,train_end,selected_preset,train_excess_return_pct,train_candidate_scores,train_candidate_decision_profiles,train_candidate_direct_scores,train_direct_diagnostics,start,end,slippage_multiplier,stress,final_equity,total_return_pct,buy_hold_return_pct,excess_return_pct,max_drawdown_pct,trade_count,universe_bias_warning,universe_bias_reasons,universe_symbol_count,universe_avg_symbol_return_pct,universe_median_symbol_return_pct,universe_extreme_return_symbols,universe_extreme_return_share,deployable,reason,source\n"
+                "stress_slippage_x3,stress,True,,,,,,,,,2025-01-01,2025-12-31,3.0,,1020000,2,0,2,-5,4,False,,120,1,0.5,0,0,True,passed,monthly-validate\n",
+                encoding="utf-8",
+            )
+
+            checks = evaluate_readiness(validation_scenarios_path=scenarios)
+
+        scenario_checks = [check for check in checks if check.name == "validation_scenarios"]
+        self.assertEqual(scenario_checks[0].status, "BLOCK")
+        self.assertIn("missing_required_values=stress", scenario_checks[0].detail)
+
     def test_walk_forward_single_train_candidate_warns_readiness(self):
         with TemporaryDirectory() as temp_dir:
             scenarios = Path(temp_dir) / "scenarios.csv"

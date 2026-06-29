@@ -3,7 +3,15 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from backtester.scalper import OrderbookLevel, ScalperConfig, TickSnapshot, decide_scalp_signal, run_paper_scalper, snapshot_metrics
+from backtester.scalper import (
+    OrderbookLevel,
+    ScalperConfig,
+    ScalperState,
+    TickSnapshot,
+    decide_scalp_signal,
+    run_paper_scalper,
+    snapshot_metrics,
+)
 
 
 class ScalperTests(unittest.TestCase):
@@ -106,6 +114,71 @@ class ScalperTests(unittest.TestCase):
             )
 
         self.assertEqual(rows, [])
+
+    def test_run_paper_scalper_preserves_state_across_short_runs(self):
+        snapshots = [
+            TickSnapshot(
+                timestamp="2026-06-10T09:00:00+09:00",
+                last_price=100.0,
+                recent_trade_volume=1000,
+                bids=[OrderbookLevel(99.9, 1000)],
+                asks=[OrderbookLevel(100.1, 1000)],
+            ),
+            TickSnapshot(
+                timestamp="2026-06-10T09:00:01+09:00",
+                last_price=103.0,
+                recent_trade_volume=5000,
+                bids=[OrderbookLevel(102.9, 4000)],
+                asks=[OrderbookLevel(103.1, 1000)],
+            ),
+            TickSnapshot(
+                timestamp="2026-06-10T09:00:02+09:00",
+                last_price=101.0,
+                recent_trade_volume=1000,
+                bids=[OrderbookLevel(100.9, 1000)],
+                asks=[OrderbookLevel(101.1, 1000)],
+            ),
+        ]
+        state = ScalperState()
+
+        def fetch_next():
+            return snapshots.pop(0)
+
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "paper.csv"
+            first = run_paper_scalper(
+                snapshot_fetcher=fetch_next,
+                iterations=1,
+                interval_seconds=0,
+                output_path=output,
+                config=ScalperConfig(volume_spike_multiplier=2.0, stop_loss_pct=-1.0),
+                append=True,
+                state=state,
+            )
+            second = run_paper_scalper(
+                snapshot_fetcher=fetch_next,
+                iterations=1,
+                interval_seconds=0,
+                output_path=output,
+                config=ScalperConfig(volume_spike_multiplier=2.0, stop_loss_pct=-1.0),
+                append=True,
+                state=state,
+            )
+            third = run_paper_scalper(
+                snapshot_fetcher=fetch_next,
+                iterations=1,
+                interval_seconds=0,
+                output_path=output,
+                config=ScalperConfig(volume_spike_multiplier=2.0, stop_loss_pct=-1.0),
+                append=True,
+                state=state,
+            )
+
+        self.assertEqual(first[0]["signal"], "HOLD")
+        self.assertEqual(second[0]["signal"], "BUY")
+        self.assertEqual(second[0]["position"], "LONG")
+        self.assertEqual(third[0]["signal"], "SELL")
+        self.assertEqual(third[0]["position"], "FLAT")
 
 
 if __name__ == "__main__":

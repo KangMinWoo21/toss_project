@@ -82,6 +82,56 @@ class CliTests(unittest.TestCase):
         self.assertIn("buy_and_hold", completed.stdout)
         self.assertIn("volatility_breakout", completed.stdout)
 
+    def test_post_cutoff_oos_observation_status_cli_writes_blocked_status(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data_dir = root / "ohlcv"
+            data_dir.mkdir()
+            (data_dir / "AAA.csv").write_text(
+                "date,open,high,low,close,volume\n"
+                "2026-06-29,1,1,1,1,100\n"
+                "2026-06-30,1,1,1,1,100\n"
+                "2026-07-01,1,1,1,1,100\n",
+                encoding="utf-8",
+            )
+            plan = root / "plan.csv"
+            plan.write_text(
+                "candidate_id,current_oos_start,current_oos_end,current_trading_days,current_trade_count,current_gross_return_pct,current_benchmark_return_pct,current_excess_return_pct,minimum_additional_trading_days,status\n"
+                "candidate_guard,2026-06-19,2026-06-29,7,12,-10.6872,-8.8464,-1.8408,15,PAPER_REVIEW\n",
+                encoding="utf-8",
+            )
+            proof = root / "proof.csv"
+            proof.write_text(
+                "candidate_id,gross_return,benchmark_return,excess_return,trade_count,status\n"
+                "candidate_guard,-10.6872,-8.8464,-1.8408,12,paper_oos_failed\n",
+                encoding="utf-8",
+            )
+            output = root / "status.csv"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "post-cutoff-oos-observation-status",
+                    "--ohlcv-dir",
+                    str(data_dir),
+                    "--observation-plan",
+                    str(plan),
+                    "--oos-proof-report",
+                    str(proof),
+                    "--output",
+                    str(output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("review_allowed  False", completed.stdout)
+            with output.open(newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(rows[0]["observed_trading_days_after_plan"], "2")
+        self.assertEqual(rows[0]["remaining_trading_days"], "13")
+        self.assertEqual(rows[0]["status"], "OBSERVE")
+
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(
             [

@@ -82,6 +82,12 @@ from .monthly_rebalance import (
     analyze_monthly_benchmark_selection_summary,
     analyze_symbol_realized_pnl_attribution,
     build_monthly_candidate_stress_review,
+    build_min_history_safety_review,
+    build_min_history_safety_summary,
+    build_monthly_validation_expectancy_report,
+    build_post_cutoff_oos_data_readiness_report,
+    build_post_cutoff_oos_observation_status_report,
+    build_post_cutoff_oos_warmup_readiness_report,
     build_monthly_validation_sweep_plan,
     build_monthly_validation_candidate_decision,
     build_monthly_validation_candidate_followup_rows,
@@ -119,6 +125,7 @@ from .monthly_rebalance import (
     load_performance_guard,
     load_point_in_time_universe,
     load_positions,
+    merge_point_in_time_universes,
     exclude_extreme_period_return_symbols,
     apply_performance_guard,
     compress_decision_to_buyable_targets,
@@ -170,7 +177,11 @@ from .monthly_rebalance import (
     save_monthly_train_stability_symbol_attribution,
     save_monthly_train_stability_windows,
     save_monthly_candidate_stress_review,
+    save_min_history_safety_review,
+    save_min_history_safety_summary,
     save_monthly_performance_audit_rows,
+    save_post_cutoff_oos_data_readiness_report,
+    save_post_cutoff_oos_observation_status_report,
     save_monthly_performance_concentration,
     save_monthly_validation_failures,
     save_monthly_validation_remediation,
@@ -180,6 +191,7 @@ from .monthly_rebalance import (
     save_monthly_validation_candidate_decision,
     save_monthly_validation_candidate_followup_rows,
     save_monthly_validation_candidate_summary,
+    save_monthly_validation_expectancy_report,
     save_monthly_validation_failure_drilldown,
     save_monthly_validation_failure_patterns,
     save_monthly_validation_scenario_deltas,
@@ -831,7 +843,12 @@ def main() -> int:
     monthly_backtest_parser.add_argument("--point-in-time-min-reference-price", type=float, default=1_000)
     monthly_backtest_parser.add_argument("--point-in-time-max-trailing-return-pct", type=float, default=300.0)
     monthly_backtest_parser.add_argument("--point-in-time-trailing-return-days", type=int, default=252)
-    monthly_backtest_parser.add_argument("--point-in-time-universe", default=None, help="CSV with date,symbol snapshots")
+    monthly_backtest_parser.add_argument(
+        "--point-in-time-universe",
+        action="append",
+        default=None,
+        help="CSV with date,symbol snapshots. Repeat to merge canonical history with newer snapshots.",
+    )
     monthly_backtest_parser.add_argument("--universe-filter-report", default="data/reports/universe_filter_report.csv")
     monthly_backtest_parser.add_argument("--exclude-symbols", default=None, help="CSV or text file of symbols to exclude")
     monthly_backtest_parser.add_argument(
@@ -896,7 +913,12 @@ def main() -> int:
     monthly_attribution_parser.add_argument("--position-trailing-stop-pct", type=float, default=0.0)
     monthly_attribution_parser.add_argument("--position-trailing-stop-reason-contains", default="")
     monthly_attribution_parser.add_argument("--point-in-time-min-history-days", type=int, default=252)
-    monthly_attribution_parser.add_argument("--point-in-time-universe", default=None, help="CSV with date,symbol snapshots")
+    monthly_attribution_parser.add_argument(
+        "--point-in-time-universe",
+        action="append",
+        default=None,
+        help="CSV with date,symbol snapshots. Repeat to merge canonical history with newer snapshots.",
+    )
     monthly_attribution_parser.add_argument("--exclude-symbols", default=None, help="CSV or text file of symbols to exclude")
     monthly_attribution_parser.add_argument(
         "--ignore-data-quality-exclusions",
@@ -1066,6 +1088,9 @@ def main() -> int:
     monthly_validate_parser.add_argument("--min-target-value", type=float, default=10_000)
     monthly_validate_parser.add_argument("--max-candidate-lookback-return-pct", type=float, default=90.0)
     monthly_validate_parser.add_argument("--direct-alpha-target-persistence-signals", type=int, default=1)
+    monthly_validate_parser.add_argument("--recovery-ranking-short-lookback-days", type=int, default=0)
+    monthly_validate_parser.add_argument("--recovery-ranking-drawdown-lookback-days", type=int, default=0)
+    monthly_validate_parser.add_argument("--recovery-ranking-weight", type=float, default=0.0)
     monthly_validate_parser.add_argument("--point-in-time-liquidity-top-n", type=int, default=100)
     monthly_validate_parser.add_argument("--point-in-time-liquidity-window-days", type=int, default=20)
     monthly_validate_parser.add_argument("--liquidity-risk-reference-top-n", type=int, default=100)
@@ -1075,7 +1100,12 @@ def main() -> int:
     monthly_validate_parser.add_argument("--point-in-time-min-reference-price", type=float, default=1_000)
     monthly_validate_parser.add_argument("--point-in-time-max-trailing-return-pct", type=float, default=300.0)
     monthly_validate_parser.add_argument("--point-in-time-trailing-return-days", type=int, default=252)
-    monthly_validate_parser.add_argument("--point-in-time-universe", default=None, help="CSV with date,symbol snapshots")
+    monthly_validate_parser.add_argument(
+        "--point-in-time-universe",
+        action="append",
+        default=None,
+        help="CSV with date,symbol snapshots. Repeat to merge canonical history with newer snapshots.",
+    )
     monthly_validate_parser.add_argument("--universe-filter-report", default="data/reports/universe_filter_report.csv")
     monthly_validate_parser.add_argument("--exclude-symbols", default=None, help="CSV or text file of symbols to exclude")
     monthly_validate_parser.add_argument(
@@ -1101,6 +1131,11 @@ def main() -> int:
         default="data/reports/monthly_validation_data_quality.csv",
     )
     monthly_validate_parser.add_argument("--data-quality-min-rows", type=int, default=252)
+    monthly_validate_parser.add_argument(
+        "--data-quality-history-start",
+        default=None,
+        help="Optional earlier start date for data-quality warmup/history checks; scoring still uses --start.",
+    )
     monthly_validate_parser.add_argument("--coverage-output", default="data/reports/monthly_universe_price_coverage.csv")
     monthly_validate_parser.add_argument("--performance-output", default="data/reports/monthly_performance_audit.csv")
     monthly_validate_parser.add_argument(
@@ -1195,6 +1230,36 @@ def main() -> int:
     monthly_candidate_summary_parser.add_argument(
         "--output",
         default="data/reports/monthly_validation_candidate_summary.csv",
+    )
+
+    monthly_expectancy_parser = subparsers.add_parser(
+        "monthly-validation-expectancy",
+        help="Build a fee/tax/slippage-adjusted expectancy report from existing monthly validation fields",
+    )
+    monthly_expectancy_parser.add_argument(
+        "--validation-report",
+        default="data/reports/monthly_validation_scenarios_pit_universe.csv",
+        help="Existing monthly validation scenario CSV",
+    )
+    monthly_expectancy_parser.add_argument("--candidate-id", default="baseline")
+    monthly_expectancy_parser.add_argument(
+        "--cost-report",
+        action="append",
+        default=[],
+        help="Optional scenario=CSV path attribution report with turnover_value fields; can be repeated",
+    )
+    monthly_expectancy_parser.add_argument(
+        "--candidate-validation-report",
+        action="append",
+        default=[],
+        help="Optional candidate_id=CSV validation report to append after the baseline; can be repeated",
+    )
+    monthly_expectancy_parser.add_argument("--fee-rate", type=float, default=0.00015)
+    monthly_expectancy_parser.add_argument("--tax-rate", type=float, default=0.0018)
+    monthly_expectancy_parser.add_argument("--slippage-rate", type=float, default=0.0005)
+    monthly_expectancy_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_validation_expectancy_report.csv",
     )
 
     monthly_compare_attribution_parser = subparsers.add_parser(
@@ -1345,6 +1410,65 @@ def main() -> int:
     monthly_compare_entry_eligibility_parser.add_argument(
         "--output",
         default="data/reports/monthly_entry_selection_eligibility_comparison.csv",
+    )
+
+    min_history_safety_parser = subparsers.add_parser(
+        "monthly-min-history-safety-review",
+        help="Create a paper-only safety review for symbols admitted by a relaxed PIT history gate",
+    )
+    min_history_safety_parser.add_argument("--baseline-universe-filter-report", required=True)
+    min_history_safety_parser.add_argument("--candidate-universe-filter-report", required=True)
+    min_history_safety_parser.add_argument("--eligibility-report", action="append", default=[])
+    min_history_safety_parser.add_argument("--selection-report", action="append", default=[])
+    min_history_safety_parser.add_argument("--attribution-report", action="append", default=[])
+    min_history_safety_parser.add_argument("--holding-report", action="append", default=[])
+    min_history_safety_parser.add_argument("--order-plan-report", action="append", default=[])
+    min_history_safety_parser.add_argument("--data-quality-report", action="append", default=[])
+    min_history_safety_parser.add_argument("--baseline-min-history-days", type=int, default=252)
+    min_history_safety_parser.add_argument("--candidate-min-history-days", type=int, default=244)
+    min_history_safety_parser.add_argument(
+        "--output",
+        default="data/reports/monthly_min_history244_safety_review.csv",
+    )
+    min_history_safety_parser.add_argument(
+        "--summary-output",
+        default="data/reports/monthly_min_history244_safety_summary.csv",
+    )
+
+    post_cutoff_oos_data_parser = subparsers.add_parser(
+        "post-cutoff-oos-data-readiness",
+        help="Create a paper-only readiness report for post-cutoff OOS data availability",
+    )
+    post_cutoff_oos_data_parser.add_argument("--ohlcv-dir", default="data/krx_expanded")
+    post_cutoff_oos_data_parser.add_argument("--pit-universe-file", default="data/krx_metadata/krx_universe_monthly.csv")
+    post_cutoff_oos_data_parser.add_argument("--baseline-cutoff-date", default="2026-06-18")
+    post_cutoff_oos_data_parser.add_argument("--as-of-date", default=date.today().isoformat())
+    post_cutoff_oos_data_parser.add_argument("--scoring-start-date", default=None)
+    post_cutoff_oos_data_parser.add_argument("--scoring-end-date", default=None)
+    post_cutoff_oos_data_parser.add_argument("--min-warmup-rows", type=int, default=244)
+    post_cutoff_oos_data_parser.add_argument("--data-quality-report", default=None)
+    post_cutoff_oos_data_parser.add_argument("--oos-proof-report", default=None)
+    post_cutoff_oos_data_parser.add_argument(
+        "--output",
+        default="data/reports/post_cutoff_oos_data_readiness_neutral_loss_guard55_min_history244.csv",
+    )
+
+    post_cutoff_oos_observation_parser = subparsers.add_parser(
+        "post-cutoff-oos-observation-status",
+        help="Create a paper-only status report for the post-cutoff OOS observation period",
+    )
+    post_cutoff_oos_observation_parser.add_argument("--ohlcv-dir", default="data/krx_expanded")
+    post_cutoff_oos_observation_parser.add_argument(
+        "--observation-plan",
+        default="data/reports/post_cutoff_oos_observation_plan_neutral_loss_guard55_min_history244.csv",
+    )
+    post_cutoff_oos_observation_parser.add_argument(
+        "--oos-proof-report",
+        default="data/reports/post_cutoff_oos_proof_candidate_proxy_guard_exit_short_minus5_neutral_loss_guard55_min_history244.csv",
+    )
+    post_cutoff_oos_observation_parser.add_argument(
+        "--output",
+        default="data/reports/post_cutoff_oos_observation_status_neutral_loss_guard55_min_history244.csv",
     )
 
     monthly_compare_paths_parser = subparsers.add_parser(
@@ -1935,6 +2059,35 @@ def main() -> int:
             )
         return 0
 
+    if args.command == "monthly-validation-expectancy":
+        validation_rows = _read_csv_dicts(Path(args.validation_report))
+        rows = build_monthly_validation_expectancy_report(
+            validation_rows,
+            candidate_id=args.candidate_id,
+            cost_rows_by_scenario=_read_scenario_cost_reports(args.cost_report),
+            fee_rate=args.fee_rate,
+            tax_rate=args.tax_rate,
+            slippage_rate=args.slippage_rate,
+        )
+        for candidate_id, candidate_path in _read_candidate_validation_report_specs(
+            args.candidate_validation_report
+        ):
+            rows.extend(
+                build_monthly_validation_expectancy_report(
+                    _read_csv_dicts(candidate_path),
+                    candidate_id=candidate_id,
+                    fee_rate=args.fee_rate,
+                    tax_rate=args.tax_rate,
+                    slippage_rate=args.slippage_rate,
+                )
+            )
+        saved = save_monthly_validation_expectancy_report(rows, args.output)
+        blocked_rows = [row for row in rows if str(row.get("status", "")) == "blocked_by_validation"]
+        print(f"expectancy_report  {args.output}")
+        print(f"expectancy_rows  {saved}")
+        print(f"blocked_rows  {len(blocked_rows)}")
+        return 0
+
     if args.command == "monthly-compare-attribution":
         baseline_rows = _read_csv_dicts(Path(args.baseline))
         candidate_rows = _read_csv_dicts(Path(args.candidate))
@@ -2164,6 +2317,94 @@ def main() -> int:
         print(f"insufficient_history_rows  {len(insufficient_history_rows)}")
         return 0
 
+    if args.command == "monthly-min-history-safety-review":
+        eligibility_rows = _read_many_csv_dicts(args.eligibility_report)
+        selection_rows = _read_many_csv_dicts(args.selection_report)
+        attribution_rows = _read_many_csv_dicts(args.attribution_report)
+        holding_rows = _read_many_csv_dicts(args.holding_report)
+        order_plan_rows = _read_many_csv_dicts(args.order_plan_report)
+        data_quality_rows = _read_many_csv_dicts(args.data_quality_report)
+        rows = build_min_history_safety_review(
+            _read_csv_dicts(Path(args.baseline_universe_filter_report)),
+            _read_csv_dicts(Path(args.candidate_universe_filter_report)),
+            eligibility_rows=eligibility_rows,
+            selection_rows=selection_rows,
+            attribution_rows=attribution_rows,
+            holding_rows=holding_rows,
+            order_plan_rows=order_plan_rows,
+            data_quality_rows=data_quality_rows,
+            baseline_min_history_days=args.baseline_min_history_days,
+            candidate_min_history_days=args.candidate_min_history_days,
+        )
+        saved = save_min_history_safety_review(rows, args.output)
+        summary = build_min_history_safety_summary(rows)
+        summary_saved = save_min_history_safety_summary([summary], args.summary_output)
+        concentration_rows = [row for row in rows if row.get("dominates_improvement") == "True"]
+        incomplete_rows = [row for row in rows if row.get("safety_status") == "evidence_incomplete"]
+        print(f"min_history_safety_review  {args.output}")
+        print(f"min_history_safety_summary  {args.summary_output}")
+        print(f"review_rows  {saved}")
+        print(f"summary_rows  {summary_saved}")
+        print(f"min_history_only_symbols  {len({row.get('symbol', '') for row in rows})}")
+        print(f"actually_used_symbols  {summary.get('actually_used_symbols', '0')}")
+        print(f"contribution_available_symbols  {summary.get('contribution_available_symbols', '0')}")
+        print(f"concentration_status  {summary.get('safety_status', 'not_available')}")
+        print(f"dominates_improvement_rows  {len(concentration_rows)}")
+        print(f"evidence_incomplete_rows  {len(incomplete_rows)}")
+        return 0
+
+    if args.command == "post-cutoff-oos-data-readiness":
+        ohlcv_rows = _read_csv_dir_dicts(Path(args.ohlcv_dir))
+        pit_rows = _read_csv_dicts(Path(args.pit_universe_file))
+        rows = build_post_cutoff_oos_data_readiness_report(
+            ohlcv_rows,
+            pit_rows,
+            baseline_cutoff_date=args.baseline_cutoff_date,
+            as_of_date=args.as_of_date,
+            required_data_sources=[args.ohlcv_dir, args.pit_universe_file],
+        )
+        data_quality_rows = _read_csv_dicts(Path(args.data_quality_report)) if args.data_quality_report else []
+        proof_rows = _read_csv_dicts(Path(args.oos_proof_report)) if args.oos_proof_report else []
+        proof_trade_count = proof_rows[0].get("trade_count", "") if proof_rows else None
+        warmup_rows = build_post_cutoff_oos_warmup_readiness_report(
+            ohlcv_rows,
+            data_quality_rows=data_quality_rows,
+            baseline_cutoff_date=args.baseline_cutoff_date,
+            scoring_start_date=args.scoring_start_date,
+            scoring_end_date=args.scoring_end_date or args.as_of_date,
+            min_warmup_rows=args.min_warmup_rows,
+            oos_trade_count=proof_trade_count,
+        )
+        if rows and warmup_rows:
+            rows[0].update(warmup_rows[0])
+        saved = save_post_cutoff_oos_data_readiness_report(rows, args.output)
+        row = rows[0] if rows else {}
+        print(f"post_cutoff_oos_data_readiness  {args.output}")
+        print(f"readiness_rows  {saved}")
+        print(f"latest_local_ohlcv_date  {row.get('latest_local_ohlcv_date', 'not_available')}")
+        print(f"post_cutoff_rows  {row.get('post_cutoff_rows', '0')}")
+        print(f"oos_can_run_now  {row.get('oos_can_run_now', 'False')}")
+        print(f"warmup_history_available  {row.get('warmup_history_available', 'not_available')}")
+        print(f"scoring_window_available  {row.get('scoring_window_available', 'not_available')}")
+        print(f"status  {row.get('status', 'not_available')}")
+        return 0
+
+    if args.command == "post-cutoff-oos-observation-status":
+        ohlcv_rows = _read_csv_dir_dicts(Path(args.ohlcv_dir))
+        plan_rows = _read_csv_dicts(Path(args.observation_plan))
+        proof_rows = _read_csv_dicts(Path(args.oos_proof_report)) if args.oos_proof_report else []
+        rows = build_post_cutoff_oos_observation_status_report(plan_rows, proof_rows, ohlcv_rows)
+        saved = save_post_cutoff_oos_observation_status_report(rows, args.output)
+        row = rows[0] if rows else {}
+        print(f"post_cutoff_oos_observation_status  {args.output}")
+        print(f"status_rows  {saved}")
+        print(f"latest_available_date  {row.get('latest_available_date', 'not_available')}")
+        print(f"observed_trading_days_after_plan  {row.get('observed_trading_days_after_plan', '0')}")
+        print(f"remaining_trading_days  {row.get('remaining_trading_days', '0')}")
+        print(f"review_allowed  {row.get('review_allowed', 'False')}")
+        print(f"status  {row.get('status', 'not_available')}")
+        return 0
+
     if args.command == "monthly-compare-paths":
         baseline_rows = _read_csv_dicts(Path(args.baseline))
         candidate_rows = _read_csv_dicts(Path(args.candidate))
@@ -2303,11 +2544,7 @@ def main() -> int:
             exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
             data_quality_exclusions,
         )
-        point_in_time_universe = (
-            load_point_in_time_universe(args.point_in_time_universe)
-            if args.point_in_time_universe
-            else None
-        )
+        point_in_time_universe = _load_point_in_time_universe_arg(args.point_in_time_universe)
         scenario_filter = set(args.scenario or [])
         baseline_rows = _read_csv_dicts(Path(args.baseline))
         cases = [
@@ -2426,11 +2663,7 @@ def main() -> int:
             exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
             data_quality_exclusions,
         )
-        point_in_time_universe = (
-            load_point_in_time_universe(args.point_in_time_universe)
-            if args.point_in_time_universe
-            else None
-        )
+        point_in_time_universe = _load_point_in_time_universe_arg(args.point_in_time_universe)
         scenario_filter = set(args.scenario or [])
         baseline_rows = _read_csv_dicts(Path(args.baseline))
         cases = [
@@ -3148,11 +3381,7 @@ def main() -> int:
             print(f"risk_report  {args.risk_output}")
             return risk_exit_code("BLOCK")
         presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
-        point_in_time_universe = (
-            load_point_in_time_universe(args.point_in_time_universe)
-            if args.point_in_time_universe
-            else None
-        )
+        point_in_time_universe = _load_point_in_time_universe_arg(args.point_in_time_universe)
         if point_in_time_universe is None:
             risk_checks = [
                 RiskCheck(
@@ -3433,11 +3662,7 @@ def main() -> int:
             exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
             data_quality_exclusions,
         )
-        point_in_time_universe = (
-            load_point_in_time_universe(args.point_in_time_universe)
-            if args.point_in_time_universe
-            else None
-        )
+        point_in_time_universe = _load_point_in_time_universe_arg(args.point_in_time_universe)
         _save_universe_filter_report_if_needed(
             symbol_candles,
             point_in_time_universe,
@@ -3587,11 +3812,7 @@ def main() -> int:
             exclude_invalid_price_symbols(_load_monthly_symbol_candles(args.data_dir, data_quality_exclusions.path)),
             data_quality_exclusions,
         )
-        point_in_time_universe = (
-            load_point_in_time_universe(args.point_in_time_universe)
-            if args.point_in_time_universe
-            else None
-        )
+        point_in_time_universe = _load_point_in_time_universe_arg(args.point_in_time_universe)
         if args.stress_exclude_return_above is not None:
             symbol_candles = exclude_extreme_period_return_symbols(
                 symbol_candles,
@@ -3838,11 +4059,7 @@ def main() -> int:
             data_quality_exclusions,
         )
         presets = tuple(value.strip() for value in args.presets.split(",") if value.strip())
-        point_in_time_universe = (
-            load_point_in_time_universe(args.point_in_time_universe)
-            if args.point_in_time_universe
-            else None
-        )
+        point_in_time_universe = _load_point_in_time_universe_arg(args.point_in_time_universe)
         _save_universe_filter_report_if_needed(
             symbol_candles,
             point_in_time_universe,
@@ -3883,6 +4100,9 @@ def main() -> int:
             min_target_value=args.min_target_value,
             max_candidate_lookback_return_pct=args.max_candidate_lookback_return_pct,
             direct_alpha_target_persistence_signals=args.direct_alpha_target_persistence_signals,
+            recovery_ranking_short_lookback_days=args.recovery_ranking_short_lookback_days,
+            recovery_ranking_drawdown_lookback_days=args.recovery_ranking_drawdown_lookback_days,
+            recovery_ranking_weight=args.recovery_ranking_weight,
             point_in_time_liquidity_top_n=args.point_in_time_liquidity_top_n,
             point_in_time_liquidity_window_days=args.point_in_time_liquidity_window_days,
             liquidity_risk_reference_top_n=args.liquidity_risk_reference_top_n,
@@ -3923,6 +4143,7 @@ def main() -> int:
             start=args.start,
             end=args.end,
             min_rows=args.data_quality_min_rows,
+            history_start=args.data_quality_history_start,
         )
         save_validation_data_quality_rows(data_quality_rows, args.data_quality_output)
         coverage_rows = []
@@ -4596,6 +4817,18 @@ def _load_monthly_symbol_candles(data_dir: str, exclude_symbols_path: Path | str
     return load_symbol_candles(data_dir, ignore_paths=ignore_paths)
 
 
+def _load_point_in_time_universe_arg(value):
+    if not value:
+        return None
+    paths = value if isinstance(value, list) else [value]
+    universes = [load_point_in_time_universe(path) for path in paths if path]
+    if not universes:
+        return None
+    if len(universes) == 1:
+        return universes[0]
+    return merge_point_in_time_universes(universes)
+
+
 def _collect_validation_delta_paths(
     *,
     delta_reports: list[str] | None,
@@ -4654,6 +4887,51 @@ def _normalized_existing_path(path: Path) -> Path:
 def _read_csv_dicts(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
+
+
+def _read_many_csv_dicts(paths: list[str]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for path in paths:
+        rows.extend(_read_csv_dicts(Path(path)))
+    return rows
+
+
+def _read_csv_dir_dicts(path: Path) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for csv_path in sorted(path.glob("*.csv")):
+        for row in _read_csv_dicts(csv_path):
+            if "symbol" not in row:
+                row["symbol"] = csv_path.stem
+            rows.append(row)
+    return rows
+
+
+def _read_scenario_cost_reports(report_specs: list[str]) -> dict[str, list[dict[str, str]]]:
+    rows_by_scenario: dict[str, list[dict[str, str]]] = {}
+    for spec in report_specs:
+        if "=" not in spec:
+            raise SystemExit(f"cost report must be scenario=path: {spec}")
+        scenario, path_text = spec.split("=", 1)
+        scenario = scenario.strip()
+        path = Path(path_text.strip())
+        if not scenario:
+            raise SystemExit(f"cost report scenario is empty: {spec}")
+        rows_by_scenario.setdefault(scenario, []).extend(_read_csv_dicts(path))
+    return rows_by_scenario
+
+
+def _read_candidate_validation_report_specs(report_specs: list[str]) -> list[tuple[str, Path]]:
+    reports: list[tuple[str, Path]] = []
+    for spec in report_specs:
+        if "=" not in spec:
+            raise SystemExit(f"candidate validation report must be candidate_id=path: {spec}")
+        candidate_id, path_text = spec.split("=", 1)
+        candidate_id = candidate_id.strip()
+        path = Path(path_text.strip())
+        if not candidate_id:
+            raise SystemExit(f"candidate validation report candidate_id is empty: {spec}")
+        reports.append((candidate_id, path))
+    return reports
 
 
 def _safe_cli_float(value: object, *, default: float = float("inf")) -> float:

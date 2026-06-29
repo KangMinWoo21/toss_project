@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backtester.config import load_env_file
+from backtester.config import is_production_trading_enabled, load_env_file
 
 
 class ConfigTests(unittest.TestCase):
@@ -20,6 +20,18 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(values["TOSSINVEST_CLIENT_ID"], "c_test")
         self.assertEqual(values["TOSSINVEST_CLIENT_SECRET"], "s_test")
+
+    def test_production_trading_is_disabled_by_default(self):
+        env = {}
+
+        self.assertFalse(is_production_trading_enabled(env))
+
+    def test_production_trading_requires_explicit_true_value(self):
+        self.assertTrue(is_production_trading_enabled({"PRODUCTION_TRADING_ENABLED": "true"}))
+        self.assertTrue(is_production_trading_enabled({"PRODUCTION_TRADING_ENABLED": "1"}))
+        self.assertFalse(is_production_trading_enabled({"PRODUCTION_TRADING_ENABLED": "false"}))
+        self.assertFalse(is_production_trading_enabled({"PRODUCTION_TRADING_ENABLED": ""}))
+
 
 
 if __name__ == "__main__":

@@ -72,6 +72,7 @@ from backtester.monthly_rebalance import (
     build_deployment_gate,
     build_monthly_candidate_stress_review,
     build_monthly_performance_audit,
+    build_min_history_safety_review,
     build_monthly_validation_gate,
     compress_decision_to_buyable_targets,
     build_order_plan,
@@ -88,6 +89,7 @@ from backtester.monthly_rebalance import (
     load_last_rebalance_date,
     load_performance_guard,
     load_point_in_time_universe,
+    merge_point_in_time_universes,
     liquidity_universe_exposure_scale,
     mark_order_plan_execution,
     market_beta_proxy_neutral_loss_guard_cap,
@@ -124,8 +126,18 @@ from backtester.monthly_rebalance import (
     save_monthly_validation_candidate_decision,
     save_monthly_validation_candidate_followup_rows,
     save_monthly_validation_candidate_summary,
+    build_monthly_validation_expectancy_report,
+    build_min_history_safety_summary,
+    build_post_cutoff_oos_data_readiness_report,
+    build_post_cutoff_oos_observation_status_report,
+    build_post_cutoff_oos_warmup_readiness_report,
+    save_min_history_safety_review,
+    save_min_history_safety_summary,
+    save_post_cutoff_oos_data_readiness_report,
+    save_post_cutoff_oos_observation_status_report,
     save_monthly_validation_failure_drilldown,
     save_monthly_validation_failure_patterns,
+    save_monthly_validation_expectancy_report,
     save_monthly_validation_scenario_deltas,
     save_monthly_attribution_rows,
     save_monthly_attribution_comparison,
@@ -338,6 +350,9 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertFalse(MonthlyRebalanceConfig().market_beta_proxy_buyable_only)
         self.assertFalse(MonthlyRebalanceConfig().market_beta_proxy_unbuyable_cash_reserve)
         self.assertEqual(MonthlyRebalanceConfig().direct_alpha_target_persistence_signals, 1)
+        self.assertEqual(MonthlyRebalanceConfig().recovery_ranking_short_lookback_days, 0)
+        self.assertEqual(MonthlyRebalanceConfig().recovery_ranking_drawdown_lookback_days, 0)
+        self.assertEqual(MonthlyRebalanceConfig().recovery_ranking_weight, 0.0)
         self.assertEqual(RiskLimits().max_total_target_weight, 1.0)
         self.assertEqual(RiskLimits().max_total_buy_value, 10_000_000.0)
         self.assertEqual(RiskLimits().max_order_count, 15)
@@ -4952,6 +4967,524 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertIn("failed_universe_reason", text.splitlines()[0])
         self.assertIn("failed_universe_insufficient_history", text)
 
+    def test_build_min_history_safety_review_flags_lifted_history_gate_concentration(self):
+        baseline_filter_rows = [
+            {
+                "as_of_date": "2024-12-30",
+                "symbol": "AAA",
+                "status": "EXCLUDED",
+                "reason": "insufficient_history",
+                "detail": "history_rows=244; required=252",
+            },
+            {
+                "as_of_date": "2024-12-30",
+                "symbol": "BBB",
+                "status": "EXCLUDED",
+                "reason": "insufficient_history",
+                "detail": "history_rows=220; required=252",
+            },
+            {
+                "as_of_date": "2024-12-30",
+                "symbol": "CCC",
+                "status": "EXCLUDED",
+                "reason": "insufficient_history",
+                "detail": "history_rows=245; required=252",
+            },
+        ]
+        candidate_filter_rows = [
+            {
+                "as_of_date": "2024-12-30",
+                "symbol": "BBB",
+                "status": "EXCLUDED",
+                "reason": "insufficient_history",
+                "detail": "history_rows=220; required=244",
+            }
+        ]
+        eligibility_rows = [
+            {
+                "failed_signal_date": "2024-12-30",
+                "symbol": "AAA",
+                "failed_label": "regime_sideways",
+                "contribution_delta_gap_pct": "6",
+                "failed_universe_detail": "history_rows=244; required=252",
+            },
+            {
+                "failed_signal_date": "2024-12-30",
+                "symbol": "CCC",
+                "failed_label": "regime_sideways",
+                "contribution_delta_gap_pct": "2",
+                "failed_universe_detail": "history_rows=245; required=252",
+                "average_trading_value": "12345",
+            },
+        ]
+        attribution_rows = [
+            {"symbol": "AAA", "trade_count": "3"},
+            {"symbol": "CCC", "trade_count": "1"},
+        ]
+        data_quality_rows = [{"symbol": "CCC", "status": "WARN", "reason": "short_history"}]
+
+        rows = build_min_history_safety_review(
+            baseline_filter_rows,
+            candidate_filter_rows,
+            eligibility_rows=eligibility_rows,
+            attribution_rows=attribution_rows,
+            data_quality_rows=data_quality_rows,
+            baseline_min_history_days=252,
+            candidate_min_history_days=244,
+        )
+
+        self.assertEqual([row["symbol"] for row in rows], ["AAA", "CCC"])
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["AAA"]["eligible_under_baseline_history"], "False")
+        self.assertEqual(by_symbol["AAA"]["eligible_under_min_history244"], "True")
+        self.assertEqual(by_symbol["AAA"]["became_eligible_due_to_min_history244"], "True")
+        self.assertEqual(by_symbol["AAA"]["available_history_days"], "244")
+        self.assertEqual(by_symbol["AAA"]["missing_history_days"], "8")
+        self.assertEqual(by_symbol["AAA"]["return_contribution_pct"], "6")
+        self.assertEqual(by_symbol["AAA"]["trade_count"], "3")
+        self.assertEqual(by_symbol["AAA"]["dominates_improvement"], "True")
+        self.assertEqual(by_symbol["AAA"]["safety_status"], "highly_concentrated")
+        self.assertEqual(by_symbol["AAA"]["usage_status"], "contribution_available")
+        self.assertIn("contribution_share_pct=75", by_symbol["AAA"]["reason"])
+        self.assertEqual(by_symbol["CCC"]["avg_trading_value"], "12345")
+        self.assertEqual(by_symbol["CCC"]["data_quality_warning"], "WARN:short_history")
+        self.assertEqual(by_symbol["CCC"]["dominates_improvement"], "False")
+
+    def test_build_min_history_safety_review_separates_candidate_usage_from_eligibility(self):
+        baseline_filter_rows = [
+            {
+                "as_of_date": "2024-12-30",
+                "symbol": "AAA",
+                "status": "EXCLUDED",
+                "reason": "insufficient_history",
+                "detail": "history_rows=244; required=252",
+            },
+            {
+                "as_of_date": "2024-12-30",
+                "symbol": "BBB",
+                "status": "EXCLUDED",
+                "reason": "insufficient_history",
+                "detail": "history_rows=245; required=252",
+            },
+            {
+                "as_of_date": "2024-12-30",
+                "symbol": "CCC",
+                "status": "EXCLUDED",
+                "reason": "insufficient_history",
+                "detail": "history_rows=246; required=252",
+            },
+        ]
+        candidate_filter_rows = []
+        selection_rows = [
+            {"scenario": "regime_sideways", "symbol": "AAA", "contribution_delta_pct": "3"},
+            {"scenario": "walk_forward_001", "symbol": "AAA", "contribution_delta_pct": "1"},
+            {"scenario": "regime_sideways", "symbol": "BBB", "contribution_delta_pct": "-2"},
+        ]
+        attribution_rows = [
+            {"symbol": "AAA", "trade_count": "4", "return_contribution_pct": "3"},
+            {"symbol": "BBB", "trade_count": "0", "return_contribution_pct": "-2"},
+        ]
+        holding_rows = [
+            {
+                "date": "2024-12-31",
+                "position_symbols": "AAA;ZZZ",
+                "position_count": "2",
+            },
+            {
+                "date": "2025-01-02",
+                "position_symbols": "AAA;BBB",
+                "position_count": "2",
+            },
+        ]
+
+        rows = build_min_history_safety_review(
+            baseline_filter_rows,
+            candidate_filter_rows,
+            selection_rows=selection_rows,
+            attribution_rows=attribution_rows,
+            holding_rows=holding_rows,
+            baseline_min_history_days=252,
+            candidate_min_history_days=244,
+        )
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["AAA"]["selected_by_candidate"], "True")
+        self.assertEqual(by_symbol["AAA"]["traded_by_candidate"], "True")
+        self.assertEqual(by_symbol["AAA"]["held_by_candidate"], "True")
+        self.assertEqual(by_symbol["AAA"]["scenario_count_used"], "2")
+        self.assertEqual(by_symbol["AAA"]["holding_period_count"], "2")
+        self.assertEqual(by_symbol["AAA"]["positive_contribution_share_pct"], "100")
+        self.assertEqual(by_symbol["AAA"]["usage_status"], "contribution_available")
+        self.assertEqual(by_symbol["BBB"]["selected_by_candidate"], "True")
+        self.assertEqual(by_symbol["BBB"]["traded_by_candidate"], "False")
+        self.assertEqual(by_symbol["BBB"]["held_by_candidate"], "True")
+        self.assertEqual(by_symbol["BBB"]["negative_contribution_share_pct"], "100")
+        self.assertEqual(by_symbol["CCC"]["usage_status"], "eligible_only_not_used")
+        self.assertEqual(by_symbol["CCC"]["safety_status"], "evidence_incomplete")
+
+    def test_build_min_history_safety_summary_reports_usage_and_concentration(self):
+        rows = [
+            {
+                "symbol": "AAA",
+                "selected_by_candidate": "True",
+                "traded_by_candidate": "True",
+                "held_by_candidate": "False",
+                "return_contribution_pct": "50",
+                "positive_contribution_share_pct": "50",
+                "dominates_improvement": "True",
+            },
+            {
+                "symbol": "BBB",
+                "selected_by_candidate": "True",
+                "traded_by_candidate": "False",
+                "held_by_candidate": "True",
+                "return_contribution_pct": "30",
+                "positive_contribution_share_pct": "30",
+                "dominates_improvement": "False",
+            },
+            {
+                "symbol": "CCC",
+                "selected_by_candidate": "False",
+                "traded_by_candidate": "False",
+                "held_by_candidate": "False",
+                "return_contribution_pct": "20",
+                "positive_contribution_share_pct": "20",
+                "dominates_improvement": "False",
+            },
+        ]
+
+        summary = build_min_history_safety_summary(rows)
+
+        self.assertEqual(summary["total_min_history244_only_symbols"], "3")
+        self.assertEqual(summary["actually_used_symbols"], "2")
+        self.assertEqual(summary["contribution_available_symbols"], "3")
+        self.assertEqual(summary["top_1_symbol_positive_share_pct"], "50")
+        self.assertEqual(summary["top_3_symbol_positive_share_pct"], "100")
+        self.assertEqual(summary["top_5_symbol_positive_share_pct"], "100")
+        self.assertEqual(summary["dominates_improvement_count"], "1")
+        self.assertEqual(summary["safety_status"], "highly_concentrated")
+        self.assertIn("paper_only_no_promotion", summary["reason"])
+
+    def test_build_min_history_safety_summary_marks_partial_contribution_coverage_incomplete(self):
+        rows = [
+            {
+                "symbol": "AAA",
+                "selected_by_candidate": "True",
+                "traded_by_candidate": "False",
+                "held_by_candidate": "False",
+                "return_contribution_pct": "5",
+                "positive_contribution_share_pct": "100",
+                "dominates_improvement": "True",
+            },
+            {
+                "symbol": "BBB",
+                "selected_by_candidate": "False",
+                "traded_by_candidate": "False",
+                "held_by_candidate": "False",
+                "return_contribution_pct": "not_available",
+                "positive_contribution_share_pct": "not_available",
+                "dominates_improvement": "False",
+            },
+        ]
+
+        summary = build_min_history_safety_summary(rows)
+
+        self.assertEqual(summary["contribution_available_symbols"], "1")
+        self.assertEqual(summary["safety_status"], "evidence_incomplete")
+        self.assertIn("contribution_or_usage_evidence_incomplete", summary["reason"])
+
+    def test_save_min_history_safety_review_writes_required_columns(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "min_history_review.csv"
+            saved = save_min_history_safety_review(
+                [
+                    {
+                        "signal_date": "2024-12-30",
+                        "symbol": "AAA",
+                        "scenario": "regime_sideways",
+                        "safety_status": "CONCENTRATION_REVIEW",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("became_eligible_due_to_min_history244", text.splitlines()[0])
+        self.assertIn("usage_status", text.splitlines()[0])
+        self.assertIn("CONCENTRATION_REVIEW", text)
+
+    def test_save_min_history_safety_summary_writes_required_columns(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "min_history_summary.csv"
+            saved = save_min_history_safety_summary(
+                [
+                    {
+                        "total_min_history244_only_symbols": "4",
+                        "actually_used_symbols": "2",
+                        "safety_status": "highly_concentrated",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("top_3_symbol_positive_share_pct", text.splitlines()[0])
+        self.assertIn("highly_concentrated", text)
+
+
+    def test_build_post_cutoff_oos_data_readiness_report_blocks_without_post_cutoff_rows(self):
+        rows = build_post_cutoff_oos_data_readiness_report(
+            [{"date": "2026-06-17"}, {"date": "2026-06-18"}],
+            [{"date": "2026-06-18"}],
+            baseline_cutoff_date="2026-06-18",
+            as_of_date="2026-06-29",
+            required_data_sources=["data/krx_expanded", "data/krx_metadata/krx_universe_monthly.csv"],
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["baseline_cutoff_date"], "2026-06-18")
+        self.assertEqual(row["latest_local_ohlcv_date"], "2026-06-18")
+        self.assertEqual(row["latest_pit_universe_date"], "2026-06-18")
+        self.assertEqual(row["post_cutoff_rows"], "0")
+        self.assertEqual(row["missing_post_cutoff_days"], "11")
+        self.assertEqual(row["oos_can_run_now"], "False")
+        self.assertEqual(row["status"], "blocked_by_missing_data")
+        self.assertIn("no post-cutoff OHLCV rows", row["reason"])
+
+    def test_build_post_cutoff_oos_data_readiness_report_ready_when_ohlcv_and_pit_extend_after_cutoff(self):
+        rows = build_post_cutoff_oos_data_readiness_report(
+            [{"date": "2026-06-18"}, {"date": "2026-06-19"}, {"date": "2026-06-22"}],
+            [{"date": "2026-06-22"}],
+            baseline_cutoff_date="2026-06-18",
+            as_of_date="2026-06-22",
+            required_data_sources=["ohlcv", "pit"],
+        )
+
+        row = rows[0]
+        self.assertEqual(row["latest_local_ohlcv_date"], "2026-06-22")
+        self.assertEqual(row["post_cutoff_rows"], "2")
+        self.assertEqual(row["missing_post_cutoff_days"], "0")
+        self.assertEqual(row["oos_can_run_now"], "True")
+        self.assertEqual(row["status"], "ready")
+        self.assertIn("post-cutoff data available", row["reason"])
+
+    def test_build_post_cutoff_oos_observation_status_blocks_before_minimum_additional_days(self):
+        rows = build_post_cutoff_oos_observation_status_report(
+            [
+                {
+                    "candidate_id": "candidate_guard",
+                    "current_oos_start": "2026-06-19",
+                    "current_oos_end": "2026-06-29",
+                    "current_trading_days": "7",
+                    "minimum_additional_trading_days": "15",
+                }
+            ],
+            [
+                {
+                    "gross_return": "-10.6872",
+                    "benchmark_return": "-8.8464",
+                    "excess_return": "-1.8408",
+                    "trade_count": "12",
+                }
+            ],
+            [{"date": "2026-06-30"}, {"date": "2026-07-01"}],
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["candidate_id"], "candidate_guard")
+        self.assertEqual(row["observation_start"], "2026-06-30")
+        self.assertEqual(row["latest_available_date"], "2026-07-01")
+        self.assertEqual(row["observed_trading_days_after_plan"], "2")
+        self.assertEqual(row["required_additional_trading_days"], "15")
+        self.assertEqual(row["remaining_trading_days"], "13")
+        self.assertEqual(row["latest_gross_return_if_available"], "-10.6872")
+        self.assertEqual(row["latest_benchmark_return_if_available"], "-8.8464")
+        self.assertEqual(row["latest_excess_return_if_available"], "-1.8408")
+        self.assertEqual(row["latest_trade_count_if_available"], "12")
+        self.assertEqual(row["review_allowed"], "False")
+        self.assertEqual(row["status"], "OBSERVE")
+        self.assertIn("oos_rerun_skipped", row["reason"])
+
+    def test_build_post_cutoff_oos_observation_status_allows_review_after_minimum_additional_days(self):
+        trading_rows = [
+            {"date": (date(2026, 6, 30) + timedelta(days=offset)).isoformat()}
+            for offset in range(15)
+        ]
+
+        row = build_post_cutoff_oos_observation_status_report(
+            [
+                {
+                    "candidate_id": "candidate_guard",
+                    "current_oos_start": "2026-06-19",
+                    "current_oos_end": "2026-06-29",
+                    "minimum_additional_trading_days": "15",
+                }
+            ],
+            [],
+            trading_rows,
+        )[0]
+
+        self.assertEqual(row["observed_trading_days_after_plan"], "15")
+        self.assertEqual(row["remaining_trading_days"], "0")
+        self.assertEqual(row["review_allowed"], "True")
+        self.assertEqual(row["status"], "READY_FOR_REVIEW")
+
+    def test_save_post_cutoff_oos_observation_status_report_writes_required_columns(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "oos_observation_status.csv"
+            saved = save_post_cutoff_oos_observation_status_report(
+                [
+                    {
+                        "candidate_id": "candidate_guard",
+                        "observation_start": "2026-06-30",
+                        "status": "OBSERVE",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("remaining_trading_days", text.splitlines()[0])
+        self.assertIn("candidate_guard", text)
+
+    def test_audit_monthly_validation_data_can_use_pre_cutoff_warmup_history(self):
+        candles = {
+            "AAA": [
+                _candle(f"2026-06-{day:02d}", 100 + day)
+                for day in range(16, 23)
+            ],
+            "BBB": [
+                _candle(f"2026-06-{day:02d}", 100 + day)
+                for day in range(19, 23)
+            ],
+        }
+
+        rows = audit_monthly_validation_data(
+            candles,
+            start="2026-06-19",
+            end="2026-06-22",
+            min_rows=7,
+            history_start="2026-06-16",
+        )
+
+        by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["AAA"]["status"], "PASS")
+        self.assertEqual(by_symbol["AAA"]["first_date"], "2026-06-16")
+        self.assertEqual(by_symbol["AAA"]["last_date"], "2026-06-22")
+        self.assertEqual(by_symbol["AAA"]["rows"], 7)
+        self.assertEqual(by_symbol["BBB"]["status"], "BLOCK")
+        self.assertEqual(by_symbol["BBB"]["reason"], "short_history")
+
+    def test_post_cutoff_backtest_scoring_excludes_pre_cutoff_returns(self):
+        result = run_monthly_rebalance_backtest(
+            {
+                "AAA": [
+                    _candle("2026-06-18", 1, 1),
+                    _candle("2026-06-19", 100, 100),
+                    _candle("2026-06-29", 110, 110),
+                ]
+            },
+            start="2026-06-19",
+            end="2026-06-29",
+            config=MonthlyRebalanceConfig(point_in_time_min_history_days=1),
+            fee_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
+        )
+
+        self.assertAlmostEqual(result.buy_hold_return_pct, 10.0)
+        self.assertLess(result.buy_hold_return_pct, 100.0)
+
+    def test_build_post_cutoff_oos_warmup_readiness_report_separates_windowing_from_missing_data(self):
+        ohlcv_rows = [
+            {"symbol": "AAA", "date": f"2026-06-{day:02d}"}
+            for day in range(1, 19)
+        ]
+        ohlcv_rows.extend(
+            {"symbol": "AAA", "date": day}
+            for day in ("2026-06-19", "2026-06-22")
+        )
+        ohlcv_rows.extend(
+            {"symbol": "BBB", "date": f"2026-06-{day:02d}"}
+            for day in range(1, 19)
+        )
+        data_quality_rows = [
+            {"symbol": "AAA", "status": "BLOCK", "rows": "2", "reason": "short_history"},
+            {"symbol": "BBB", "status": "BLOCK", "rows": "0", "reason": "short_history"},
+        ]
+
+        rows = build_post_cutoff_oos_warmup_readiness_report(
+            ohlcv_rows,
+            data_quality_rows=data_quality_rows,
+            baseline_cutoff_date="2026-06-18",
+            scoring_start_date="2026-06-19",
+            scoring_end_date="2026-06-22",
+            min_warmup_rows=20,
+            oos_trade_count=0,
+        )
+
+        row = rows[0]
+        self.assertEqual(row["warmup_history_available"], "True")
+        self.assertEqual(row["scoring_rows_available"], "True")
+        self.assertEqual(row["scoring_window_available"], "True")
+        self.assertEqual(row["oos_trade_count"], "0")
+        self.assertEqual(row["wrong_windowing_short_history"], "1")
+        self.assertEqual(row["true_missing_history"], "1")
+        self.assertEqual(row["no_trade_due_to_data_quality"], "True")
+        self.assertEqual(row["no_trade_due_to_no_signal"], "False")
+        self.assertEqual(row["data_quality_blocks_due_to_wrong_windowing"], "1")
+        self.assertEqual(row["data_quality_blocks_due_to_true_missing_data"], "1")
+        self.assertEqual(row["status"], "warmup_windowing_issue")
+
+    def test_build_post_cutoff_oos_warmup_readiness_report_classifies_zero_trade_no_signal(self):
+        ohlcv_rows = [
+            {"symbol": "AAA", "date": f"2026-06-{day:02d}"}
+            for day in range(1, 23)
+        ]
+
+        rows = build_post_cutoff_oos_warmup_readiness_report(
+            ohlcv_rows,
+            data_quality_rows=[],
+            baseline_cutoff_date="2026-06-18",
+            scoring_start_date="2026-06-19",
+            scoring_end_date="2026-06-22",
+            min_warmup_rows=20,
+            oos_trade_count=0,
+        )
+
+        row = rows[0]
+        self.assertEqual(row["status"], "no_trade_due_to_no_signal")
+        self.assertEqual(row["no_trade_due_to_data_quality"], "False")
+        self.assertEqual(row["no_trade_due_to_no_signal"], "True")
+        self.assertEqual(row["true_missing_history"], "0")
+        self.assertEqual(row["wrong_windowing_short_history"], "0")
+
+    def test_save_post_cutoff_oos_data_readiness_report_writes_required_columns(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "oos_data_readiness.csv"
+            saved = save_post_cutoff_oos_data_readiness_report(
+                [
+                    {
+                        "baseline_cutoff_date": "2026-06-18",
+                        "latest_local_ohlcv_date": "2026-06-18",
+                        "post_cutoff_rows": "0",
+                        "status": "blocked_by_missing_data",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertIn("missing_post_cutoff_days", text.splitlines()[0])
+        self.assertIn("blocked_by_missing_data", text)
+
+
     def test_save_monthly_attribution_rows_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "monthly.csv"
@@ -5152,6 +5685,212 @@ class MonthlyRebalanceTests(unittest.TestCase):
         self.assertEqual(rows[1]["estimated_trade_cost"], "0.54")
         self.assertEqual(rows[1]["drawdown_pct"], "-5")
         self.assertEqual(rows[1]["daily_return_pct"], "-5")
+
+    def test_build_monthly_validation_expectancy_report_uses_available_cost_fields(self):
+        rows = build_monthly_validation_expectancy_report(
+            [
+                {
+                    "name": "full_period",
+                    "total_return_pct": "12.5",
+                    "fee_drag": "0.2",
+                    "tax_drag": "0.4",
+                    "slippage_drag": "0.3",
+                    "turnover_value": "1200000",
+                    "trade_count": "8",
+                    "win_rate": "0.625",
+                    "average_win": "3.1",
+                    "average_loss": "-1.2",
+                    "gross_expectancy": "1.4875",
+                    "net_expectancy": "0.5875",
+                    "deployable": "True",
+                    "reason": "passed deployment gate",
+                },
+                {
+                    "name": "regime_sideways",
+                    "total_return_pct": "-4.0",
+                    "trade_count": "2",
+                    "deployable": "False",
+                    "reason": "max_drawdown_breach",
+                },
+            ],
+            candidate_id="baseline",
+        )
+
+        self.assertEqual(rows[0]["candidate_id"], "baseline")
+        self.assertEqual(rows[0]["scenario"], "full_period")
+        self.assertEqual(rows[0]["gross_return"], "13.4")
+        self.assertEqual(rows[0]["fee_drag"], "0.2")
+        self.assertEqual(rows[0]["tax_drag"], "0.4")
+        self.assertEqual(rows[0]["slippage_drag"], "0.3")
+        self.assertEqual(rows[0]["net_return_after_costs"], "12.5")
+        self.assertEqual(rows[0]["turnover"], "1200000")
+        self.assertEqual(rows[0]["trade_count"], "8")
+        self.assertEqual(rows[0]["win_rate"], "0.625")
+        self.assertEqual(rows[0]["average_win"], "3.1")
+        self.assertEqual(rows[0]["average_loss"], "-1.2")
+        self.assertEqual(rows[0]["gross_expectancy"], "1.4875")
+        self.assertEqual(rows[0]["net_expectancy"], "0.5875")
+        self.assertEqual(rows[0]["status"], "cost_estimated")
+        self.assertEqual(rows[0]["validation_status"], "PASS")
+        self.assertIn("scenario-level cost estimate", rows[0]["reason"])
+
+        self.assertEqual(rows[1]["scenario"], "regime_sideways")
+        self.assertEqual(rows[1]["gross_return"], "not_available")
+        self.assertEqual(rows[1]["fee_drag"], "not_available")
+        self.assertEqual(rows[1]["tax_drag"], "not_available")
+        self.assertEqual(rows[1]["slippage_drag"], "not_available")
+        self.assertEqual(rows[1]["turnover"], "not_available")
+        self.assertEqual(rows[1]["trade_count"], "2")
+        self.assertEqual(rows[1]["win_rate"], "not_available")
+        self.assertEqual(rows[1]["average_win"], "not_available")
+        self.assertEqual(rows[1]["average_loss"], "not_available")
+        self.assertEqual(rows[1]["gross_expectancy"], "not_available")
+        self.assertEqual(rows[1]["net_expectancy"], "not_available")
+        self.assertEqual(rows[1]["net_return_after_costs"], "-4.0")
+        self.assertEqual(rows[1]["status"], "blocked_by_validation")
+        self.assertEqual(rows[1]["validation_status"], "BLOCK")
+        self.assertEqual(rows[1]["reason"], "validation blocked: max_drawdown_breach")
+
+    def test_build_monthly_validation_expectancy_report_uses_path_turnover_when_available(self):
+        rows = build_monthly_validation_expectancy_report(
+            [
+                {
+                    "name": "full_period",
+                    "total_return_pct": "12.5",
+                    "trade_count": "8",
+                    "deployable": "True",
+                    "reason": "passed",
+                }
+            ],
+            candidate_id="baseline",
+            cost_rows_by_scenario={
+                "full_period": [
+                    {"turnover_value": "100.5", "estimated_trade_cost": "0.1"},
+                    {"turnover_value": "200", "estimated_trade_cost": "0.2"},
+                ]
+            },
+        )
+
+        self.assertEqual(rows[0]["turnover"], "300.5")
+        self.assertEqual(rows[0]["fee_drag"], "not_available")
+        self.assertEqual(rows[0]["tax_drag"], "not_available")
+        self.assertEqual(rows[0]["slippage_drag"], "not_available")
+
+    def test_build_monthly_validation_expectancy_report_estimates_scenario_costs_from_path_rows(self):
+        rows = build_monthly_validation_expectancy_report(
+            [
+                {
+                    "name": "full_period",
+                    "total_return_pct": "10",
+                    "final_equity": "1100",
+                    "trade_count": "2",
+                    "slippage_multiplier": "2",
+                    "deployable": "True",
+                    "reason": "passed",
+                }
+            ],
+            candidate_id="baseline",
+            cost_rows_by_scenario={
+                "full_period": [
+                    {
+                        "buy_value": "100",
+                        "sell_value": "50",
+                        "turnover_value": "150",
+                    }
+                ]
+            },
+            fee_rate=0.001,
+            tax_rate=0.002,
+            slippage_rate=0.003,
+        )
+
+        self.assertEqual(rows[0]["gross_return"], "10.115")
+        self.assertEqual(rows[0]["fee_drag"], "0.015")
+        self.assertEqual(rows[0]["tax_drag"], "0.01")
+        self.assertEqual(rows[0]["slippage_drag"], "0.09")
+        self.assertEqual(rows[0]["net_return_after_costs"], "10")
+        self.assertEqual(rows[0]["status"], "cost_estimated")
+        self.assertEqual(rows[0]["validation_status"], "PASS")
+        self.assertIn("scenario-level cost estimate", rows[0]["reason"])
+
+    def test_build_monthly_validation_expectancy_report_marks_candidate_partial_when_only_net_return_exists(self):
+        rows = build_monthly_validation_expectancy_report(
+            [
+                {
+                    "name": "duration_3m",
+                    "total_return_pct": "6.5",
+                    "trade_count": "3",
+                    "deployable": "True",
+                    "reason": "passed",
+                }
+            ],
+            candidate_id="neutral_loss_guard55_min_history244",
+        )
+
+        self.assertEqual(rows[0]["gross_return"], "not_available")
+        self.assertEqual(rows[0]["net_return_after_costs"], "6.5")
+        self.assertEqual(rows[0]["fee_drag"], "not_available")
+        self.assertEqual(rows[0]["tax_drag"], "not_available")
+        self.assertEqual(rows[0]["slippage_drag"], "not_available")
+        self.assertEqual(rows[0]["status"], "partial_cost_estimated")
+        self.assertEqual(rows[0]["validation_status"], "PASS")
+        self.assertIn("net return after costs available", rows[0]["reason"])
+
+    def test_build_monthly_validation_expectancy_report_marks_blocked_validation_rows(self):
+        rows = build_monthly_validation_expectancy_report(
+            [
+                {
+                    "name": "regime_sideways",
+                    "total_return_pct": "-9",
+                    "trade_count": "7",
+                    "deployable": "False",
+                    "reason": "negative_excess_return",
+                }
+            ],
+            candidate_id="baseline",
+        )
+
+        self.assertEqual(rows[0]["status"], "blocked_by_validation")
+        self.assertEqual(rows[0]["validation_status"], "BLOCK")
+        self.assertEqual(rows[0]["reason"], "validation blocked: negative_excess_return")
+
+    def test_save_monthly_validation_expectancy_report_writes_required_columns(self):
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "expectancy.csv"
+            saved = save_monthly_validation_expectancy_report(
+                [
+                    {
+                        "candidate_id": "paper_review",
+                        "scenario": "stress_slippage_x3",
+                        "gross_return": "1.0",
+                        "fee_drag": "not_available",
+                        "tax_drag": "not_available",
+                        "slippage_drag": "not_available",
+                        "net_return_after_costs": "1.0",
+                        "turnover": "not_available",
+                        "trade_count": "3",
+                        "win_rate": "not_available",
+                        "average_win": "not_available",
+                        "average_loss": "not_available",
+                        "gross_expectancy": "not_available",
+                        "net_expectancy": "not_available",
+                        "status": "blocked_by_validation",
+                        "validation_status": "BLOCK",
+                        "reason": "risk report remains BLOCK",
+                    }
+                ],
+                output,
+            )
+            text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(saved, 1)
+        self.assertEqual(
+            text.splitlines()[0],
+            "candidate_id,scenario,gross_return,fee_drag,tax_drag,slippage_drag,net_return_after_costs,"
+            "turnover,trade_count,win_rate,average_win,average_loss,gross_expectancy,net_expectancy,"
+            "status,validation_status,reason",
+        )
+        self.assertIn("paper_review,stress_slippage_x3,1.0,not_available", text)
 
     def test_compare_monthly_path_attribution_reports_flags_equity_and_holding_path_regression(self):
         rows = compare_monthly_path_attribution_reports(
@@ -7372,6 +8111,123 @@ class MonthlyRebalanceTests(unittest.TestCase):
                 },
                 universe,
                 signal_date="2024-02-15",
+                min_history_days=1,
+            )
+
+        self.assertEqual(set(filtered), {"111111"})
+
+    def test_merged_point_in_time_universe_uses_canonical_signal_snapshot(self):
+        with TemporaryDirectory() as temp_dir:
+            canonical_path = Path(temp_dir) / "canonical.csv"
+            post_cutoff_path = Path(temp_dir) / "post_cutoff.csv"
+            canonical_path.write_text(
+                "date,symbol,name,market\n"
+                "2026-06-18,111111,Canonical,KOSPI\n",
+                encoding="utf-8",
+            )
+            post_cutoff_path.write_text(
+                "date,symbol,name,market\n"
+                "2026-06-29,222222,Future,KOSPI\n",
+                encoding="utf-8",
+            )
+
+            universe = merge_point_in_time_universes(
+                [
+                    load_point_in_time_universe(canonical_path),
+                    load_point_in_time_universe(post_cutoff_path),
+                ]
+            )
+            symbol_candles = {
+                "111111": [_candle("2026-01-02", 100), _candle("2026-06-18", 101)],
+                "222222": [_candle("2026-01-02", 100), _candle("2026-06-18", 101)],
+            }
+            filtered = filter_symbol_candles_by_universe(
+                symbol_candles,
+                universe,
+                signal_date="2026-06-18",
+                min_history_days=1,
+            )
+
+        self.assertEqual(set(filtered), {"111111"})
+        self.assertEqual(universe["2026-06-18"], {"111111"})
+
+    def test_merged_point_in_time_universe_does_not_use_future_post_cutoff_snapshot(self):
+        with TemporaryDirectory() as temp_dir:
+            canonical_path = Path(temp_dir) / "canonical.csv"
+            post_cutoff_path = Path(temp_dir) / "post_cutoff.csv"
+            canonical_path.write_text(
+                "date,symbol,name,market\n"
+                "2026-06-18,111111,Canonical,KOSPI\n",
+                encoding="utf-8",
+            )
+            post_cutoff_path.write_text(
+                "date,symbol,name,market\n"
+                "2026-06-29,222222,Future,KOSPI\n",
+                encoding="utf-8",
+            )
+
+            universe = merge_point_in_time_universes(
+                [
+                    load_point_in_time_universe(canonical_path),
+                    load_point_in_time_universe(post_cutoff_path),
+                ]
+            )
+            filtered = filter_symbol_candles_by_universe(
+                {
+                    "111111": [_candle("2026-01-02", 100), _candle("2026-06-20", 101)],
+                    "222222": [_candle("2026-01-02", 100), _candle("2026-06-20", 101)],
+                },
+                universe,
+                signal_date="2026-06-20",
+                min_history_days=1,
+            )
+
+        self.assertEqual(set(filtered), {"111111"})
+
+    def test_pre_cutoff_pit_universe_can_select_without_post_cutoff_return_leakage(self):
+        with TemporaryDirectory() as temp_dir:
+            canonical_path = Path(temp_dir) / "canonical.csv"
+            post_cutoff_path = Path(temp_dir) / "post_cutoff.csv"
+            canonical_path.write_text(
+                "date,symbol,name,market\n"
+                "2026-06-18,111111,Canonical,KOSPI\n",
+                encoding="utf-8",
+            )
+            post_cutoff_path.write_text(
+                "date,symbol,name,market\n"
+                "2026-06-29,222222,Future,KOSPI\n",
+                encoding="utf-8",
+            )
+
+            universe = merge_point_in_time_universes(
+                [
+                    load_point_in_time_universe(canonical_path),
+                    load_point_in_time_universe(post_cutoff_path),
+                ]
+            )
+            selected = select_point_in_time_universe(
+                {
+                    "111111": [
+                        _candle("2026-01-02", 100),
+                        _candle("2026-06-18", 101),
+                        _candle("2026-06-29", 500),
+                    ],
+                    "222222": [
+                        _candle("2026-01-02", 100),
+                        _candle("2026-06-18", 101),
+                        _candle("2026-06-29", 102),
+                    ],
+                },
+                signal_date="2026-06-18",
+                min_history_days=2,
+                min_reference_price=1,
+                max_trailing_return_pct=300,
+                trailing_return_days=2,
+            )
+            filtered = filter_symbol_candles_by_universe(
+                selected,
+                universe,
+                signal_date="2026-06-18",
                 min_history_days=1,
             )
 

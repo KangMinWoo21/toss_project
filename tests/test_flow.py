@@ -33,7 +33,22 @@ class FlowScoreTests(unittest.TestCase):
 
         self.assertGreater(store.score("005930", "2026-01-08"), 0)
 
-    def test_flow_filtered_strategy_blocks_buy_on_negative_flow(self):
+    def test_flow_filtered_strategy_uses_previous_flow_for_buy(self):
+        candles = load_candles(Path("data/sample_kr_stock.csv"))
+        flow_store = FlowScoreStore({("005930", "2026-01-07"): -0.9})
+        strategy = FlowFilteredStrategy(
+            base_strategy=VolatilityBreakoutStrategy(k=0.3),
+            flow_scores=flow_store,
+            symbol="005930",
+            min_buy_score=-0.2,
+            force_sell_score=-0.8,
+        )
+
+        signal = strategy.on_candle(6, candles, None)
+
+        self.assertEqual(signal, "HOLD")
+
+    def test_flow_filtered_strategy_ignores_same_day_flow_for_buy(self):
         candles = load_candles(Path("data/sample_kr_stock.csv"))
         flow_store = FlowScoreStore({("005930", "2026-01-08"): -0.9})
         strategy = FlowFilteredStrategy(
@@ -46,7 +61,7 @@ class FlowScoreTests(unittest.TestCase):
 
         signal = strategy.on_candle(6, candles, None)
 
-        self.assertEqual(signal, "HOLD")
+        self.assertEqual(signal, "BUY")
 
 
 if __name__ == "__main__":

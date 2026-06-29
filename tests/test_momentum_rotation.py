@@ -419,6 +419,44 @@ class MomentumRotationTests(unittest.TestCase):
         self.assertEqual(default_targets, ["BBB", "AAA"])
         self.assertEqual(persistent_targets, ["AAA"])
 
+    def test_rank_momentum_targets_can_boost_recent_drawdown_recovery_without_future_data(self):
+        symbol_candles = {
+            "MOM": _candles([100, 101, 102, 103, 104, 105, 106, 107]),
+            "REC": _candles([100, 130, 80, 82, 84, 86, 88, 90]),
+            "FUT": _candles([100, 100, 100, 100, 100, 100, 100, 150]),
+        }
+
+        default_targets = rank_momentum_targets(
+            symbol_candles,
+            signal_date="2024-01-07",
+            config=MomentumRotationConfig(
+                lookback_days=6,
+                top_n=1,
+                trend_filter_days=0,
+                market_trend_filter_days=0,
+                market_breadth_threshold=0,
+                max_lookback_return_pct=0,
+            ),
+        )
+        recovery_targets = rank_momentum_targets(
+            symbol_candles,
+            signal_date="2024-01-07",
+            config=MomentumRotationConfig(
+                lookback_days=6,
+                top_n=1,
+                trend_filter_days=0,
+                market_trend_filter_days=0,
+                market_breadth_threshold=0,
+                max_lookback_return_pct=0,
+                recovery_ranking_short_lookback_days=2,
+                recovery_ranking_drawdown_lookback_days=4,
+                recovery_ranking_weight=5.0,
+            ),
+        )
+
+        self.assertEqual(default_targets, ["MOM"])
+        self.assertEqual(recovery_targets, ["REC"])
+
     def test_cli_momentum_rotation_prints_summary(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

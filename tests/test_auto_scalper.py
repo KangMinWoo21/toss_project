@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 
 from backtester.auto_scalper import (
     KST,
+    auto_scalper_sleep_seconds,
     choose_symbols_for_now,
     is_market_open,
     parse_symbol_list,
@@ -105,6 +106,16 @@ class AutoScalperTests(unittest.TestCase):
 
         self.assertEqual(rows, [("US", "AAPL", 2), ("US", "NVDA", 2)])
         self.assertEqual(calls[0], ("AAPL", "AAPL_2026-06-10_paper_scalp.csv", "2026-06-10"))
+
+    def test_auto_scalper_sleeps_between_open_market_cycles(self):
+        self.assertEqual(
+            auto_scalper_sleep_seconds([("US", "AAPL", 1)], interval_seconds=1.5, idle_seconds=60.0),
+            1.5,
+        )
+        self.assertEqual(
+            auto_scalper_sleep_seconds([], interval_seconds=1.5, idle_seconds=60.0),
+            60.0,
+        )
 
 
 if __name__ == "__main__":

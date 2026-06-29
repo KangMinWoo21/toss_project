@@ -22,6 +22,10 @@ class LeaderSwingConfig:
     exit_ma_window: int = 10
     liquidity_top_n: int = 100
     max_positions: int = 5
+    max_position_weight: float = 0.15
+    cash_buffer_weight: float = 0.02
+    max_position_adv_pct: float = 0.10
+    max_loss_per_position_pct: float = 1.0
     max_holding_days: int = 20
     min_short_return_pct: float = 5.0
     min_long_return_pct: float = 0.0
@@ -82,10 +86,17 @@ class _Candidate:
     avg_trading_value: float
 
 
-def load_symbol_candles(data_dir: str | Path) -> dict[str, list[Candle]]:
+def load_symbol_candles(
+    data_dir: str | Path,
+    *,
+    ignore_paths: set[Path] | None = None,
+) -> dict[str, list[Candle]]:
     root = Path(data_dir)
+    ignored = {path.resolve() for path in (ignore_paths or set())}
     symbols: dict[str, list[Candle]] = {}
     for path in sorted(root.glob("*.csv")):
+        if path.resolve() in ignored:
+            continue
         symbol = path.stem.split("_")[0]
         if not symbol:
             continue
@@ -107,6 +118,14 @@ def run_leader_swing_backtest(
         raise ValueError("symbol_candles cannot be empty")
     if base_cfg.max_positions <= 0:
         raise ValueError("max_positions must be positive")
+    if base_cfg.max_position_weight < 0:
+        raise ValueError("max_position_weight cannot be negative")
+    if base_cfg.cash_buffer_weight < 0 or base_cfg.cash_buffer_weight >= 1:
+        raise ValueError("cash_buffer_weight must be at least 0 and less than 1")
+    if base_cfg.max_position_adv_pct < 0:
+        raise ValueError("max_position_adv_pct cannot be negative")
+    if base_cfg.max_loss_per_position_pct < 0:
+        raise ValueError("max_loss_per_position_pct cannot be negative")
 
     index_by_symbol_date = {
         symbol: {candle.date: index for index, candle in enumerate(candles)}
@@ -121,57 +140,70 @@ def run_leader_swing_backtest(
     last_prices: dict[str, float] = {}
 
     for date_index, date in enumerate(dates):
+        signal_date = dates[date_index - 1] if date_index > 0 else date
         cfg = (
-            config_resolver(date, symbol_candles, index_by_symbol_date, base_cfg)
+            config_resolver(signal_date, symbol_candles, index_by_symbol_date, base_cfg)
             if config_resolver is not None
             else base_cfg
         )
+
+        if date_index > 0:
+            cash, closed = _close_positions(
+                signal_date,
+                date,
+                symbol_candles,
+                index_by_symbol_date,
+                positions,
+                cash,
+                cfg,
+            )
+            for trade in closed:
+                if trade.pnl < 0 and cfg.loss_cooldown_days > 0:
+                    cooldown_until_index[trade.symbol] = date_index + cfg.loss_cooldown_days
+            trades.extend(closed)
+
+            equity = _equity_at_open(date, positions, symbol_candles, index_by_symbol_date, cash)
+            candidates = (
+                _rank_candidates(signal_date, symbol_candles, index_by_symbol_date, cfg)
+                if _market_breadth_allows_entry(signal_date, symbol_candles, index_by_symbol_date, cfg)
+                else []
+            )
+            open_slots = cfg.max_positions - len(positions)
+            for candidate in candidates:
+                if open_slots <= 0:
+                    break
+                if candidate.symbol in positions:
+                    continue
+                if cooldown_until_index.get(candidate.symbol, -1) >= date_index:
+                    continue
+                index = index_by_symbol_date[candidate.symbol].get(date)
+                if index is None:
+                    continue
+                candle = symbol_candles[candidate.symbol][index]
+                if candle.open <= 0:
+                    continue
+                budget = _entry_budget(candidate, cash, equity, cfg)
+                fill_price = candle.open * (1 + cfg.slippage_rate)
+                quantity = int(budget / (fill_price * (1 + cfg.fee_rate)))
+                if quantity <= 0:
+                    continue
+                gross = quantity * fill_price
+                fee = gross * cfg.fee_rate
+                cash -= gross + fee
+                positions[candidate.symbol] = _Position(
+                    symbol=candidate.symbol,
+                    quantity=quantity,
+                    entry_price=fill_price,
+                    entry_date=date,
+                    entry_index=index,
+                    peak_price=fill_price,
+                )
+                open_slots -= 1
+
         for symbol, candles in symbol_candles.items():
             index = index_by_symbol_date[symbol].get(date)
             if index is not None:
                 last_prices[symbol] = candles[index].close
-
-        cash, closed = _close_positions(date, symbol_candles, index_by_symbol_date, positions, cash, cfg)
-        for trade in closed:
-            if trade.pnl < 0 and cfg.loss_cooldown_days > 0:
-                cooldown_until_index[trade.symbol] = date_index + cfg.loss_cooldown_days
-        trades.extend(closed)
-
-        equity = _equity(cash, positions, last_prices)
-        candidates = (
-            _rank_candidates(date, symbol_candles, index_by_symbol_date, cfg)
-            if _market_breadth_allows_entry(date, symbol_candles, index_by_symbol_date, cfg)
-            else []
-        )
-        open_slots = cfg.max_positions - len(positions)
-        for candidate in candidates:
-            if open_slots <= 0:
-                break
-            if candidate.symbol in positions:
-                continue
-            if cooldown_until_index.get(candidate.symbol, -1) >= date_index:
-                continue
-            index = index_by_symbol_date[candidate.symbol].get(date)
-            if index is None:
-                continue
-            candle = symbol_candles[candidate.symbol][index]
-            budget = min(cash, equity / cfg.max_positions * _symbol_weight_multiplier(candidate.symbol, cfg))
-            fill_price = candle.close * (1 + cfg.slippage_rate)
-            quantity = int(budget / (fill_price * (1 + cfg.fee_rate)))
-            if quantity <= 0:
-                continue
-            gross = quantity * fill_price
-            fee = gross * cfg.fee_rate
-            cash -= gross + fee
-            positions[candidate.symbol] = _Position(
-                symbol=candidate.symbol,
-                quantity=quantity,
-                entry_price=fill_price,
-                entry_date=date,
-                entry_index=index,
-                peak_price=fill_price,
-            )
-            open_slots -= 1
 
         equity_curve.append(_equity(cash, positions, last_prices))
 
@@ -274,7 +306,8 @@ def _market_breadth_allows_entry(
 
 
 def _close_positions(
-    date: str,
+    signal_date: str,
+    trade_date: str,
     symbol_candles: dict[str, list[Candle]],
     index_by_symbol_date: dict[str, dict[str, int]],
     positions: dict[str, _Position],
@@ -283,18 +316,20 @@ def _close_positions(
 ) -> tuple[float, list[LeaderSwingTrade]]:
     closed: list[LeaderSwingTrade] = []
     for symbol, position in list(positions.items()):
-        index = index_by_symbol_date[symbol].get(date)
-        if index is None:
+        signal_index = index_by_symbol_date[symbol].get(signal_date)
+        trade_index = index_by_symbol_date[symbol].get(trade_date)
+        if signal_index is None or trade_index is None:
             continue
         candles = symbol_candles[symbol]
-        candle = candles[index]
-        position.peak_price = max(position.peak_price, candle.close)
-        hold_days = index - position.entry_index
-        pnl_pct = (candle.close / position.entry_price - 1) * 100
-        peak_drawdown_pct = (candle.close / position.peak_price - 1) * 100
-        exit_ma = mean(c.close for c in candles[max(0, index - cfg.exit_ma_window + 1) : index + 1])
+        signal_candle = candles[signal_index]
+        trade_candle = candles[trade_index]
+        position.peak_price = max(position.peak_price, signal_candle.close)
+        hold_days = signal_index - position.entry_index
+        pnl_pct = (signal_candle.close / position.entry_price - 1) * 100
+        peak_drawdown_pct = (signal_candle.close / position.peak_price - 1) * 100
+        exit_ma = mean(c.close for c in candles[max(0, signal_index - cfg.exit_ma_window + 1) : signal_index + 1])
         reason = ""
-        if cfg.event_scores is not None and cfg.event_scores.score_window(symbol, date, cfg.event_lookback_days) <= cfg.force_exit_event_score:
+        if cfg.event_scores is not None and cfg.event_scores.score_window(symbol, signal_date, cfg.event_lookback_days) <= cfg.force_exit_event_score:
             reason = "event_risk"
         elif cfg.trailing_stop_pct is not None and peak_drawdown_pct <= -abs(cfg.trailing_stop_pct):
             reason = "trailing_stop"
@@ -302,10 +337,10 @@ def _close_positions(
             reason = "max_holding_days"
         elif pnl_pct <= cfg.stop_loss_pct:
             reason = "stop_loss"
-        elif index >= cfg.exit_ma_window and candle.close < exit_ma:
+        elif signal_index >= cfg.exit_ma_window and signal_candle.close < exit_ma:
             reason = "exit_ma_break"
         if reason:
-            cash, trade = _sell(candle.date, candle.close, position, cash, cfg, reason)
+            cash, trade = _sell(trade_candle.date, trade_candle.open, position, cash, cfg, reason)
             closed.append(trade)
             del positions[symbol]
     return cash, closed
@@ -363,6 +398,39 @@ def _equity(cash: float, positions: dict[str, _Position], prices: dict[str, floa
     return cash + sum(position.quantity * prices.get(symbol, position.entry_price) for symbol, position in positions.items())
 
 
+def _equity_at_open(
+    date: str,
+    positions: dict[str, _Position],
+    symbol_candles: dict[str, list[Candle]],
+    index_by_symbol_date: dict[str, dict[str, int]],
+    cash: float,
+) -> float:
+    total = cash
+    for symbol, position in positions.items():
+        index = index_by_symbol_date[symbol].get(date)
+        if index is None:
+            total += position.quantity * position.entry_price
+            continue
+        open_price = symbol_candles[symbol][index].open
+        total += position.quantity * (open_price if open_price > 0 else position.entry_price)
+    return total
+
+
+def _entry_budget(candidate: _Candidate, cash: float, equity: float, cfg: LeaderSwingConfig) -> float:
+    slot_budget = equity / cfg.max_positions * _symbol_weight_multiplier(candidate.symbol, cfg)
+    caps = [cash, slot_budget]
+    if cfg.cash_buffer_weight > 0:
+        caps[0] = max(0.0, cash - equity * cfg.cash_buffer_weight)
+    if cfg.max_position_weight > 0:
+        caps.append(equity * cfg.max_position_weight)
+    if cfg.max_position_adv_pct > 0:
+        caps.append(candidate.avg_trading_value * cfg.max_position_adv_pct)
+    if cfg.max_loss_per_position_pct > 0 and cfg.stop_loss_pct < 0:
+        loss_budget = equity * (cfg.max_loss_per_position_pct / 100)
+        caps.append(loss_budget / (abs(cfg.stop_loss_pct) / 100))
+    return max(0.0, min(caps))
+
+
 def _symbol_weight_multiplier(symbol: str, cfg: LeaderSwingConfig) -> float:
     if not cfg.symbol_weight_multipliers:
         return 1.0
@@ -384,10 +452,13 @@ def _equal_weight_buy_hold_return(symbol_candles: dict[str, list[Candle]], cfg: 
     for candles in symbol_candles.values():
         first = candles[0]
         last = candles[-1]
-        fill_price = first.close * (1 + cfg.slippage_rate)
+        fill_price = first.open * (1 + cfg.slippage_rate)
+        exit_price = last.close * (1 - cfg.slippage_rate)
+        if fill_price <= 0 or exit_price <= 0:
+            final_equity += per_symbol_cash
+            continue
         quantity = int(per_symbol_cash / (fill_price * (1 + cfg.fee_rate)))
         leftover = per_symbol_cash - quantity * fill_price * (1 + cfg.fee_rate)
-        exit_price = last.close * (1 - cfg.slippage_rate)
         gross = quantity * exit_price
         final_equity += leftover + gross - gross * cfg.fee_rate - gross * cfg.tax_rate
     return (final_equity / cfg.initial_cash - 1) * 100

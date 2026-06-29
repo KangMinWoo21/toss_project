@@ -285,6 +285,16 @@ appending long command logs or full report lists here.
 - Commit preflight for the packet loop passed: full `unittest` `661` tests,
   `compileall`, production-check BLOCK with blocked-exit-zero, and health-check
   WARN only for stale scalper data.
+- Monthly order-plan Markdown blocked-row audit added at
+  `data/reports/monthly_order_plan_markdown_blocked_row_audit.csv` and `.md`,
+  with review-only summary
+  `data/reports/monthly_order_plan_blocked_rows_review_summary.md`. The
+  generated plan Markdown exposes all `5` BLOCKED rows and `risk_status_BLOCK`
+  reasons, while the added review summary makes `trading_allowed=False`,
+  broker submission forbidden, manual review required, and production BLOCK
+  explicit. Verification passed: full `unittest` `661` tests and `compileall`;
+  default and protected-overlay production-checks remain BLOCK; health-check
+  remains WARN only for stale scalper data.
 - Production remains not live-ready.
 
 ## Recent Loops
