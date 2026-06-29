@@ -325,6 +325,10 @@ appending long command logs or full report lists here.
   is separated from monthly paper review/OOS. Verification passed: targeted
   index tests, full `unittest` `684` tests, `compileall`, production-check
   BLOCK, and health-check WARN only for stale scalper data. No push.
+- Minimal goal-mode resume prompt refreshed at
+  `docs/goal-mode-minimal-prompt.md` with the latest safety status index,
+  required first-read files, hard safety rules, narrow-loop guidance, and
+  explicit no-push-unless-approved instruction.
 - Production remains not live-ready.
 
 ## Recent Loops

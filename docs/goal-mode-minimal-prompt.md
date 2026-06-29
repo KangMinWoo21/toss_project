@@ -1,35 +1,55 @@
 # Goal Mode Minimal Prompt
 
-Use this short prompt for future Codex/GPT goal-mode resumes to reduce token
-usage. Keep detailed history in `docs/GOAL_MODE_CHECKPOINT.md` and archives.
+Use this short prompt after Codex restart or context compaction. Keep detailed
+history in `docs/GOAL_MODE_CHECKPOINT.md` and archive files.
 
 ```text
-C:\Users\KangMinWoo\Documents\토스증권 에서 이어서 작업해줘.
+You are Codex working in:
+C:\Users\KangMinWoo\Documents\토스증권
 
-목표:
-실거래 실행 없이 안전한 paper-operation 자동매매 연구/운영 시스템의 완성도를 높인다.
+Project purpose:
+Domestic stock paper-operation research and monitoring. Do not build or enable
+live trading.
 
-필수 첫 행동:
-1. docs/GOAL_MODE_CHECKPOINT.md 읽기
-2. git status --short 확인
-3. 최신 production-check / health-check 리포트 확인
-4. 남은 BLOCK 원인과 이전 거절 후보를 재확인
+Before any work, read these files:
+1. docs/GOAL_MODE_CHECKPOINT.md
+2. data/reports/paper_operation_safety_status_index.csv
+3. data/reports/paper_operation_safety_status_index.md
+4. data/reports/protected_candidate_oos_review_eligibility_guard.csv
+5. data/reports/monthly_paper_operation_consistency_audit.csv
+6. data/reports/monthly_paper_operation_review_packet.csv
+7. data/reports/health_warn_classification.csv
+8. Run: git status --short
 
-절대 제약:
-- 실제 주문 실행 기능을 추가하지 않는다.
-- live trading을 기본값으로 켜지 않는다.
-- Toss API를 테스트에서 호출하지 않는다.
-- .env 비밀값을 출력/요약/커밋하지 않는다.
-- production/readiness BLOCK은 hard stop으로 취급한다.
+Current safety status:
+- production is not live-ready: BLOCK
+- protected candidate remains PAPER_REVIEW
+- OOS review eligibility is REVIEW_NOT_ALLOWED
+- trading_allowed=False
+- review_allowed=False
+- production_effect=none
+- actionable rows=0
+- promoted candidates=0
+- recommended_action=keep_observing_no_tuning_no_promotion
+- scalper stale WARN is separate from monthly paper review/OOS
 
-검증:
-- python -m unittest discover -s tests
-- python -m compileall -q backtester
-- python -m backtester production-check --allow-blocked-exit-zero
-- python -m backtester health-check --scalper-mode warn --allow-blocked-exit-zero
+Hard safety rules:
+- No strategy parameter changes.
+- Do not modify, tune, promote, or replace the protected PAPER_REVIEW candidate.
+- Do not rerun OOS.
+- Do not fetch data or use network APIs.
+- Do not create new candidates or rerun candidate comparison.
+- Do not regenerate the monthly plan unless the user explicitly asks.
+- No real trading, Toss API calls, broker submission, or order execution work.
+- Do not open, print, summarize, or commit .env or secrets.
+- Treat production/readiness/risk BLOCK as a hard stop.
+- Push is forbidden unless the user explicitly approves it.
 
-작업 방식:
-- broad sweep 대신 현재 checkpoint의 남은 blocker에서 시작한다.
-- 코드 변경은 테스트 먼저 추가한다.
-- 중요한 루프가 끝나면 checkpoint를 짧게 갱신하고 커밋/푸시한다.
+How to work:
+- Pick one narrow Goal loop only.
+- Use existing local reports first.
+- For code changes, add deterministic tests first.
+- For doc-only changes, a targeted doc check plus compileall is enough.
+- Keep checkpoint updates short.
+- Make a focused commit with only files related to the current goal.
 ```
