@@ -187,6 +187,44 @@ class CliTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _write_project_context_audit_sources(self, root: Path) -> None:
+        docs = root / "docs"
+        reports = root / "data" / "reports"
+        docs.mkdir(parents=True, exist_ok=True)
+        reports.mkdir(parents=True, exist_ok=True)
+        shared_status = (
+            "production is not live-ready: BLOCK\n"
+            "protected candidate remains PAPER_REVIEW\n"
+            "OOS review eligibility is REVIEW_NOT_ALLOWED\n"
+            "trading_allowed=False\n"
+            "review_allowed=False\n"
+            "production_effect=none\n"
+            "actionable rows=0\n"
+            "promoted candidates=0\n"
+            "recommended_action=keep_observing_no_tuning_no_promotion\n"
+            "scalper stale WARN is separate from monthly paper review/OOS\n"
+        )
+        (docs / "goal-mode-minimal-prompt.md").write_text(shared_status, encoding="utf-8")
+        (docs / "GOAL_MODE_CHECKPOINT.md").write_text(shared_status, encoding="utf-8")
+        (docs / "GPT_PROJECT_CONTEXT.md").write_text(
+            "overall_status=OBSERVE\n" + shared_status,
+            encoding="utf-8",
+        )
+        (reports / "paper_operation_safety_status_index.md").write_text(
+            "Overall status: `OBSERVE`.\n"
+            "Trading allowed: `False`.\n"
+            "Review allowed: `False`.\n"
+            "Production effect: `none`.\n"
+            "Recommended action: `keep_observing_no_tuning_no_promotion`.\n"
+            "production remains BLOCK\n"
+            "protected candidate PAPER_REVIEW\n"
+            "review_eligibility=REVIEW_NOT_ALLOWED\n"
+            "actionable_rows=0\n"
+            "promoted candidates count=0\n"
+            "scalper stale WARN separated from monthly paper review/OOS\n",
+            encoding="utf-8",
+        )
+
     def test_compare_command_prints_strategy_table(self):
         completed = subprocess.run(
             [
@@ -333,6 +371,30 @@ class CliTests(unittest.TestCase):
             self.assertTrue(csv_output.exists())
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Status Index Only", md_output.read_text(encoding="utf-8"))
+
+    def test_project_context_consistency_audit_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_project_context_audit_sources(root)
+            csv_output = root / "data" / "reports" / "project_context_consistency_audit.csv"
+            md_output = root / "data" / "reports" / "project_context_consistency_audit.md"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "project-context-consistency-audit",
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("audit_status  PASS", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Context Audit Only", md_output.read_text(encoding="utf-8"))
 
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(

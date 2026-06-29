@@ -89,12 +89,14 @@ protected paper-review candidate.
   `docs/goal-mode-minimal-prompt.md`.
 - GPT project context refreshed:
   `docs/GPT_PROJECT_CONTEXT.md`.
+- Project context consistency audit added:
+  `data/reports/project_context_consistency_audit.csv` and `.md`.
 
 ## Verification Baseline
 
 Recent completed loops verified:
 
-- Full `unittest`: latest recorded `684` tests passing.
+- Full `unittest`: latest recorded `691` tests passing.
 - `python -m compileall -q backtester`: passing.
 - Safe production-check: `BLOCK` retained.
 - Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper

@@ -237,6 +237,10 @@ from .paper_operation_safety_status_index import (
     build_paper_operation_safety_status_index,
     save_paper_operation_safety_status_index,
 )
+from .project_context_consistency_audit import (
+    build_project_context_consistency_audit,
+    save_project_context_consistency_audit,
+)
 from .pykrx_fetcher import (
     available_ohlcv_symbol_dates,
     available_ohlcv_symbols,
@@ -1987,6 +1991,35 @@ def main() -> int:
         default="data/reports/paper_operation_safety_status_index.md",
     )
 
+    project_context_audit_parser = subparsers.add_parser(
+        "project-context-consistency-audit",
+        help="Audit restart/context documents against the latest paper-operation safety status",
+    )
+    project_context_audit_parser.add_argument(
+        "--minimal-prompt-md",
+        default="docs/goal-mode-minimal-prompt.md",
+    )
+    project_context_audit_parser.add_argument(
+        "--checkpoint-md",
+        default="docs/GOAL_MODE_CHECKPOINT.md",
+    )
+    project_context_audit_parser.add_argument(
+        "--gpt-project-context-md",
+        default="docs/GPT_PROJECT_CONTEXT.md",
+    )
+    project_context_audit_parser.add_argument(
+        "--safety-status-index-md",
+        default="data/reports/paper_operation_safety_status_index.md",
+    )
+    project_context_audit_parser.add_argument(
+        "--output",
+        default="data/reports/project_context_consistency_audit.csv",
+    )
+    project_context_audit_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/project_context_consistency_audit.md",
+    )
+
     args = parser.parse_args()
     if args.command == "data-check":
         path = Path(args.path)
@@ -3026,6 +3059,25 @@ def main() -> int:
         print(f"safety_index_report  {args.output}")
         print(f"safety_index_markdown  {args.markdown_output}")
         return 2 if overall_status == "BLOCK" else 0
+
+    if args.command == "project-context-consistency-audit":
+        rows = build_project_context_consistency_audit(
+            minimal_prompt_md=args.minimal_prompt_md,
+            checkpoint_md=args.checkpoint_md,
+            gpt_project_context_md=args.gpt_project_context_md,
+            safety_status_index_md=args.safety_status_index_md,
+        )
+        save_project_context_consistency_audit(rows, args.output, args.markdown_output)
+        summary = rows[0] if rows else {}
+        audit_status = summary.get("audit_status", "BLOCK")
+        print(f"audit_status  {audit_status}")
+        print(f"trading_allowed  {summary.get('trading_allowed', 'False')}")
+        print(f"review_allowed  {summary.get('review_allowed', 'False')}")
+        print(f"production_effect  {summary.get('production_effect', 'none')}")
+        print(f"recommended_action  {summary.get('recommended_action', 'keep_observing_no_tuning_no_promotion')}")
+        print(f"context_audit_report  {args.output}")
+        print(f"context_audit_markdown  {args.markdown_output}")
+        return 2 if audit_status == "BLOCK" else 0
 
     if args.command == "fetch-toss":
         client_id = os.environ.get("TOSSINVEST_CLIENT_ID")
