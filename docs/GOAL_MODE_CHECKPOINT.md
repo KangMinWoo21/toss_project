@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 external ML feature readiness plan
+Last updated: 2026-06-30 ML model completion roadmap checkpoint
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,11 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- Paper-only ML model completion roadmap checkpoint:
+  `docs/ml_model_completion_checkpoint.md`. This is a doc-only roadmap for
+  completing baseline-to-final-packet ML research loops; it does not train
+  models, rerun OOS, fetch data, compare candidates, alter protected
+  `PAPER_REVIEW` status, or change production readiness.
 - ML external feature readiness plan:
   `data/reports/ml_external_feature_readiness_plan.csv` and `.md`.
   This is plan-only and not ready for training:
