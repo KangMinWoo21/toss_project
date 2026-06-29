@@ -29,6 +29,8 @@ Current status:
 - Phase 10 external feature readiness re-audit is complete. Financial, news,
   and sentiment features remain `not_ready`; overall readiness is `BLOCK` and
   `training_allowed=False`.
+- Phase 11 ML model experiment v1 is complete as a technical-only paper model.
+  External features remain excluded because Phase 10 readiness is `BLOCK`.
 - Financial features have only a limited PIT-audited sample and are not ready
   for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
@@ -425,6 +427,14 @@ Completion conditions:
 - Overfit and data-snooping risk are recorded.
 - Candidate promotion is forbidden.
 - `trading_allowed=False`.
+- Completed 2026-06-30 in `data/reports/ml_model_v1_training_report.csv`,
+  `data/reports/ml_model_v1_validation_report.csv`, and
+  `data/reports/ml_model_v1_risk_report.md`. Actual result:
+  `approved_feature_set=technical_only`, `external_features_used=False`,
+  `post_cutoff_data_used_for_train=False`, validation leakage `PASS`,
+  benchmark and baseline-technical comparisons recorded,
+  overfit/data-snooping risk `WARN`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`.
 
 Forbidden in this phase:
 

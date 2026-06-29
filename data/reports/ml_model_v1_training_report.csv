@@ -1,0 +1,17 @@
+metric,status,value,reason,source,post_cutoff_data_used_for_train,external_features_used,trading_allowed,production_effect,protected_candidate_unchanged
+summary,paper_only_model_v1_trained,paper_only_model_v1_trained,"Phase 11 paper-only ML model v1 uses approved local technical features only; no external feature merge, OOS rerun, candidate promotion, broker call, or production linkage was performed.",derived,False,False,False,none,True
+source_files_present,PASS,all required local sources readable,Requires Phase 1 dataset/audit and Phase 10 external readiness re-audit.,data/reports/ml_baseline_feature_label_sample.csv;data/reports/ml_baseline_feature_label_dataset_audit.csv;data/reports/ml_external_feature_readiness_reaudit.csv,False,False,False,none,True
+approved_feature_set,PASS,technical_only,External features are excluded because Phase 10 overall readiness is not ready/BLOCK.,data/reports/ml_external_feature_readiness_reaudit.csv,False,False,False,none,True
+external_feature_readiness,PASS,BLOCK,External features may be used only if explicitly approved and ready.,data/reports/ml_external_feature_readiness_reaudit.csv,False,False,False,none,True
+external_features_used,PASS,False,No external financial/news/sentiment features enter v1.,derived,False,False,False,none,True
+model_type,PASS,logistic_regression_sgd,Deterministic standard-library model reused from baseline scaffold.,derived,False,False,False,none,True
+train_cutoff,PASS,2026-06-18,Cutoff inherited from Phase 1 audit.,data/reports/ml_baseline_feature_label_dataset_audit.csv,False,False,False,none,True
+train_row_count,PASS,111,Training split uses only pre-cutoff rows.,data/reports/ml_baseline_feature_label_sample.csv,False,False,False,none,True
+validation_row_count,PASS,88,Validation split uses only pre-cutoff rows.,data/reports/ml_baseline_feature_label_sample.csv,False,False,False,none,True
+post_cutoff_data_used_for_train,PASS,False,max_label_end=2026-06-18; cutoff=2026-06-18,derived,False,False,False,none,True
+train_accuracy,PASS,0.5946,In-sample diagnostic only.,derived,False,False,False,none,True
+validation_accuracy,PASS,0.5909,Pre-cutoff validation diagnostic only.,derived,False,False,False,none,True
+protected_candidate_status,PASS,PAPER_REVIEW,Protected candidate remains unchanged.,data/reports/ml_baseline_feature_label_dataset_audit.csv,False,False,False,none,True
+production_artifact_linked,PASS,False,No production artifact is written or linked.,derived,False,False,False,none,True
+trading_allowed,PASS,False,Research report only; no trading authorization.,derived,False,False,False,none,True
+production_effect,PASS,none,Report has no production effect.,derived,False,False,False,none,True

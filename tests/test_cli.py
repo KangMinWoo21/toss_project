@@ -963,6 +963,67 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Re-Audit Only", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_model_v1_experiment_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reports = root / "data" / "reports"
+            dataset = reports / "ml_baseline_feature_label_sample.csv"
+            audit = reports / "ml_baseline_feature_label_dataset_audit.csv"
+            external = reports / "ml_external_feature_readiness_reaudit.csv"
+            training_csv = reports / "ml_model_v1_training_report.csv"
+            validation_csv = reports / "ml_model_v1_validation_report.csv"
+            risk_md = reports / "ml_model_v1_risk_report.md"
+            reports.mkdir(parents=True, exist_ok=True)
+            dataset.write_text(
+                "symbol,feature_date,label_end_date,return_1m,return_3m,return_6m,volatility_3m,volume_change_1m,price_vs_3m_sma,drawdown_3m,label_return,label,train_cutoff,post_cutoff_data_used_for_train,training_ran,trading_allowed,production_effect\n"
+                "111111,2024-01-31,2024-02-29,0.01,0.02,0.03,0.01,0.10,0.02,0.00,0.020,positive,2024-08-30,False,False,False,none\n"
+                "222222,2024-01-31,2024-02-29,-0.01,-0.02,-0.03,0.02,-0.10,-0.02,-0.03,-0.020,negative,2024-08-30,False,False,False,none\n"
+                "111111,2024-02-29,2024-03-29,0.02,0.03,0.04,0.01,0.10,0.02,0.00,0.015,positive,2024-08-30,False,False,False,none\n"
+                "222222,2024-02-29,2024-03-29,-0.02,-0.03,-0.04,0.02,-0.10,-0.02,-0.04,-0.015,negative,2024-08-30,False,False,False,none\n",
+                encoding="utf-8",
+            )
+            audit.write_text(
+                "metric,status,value,reason,source,trading_allowed,production_effect\n"
+                "summary,ready_for_training_scaffold,ready_for_training_scaffold,ok,derived,False,none\n"
+                "train_cutoff,PASS,2024-08-30,ok,ledger,False,none\n"
+                "protected_candidate_status,PASS,PAPER_REVIEW,ok,ledger,False,none\n",
+                encoding="utf-8",
+            )
+            external.write_text(
+                "feature_group,readiness,leakage_check,missing_rate,evidence,source,training_allowed,feature_added_to_training,post_cutoff_data_used_for_train,trading_allowed,production_effect,protected_candidate_unchanged,next_safe_action\n"
+                "overall,BLOCK,PASS,mixed,financial=not_ready;news=not_ready;sentiment=not_ready,derived,False,False,False,False,none,True,do not train external features\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-model-v1-experiment",
+                    "--dataset-csv",
+                    str(dataset),
+                    "--dataset-audit-csv",
+                    str(audit),
+                    "--external-readiness-csv",
+                    str(external),
+                    "--training-output",
+                    str(training_csv),
+                    "--validation-output",
+                    str(validation_csv),
+                    "--risk-markdown-output",
+                    str(risk_md),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("model_v1_status  paper_only_model_v1_trained", completed.stdout)
+            self.assertIn("external_features_used  False", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertTrue(training_csv.exists())
+            self.assertTrue(validation_csv.exists())
+            self.assertTrue(risk_md.exists())
+            self.assertIn("Do Not Trade / Paper-Only ML Model v1", risk_md.read_text(encoding="utf-8"))
+
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(
             [

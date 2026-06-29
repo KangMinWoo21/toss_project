@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML external feature readiness re-audit
+Last updated: 2026-06-30 ML model v1 experiment
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,18 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML model v1 experiment:
+  `data/reports/ml_model_v1_training_report.csv`,
+  `data/reports/ml_model_v1_validation_report.csv`, and
+  `data/reports/ml_model_v1_risk_report.md`. Phase 11 trained and validated a
+  paper-only technical-feature model v1 because Phase 10 external readiness is
+  `BLOCK`. It records `approved_feature_set=technical_only`,
+  `external_features_used=False`, `post_cutoff_data_used_for_train=False`,
+  validation leakage `PASS`, benchmark and baseline-technical comparisons,
+  overfit/data-snooping risk `WARN`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. No external feature
+  merge, OOS rerun, candidate compare for promotion, order output, broker work,
+  or production change was performed.
 - ML external feature readiness re-audit:
   `data/reports/ml_external_feature_readiness_reaudit.csv` and `.md`.
   Phase 10 re-audits financial, news, and sentiment external features from
@@ -199,7 +211,7 @@ protected paper-review candidate.
 
 Recent completed loops verified:
 
-- Full `unittest`: latest recorded `731` tests passing.
+- Full `unittest`: latest recorded `734` tests passing.
 - `python -m compileall -q backtester`: passing.
 - Safe production-check: `BLOCK` retained.
 - Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper

@@ -92,6 +92,10 @@ from .ml_external_feature_readiness_reaudit import (
     build_ml_external_feature_readiness_reaudit,
     save_ml_external_feature_readiness_reaudit,
 )
+from .ml_model_v1_experiment import (
+    build_ml_model_v1_experiment_reports,
+    save_ml_model_v1_experiment_reports,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2329,6 +2333,35 @@ def main() -> int:
         default="data/reports/ml_external_feature_readiness_reaudit.md",
     )
 
+    ml_model_v1_parser = subparsers.add_parser(
+        "ml-model-v1-experiment",
+        help="Write paper-only ML model v1 training, validation, and risk reports",
+    )
+    ml_model_v1_parser.add_argument(
+        "--dataset-csv",
+        default="data/reports/ml_baseline_feature_label_sample.csv",
+    )
+    ml_model_v1_parser.add_argument(
+        "--dataset-audit-csv",
+        default="data/reports/ml_baseline_feature_label_dataset_audit.csv",
+    )
+    ml_model_v1_parser.add_argument(
+        "--external-readiness-csv",
+        default="data/reports/ml_external_feature_readiness_reaudit.csv",
+    )
+    ml_model_v1_parser.add_argument(
+        "--training-output",
+        default="data/reports/ml_model_v1_training_report.csv",
+    )
+    ml_model_v1_parser.add_argument(
+        "--validation-output",
+        default="data/reports/ml_model_v1_validation_report.csv",
+    )
+    ml_model_v1_parser.add_argument(
+        "--risk-markdown-output",
+        default="data/reports/ml_model_v1_risk_report.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3657,6 +3690,31 @@ def main() -> int:
         print("production_effect  none")
         print(f"external_feature_reaudit_report  {args.output}")
         print(f"external_feature_reaudit_markdown  {args.markdown_output}")
+        return 0
+
+    if args.command == "ml-model-v1-experiment":
+        reports = build_ml_model_v1_experiment_reports(
+            dataset_csv=args.dataset_csv,
+            dataset_audit_csv=args.dataset_audit_csv,
+            external_readiness_csv=args.external_readiness_csv,
+        )
+        save_ml_model_v1_experiment_reports(
+            reports,
+            args.training_output,
+            args.validation_output,
+            args.risk_markdown_output,
+        )
+        summary = next(row for row in reports.training_rows if row["metric"] == "summary")
+        validation_summary = next(row for row in reports.validation_rows if row["metric"] == "summary")
+        print(f"model_v1_status  {summary['status']}")
+        print(f"model_v1_validation_status  {validation_summary['status']}")
+        print("external_features_used  False")
+        print("post_cutoff_data_used_for_train  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"model_v1_training_report  {args.training_output}")
+        print(f"model_v1_validation_report  {args.validation_output}")
+        print(f"model_v1_risk_report  {args.risk_markdown_output}")
         return 0
 
     if args.command == "fetch-toss":

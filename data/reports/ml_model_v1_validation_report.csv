@@ -1,0 +1,13 @@
+metric,status,value,reason,source,post_cutoff_data_used_for_train,external_features_used,trading_allowed,production_effect,protected_candidate_unchanged
+summary,paper_only_model_v1_validated,paper_only_model_v1_validated,Phase 11 paper-only ML model v1 validation over pre-cutoff local technical features only.,derived,False,False,False,none,True
+leakage_check,PASS,False,max_label_end=2026-06-18; cutoff=2026-06-18,derived,False,False,False,none,True
+walk_forward_months,PASS,months=100,Monthly expanding-window validation over pre-cutoff rows.,derived,False,False,False,none,True
+benchmark_comparison,PASS,model_return=0.0028;benchmark_return=0.0010;excess=0.0019,Benchmark comparison is read-only and not a candidate comparison.,derived,False,False,False,none,True
+baseline_technical_comparison,PASS,v1_technical_return=0.0028;baseline_technical_reference=0.0010;excess=0.0019,v1 uses the same approved technical-only feature family; no external feature claim is made.,derived,False,False,False,none,True
+drawdown,PASS,-0.5687,Drawdown of validation selected-return path.,derived,False,False,False,none,True
+turnover,PASS,turnover=0.1481,Average selected-symbol turnover across validation months.,derived,False,False,False,none,True
+label_distribution_train,PASS,positive=50;negative=61,Pre-cutoff training labels.,derived,False,False,False,none,True
+label_distribution_validation,PASS,positive=37;negative=51,Pre-cutoff validation labels.,derived,False,False,False,none,True
+candidate_promotion,PASS,False,No candidate promotion occurs.,derived,False,False,False,none,True
+trading_allowed,PASS,False,Validation report only; no trading authorization.,derived,False,False,False,none,True
+production_effect,PASS,none,Report has no production effect.,derived,False,False,False,none,True
