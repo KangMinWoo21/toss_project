@@ -471,6 +471,31 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Data Readiness Audit Only", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_external_feature_readiness_plan_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            csv_output = root / "data" / "reports" / "ml_external_feature_readiness_plan.csv"
+            md_output = root / "data" / "reports" / "ml_external_feature_readiness_plan.md"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-external-feature-readiness-plan",
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("overall_conclusion  PLAN_ONLY_NOT_READY_FOR_TRAINING", completed.stdout)
+            self.assertIn("fetch_allowed_now  False", completed.stdout)
+            self.assertIn("training_allowed_now  False", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Plan Only", md_output.read_text(encoding="utf-8"))
+
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(
             [

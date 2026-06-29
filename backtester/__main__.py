@@ -51,6 +51,11 @@ from .ml_data_readiness_audit import (
     build_ml_data_readiness_audit,
     save_ml_data_readiness_audit,
 )
+from .ml_external_feature_readiness_plan import (
+    OVERALL_CONCLUSION,
+    build_ml_external_feature_readiness_plan,
+    save_ml_external_feature_readiness_plan,
+)
 from .monthly_rebalance import (
     MonthlyRebalanceConfig,
     MonthlyValidationCase,
@@ -2063,6 +2068,19 @@ def main() -> int:
         default="data/reports/ml_data_readiness_audit.md",
     )
 
+    ml_external_plan_parser = subparsers.add_parser(
+        "ml-external-feature-readiness-plan",
+        help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
+    )
+    ml_external_plan_parser.add_argument(
+        "--output",
+        default="data/reports/ml_external_feature_readiness_plan.csv",
+    )
+    ml_external_plan_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_external_feature_readiness_plan.md",
+    )
+
     args = parser.parse_args()
     if args.command == "data-check":
         path = Path(args.path)
@@ -3144,6 +3162,18 @@ def main() -> int:
         print(f"ml_readiness_report  {args.output}")
         print(f"ml_readiness_markdown  {args.markdown_output}")
         return 2 if audit_status == "BLOCK" else 0
+
+    if args.command == "ml-external-feature-readiness-plan":
+        rows = build_ml_external_feature_readiness_plan()
+        save_ml_external_feature_readiness_plan(rows, args.output, args.markdown_output)
+        print(f"overall_conclusion  {OVERALL_CONCLUSION}")
+        print("fetch_allowed_now  False")
+        print("training_allowed_now  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"external_feature_plan_report  {args.output}")
+        print(f"external_feature_plan_markdown  {args.markdown_output}")
+        return 0
 
     if args.command == "fetch-toss":
         client_id = os.environ.get("TOSSINVEST_CLIENT_ID")

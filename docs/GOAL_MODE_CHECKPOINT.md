@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML data readiness audit
+Last updated: 2026-06-30 external ML feature readiness plan
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,15 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML external feature readiness plan:
+  `data/reports/ml_external_feature_readiness_plan.csv` and `.md`.
+  This is plan-only and not ready for training:
+  `PLAN_ONLY_NOT_READY_FOR_TRAINING`. OpenDART is
+  `planned_high_priority`, news is `planned_after_financials`, sentiment is
+  `planned_after_news_schema`, and SNS/community is `later_stage_not_ready`.
+  Every row keeps `fetch_allowed_now=False`, `training_allowed_now=False`,
+  `trading_allowed=False`, `production_effect=none`, and requires PIT-safe
+  timestamps plus `usable_from`.
 - Paper-only ML data readiness audit:
   `data/reports/ml_data_readiness_audit.csv` and `.md`.
   Current local data is ready to start baseline tabular ML ranking research
