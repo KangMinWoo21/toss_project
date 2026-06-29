@@ -23,6 +23,9 @@ Current status:
   `feature_added_to_training=False`.
 - Phase 8 news event schema plan is complete and remains fetch-free with
   `fetch_allowed_now=False` and `feature_added_to_training=False`.
+- Phase 9 sentiment scoring plan is complete. It is rule/lexicon-only with
+  `model_version=rule_lexicon_v1`, `training_allowed_now=False`, and
+  FinBERT/LLM kept later-stage.
 - Financial features have only a limited PIT-audited sample and are not ready
   for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
@@ -346,6 +349,13 @@ Completion conditions:
 - `scored_at` and `usable_from` are defined.
 - Hallucination and LLM risk note is written.
 - `training_allowed_now=False`.
+- Completed 2026-06-30 in `data/reports/ml_sentiment_scoring_plan.csv` and
+  `.md`. Actual result: `model_version=rule_lexicon_v1`, `sentiment_score`
+  range `-1.0_to_1.0`, `published_at`, `collected_at`, `visible_at`,
+  `scored_at`, and `usable_from` required, FinBERT/LLM marked later-stage,
+  `training_allowed_now=False`, `model_training_allowed=False`,
+  `feature_added_to_training=False`, `trading_allowed=False`, and
+  `production_effect=none`.
 
 Forbidden in this phase:
 

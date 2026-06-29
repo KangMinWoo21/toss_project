@@ -880,6 +880,34 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / News Schema Plan Only", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_sentiment_scoring_plan_cli_writes_reports(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            csv_output = root / "data" / "reports" / "ml_sentiment_scoring_plan.csv"
+            md_output = root / "data" / "reports" / "ml_sentiment_scoring_plan.md"
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-sentiment-scoring-plan",
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("sentiment_plan_status  PASS", completed.stdout)
+            self.assertIn("model_version  rule_lexicon_v1", completed.stdout)
+            self.assertIn("training_allowed_now  False", completed.stdout)
+            self.assertIn("feature_added_to_training  False", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / Sentiment Plan Only", md_output.read_text(encoding="utf-8"))
+
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(
             [

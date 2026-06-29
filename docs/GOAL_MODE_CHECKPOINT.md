@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML news event schema plan
+Last updated: 2026-06-30 ML sentiment scoring plan
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,16 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML sentiment scoring plan:
+  `data/reports/ml_sentiment_scoring_plan.csv` and `.md`. Phase 9 is
+  rule/lexicon plan-only; it defines `model_version=rule_lexicon_v1`,
+  `sentiment_score` range `-1.0_to_1.0`, `scored_at`, `usable_from`, PIT
+  controls, FinBERT/LLM later-stage risk notes, `fetch_allowed_now=False`,
+  `training_allowed_now=False`, `model_training_allowed=False`,
+  `feature_added_to_training=False`, `trading_allowed=False`, and
+  `production_effect=none`. No news fetch, API call, LLM/FinBERT scoring,
+  training, OOS rerun, candidate compare, strategy change, or production
+  change was performed.
 - ML news event schema plan:
   `data/reports/ml_news_event_schema_plan.csv` and `.md`. Phase 8 is
   schema-only and fetch-free; it defines Naver News, GDELT, manual calendar,
@@ -179,7 +189,7 @@ protected paper-review candidate.
 
 Recent completed loops verified:
 
-- Full `unittest`: latest recorded `724` tests passing.
+- Full `unittest`: latest recorded `728` tests passing.
 - `python -m compileall -q backtester`: passing.
 - Safe production-check: `BLOCK` retained.
 - Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper

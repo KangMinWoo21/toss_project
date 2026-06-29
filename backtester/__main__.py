@@ -84,6 +84,10 @@ from .ml_news_event_schema_plan import (
     build_ml_news_event_schema_plan,
     save_ml_news_event_schema_plan,
 )
+from .ml_sentiment_scoring_plan import (
+    build_ml_sentiment_scoring_plan,
+    save_ml_sentiment_scoring_plan,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2283,6 +2287,19 @@ def main() -> int:
         default="data/reports/ml_news_event_schema_plan.md",
     )
 
+    ml_sentiment_plan_parser = subparsers.add_parser(
+        "ml-sentiment-scoring-plan",
+        help="Write a rule/lexicon-only PIT-safe sentiment scoring plan",
+    )
+    ml_sentiment_plan_parser.add_argument(
+        "--output",
+        default="data/reports/ml_sentiment_scoring_plan.csv",
+    )
+    ml_sentiment_plan_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_sentiment_scoring_plan.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3577,6 +3594,21 @@ def main() -> int:
         print("production_effect  none")
         print(f"news_schema_plan_report  {args.output}")
         print(f"news_schema_plan_markdown  {args.markdown_output}")
+        return 0
+
+    if args.command == "ml-sentiment-scoring-plan":
+        rows = build_ml_sentiment_scoring_plan()
+        save_ml_sentiment_scoring_plan(rows, args.output, args.markdown_output)
+        print("sentiment_plan_status  PASS")
+        print("model_version  rule_lexicon_v1")
+        print("fetch_allowed_now  False")
+        print("training_allowed_now  False")
+        print("model_training_allowed  False")
+        print("feature_added_to_training  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"sentiment_plan_report  {args.output}")
+        print(f"sentiment_plan_markdown  {args.markdown_output}")
         return 0
 
     if args.command == "fetch-toss":
