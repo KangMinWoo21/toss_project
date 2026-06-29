@@ -78,6 +78,18 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML model observation status report:
+  `data/reports/ml_model_observation_status.csv` and `.md`. Phase 13 has a
+  paper-only observation status artifact, but the observation window is not
+  mature yet: `observation_months=1`,
+  `sufficient_observation_months=False`,
+  `performance_stability=not_mature_shadow_only`, `coverage=symbols=4;months=1`,
+  drawdown and turnover are recorded from the read-only model v1 validation
+  report, `candidate_promotion=False`, `trading_allowed=False`, and
+  `production_effect=none`. No order output, broker work, monthly plan
+  regeneration, candidate promotion, strategy change, or production change was
+  performed. Earliest incomplete phase remains Phase 13 until sufficient
+  observation months are recorded.
 - ML shadow scoring report:
   `data/reports/ml_shadow_scoring_report.csv` and `.md`. Phase 12 applies
   paper-only ML model v1 scores as human-readable shadow scores only. It
@@ -220,7 +232,7 @@ protected paper-review candidate.
 
 Recent completed loops verified:
 
-- Full `unittest`: latest recorded `737` tests passing.
+- Full `unittest`: latest recorded `740` tests passing.
 - `python -m compileall -q backtester`: passing.
 - Safe production-check: `BLOCK` retained.
 - Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper

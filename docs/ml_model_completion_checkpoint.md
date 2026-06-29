@@ -34,6 +34,11 @@ Current status:
 - Phase 12 shadow scoring report is complete. Scores are human-readable
   paper-only tables with no order output, broker submission, monthly plan
   regeneration, or candidate promotion.
+- Phase 13 observation status artifact is created, but the observation window
+  is not mature: `observation_months=1`,
+  `sufficient_observation_months=False`, and
+  `performance_stability=not_mature_shadow_only`. Earliest incomplete phase
+  remains Phase 13 until sufficient paper-only observation months are recorded.
 - Financial features have only a limited PIT-audited sample and are not ready
   for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
@@ -501,6 +506,14 @@ Completion conditions:
 - Drawdown, turnover, and coverage are recorded.
 - No promotion occurs.
 - `production_effect=none`.
+- Status artifact created 2026-06-30 in
+  `data/reports/ml_model_observation_status.csv` and `.md`. Actual current
+  result: `observation_months=1`, `sufficient_observation_months=False`,
+  `performance_stability=not_mature_shadow_only`,
+  `coverage=symbols=4;months=1`, drawdown and turnover recorded from read-only
+  model v1 validation, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. Phase 13 remains
+  incomplete until enough paper-only observation months are recorded.
 
 Forbidden in this phase:
 

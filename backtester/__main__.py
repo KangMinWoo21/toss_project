@@ -100,6 +100,10 @@ from .ml_shadow_scoring import (
     build_ml_shadow_scoring_report,
     save_ml_shadow_scoring_report,
 )
+from .ml_model_observation_status import (
+    build_ml_model_observation_status_report,
+    save_ml_model_observation_status_report,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2391,6 +2395,27 @@ def main() -> int:
         default="data/reports/ml_shadow_scoring_report.md",
     )
 
+    ml_observation_parser = subparsers.add_parser(
+        "ml-model-observation-status",
+        help="Write paper-only ML observation status without promotion or production effect",
+    )
+    ml_observation_parser.add_argument(
+        "--shadow-scoring-csv",
+        default="data/reports/ml_shadow_scoring_report.csv",
+    )
+    ml_observation_parser.add_argument(
+        "--model-v1-validation-csv",
+        default="data/reports/ml_model_v1_validation_report.csv",
+    )
+    ml_observation_parser.add_argument(
+        "--output",
+        default="data/reports/ml_model_observation_status.csv",
+    )
+    ml_observation_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_model_observation_status.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3762,6 +3787,25 @@ def main() -> int:
         print("production_effect  none")
         print(f"shadow_scoring_report  {args.output}")
         print(f"shadow_scoring_markdown  {args.markdown_output}")
+        return 0
+
+    if args.command == "ml-model-observation-status":
+        rows = build_ml_model_observation_status_report(
+            shadow_scoring_csv=args.shadow_scoring_csv,
+            model_v1_validation_csv=args.model_v1_validation_csv,
+        )
+        save_ml_model_observation_status_report(rows, args.output, args.markdown_output)
+        summary = next(row for row in rows if row["metric"] == "summary")
+        print(f"observation_status  {summary['status']}")
+        print(f"observation_months  {summary['observation_months']}")
+        print(f"sufficient_observation_months  {summary['sufficient_observation_months']}")
+        print(f"performance_stability  {summary['performance_stability']}")
+        print(f"coverage  {summary['coverage']}")
+        print("candidate_promotion  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"observation_status_report  {args.output}")
+        print(f"observation_status_markdown  {args.markdown_output}")
         return 0
 
     if args.command == "fetch-toss":
