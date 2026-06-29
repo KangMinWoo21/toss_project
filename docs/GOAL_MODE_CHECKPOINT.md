@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML financial feature schema plan
+Last updated: 2026-06-30 ML financial PIT audit
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,15 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML financial PIT audit:
+  `data/reports/ml_financial_observations_sample.csv`,
+  `data/reports/ml_financial_pit_audit.csv`, and
+  `data/reports/ml_financial_feature_readiness_report.md`. Phase 6 completed a
+  limited OpenDART sample after explicit approval. The PIT audit records
+  `usable_from_presence=PASS`, `post_cutoff_train_leakage=PASS`,
+  `correction_lineage=PASS`, readiness `BLOCK`,
+  `post_cutoff_data_used_for_train=False`, `training_allowed_now=False`,
+  `trading_allowed=False`, and `production_effect=none`.
 - ML financial feature schema plan:
   `data/reports/ml_financial_feature_schema_plan.csv` and `.md`. Phase 5 is
   schema-only and fetch-free; it defines OpenDART financial metrics, valuation

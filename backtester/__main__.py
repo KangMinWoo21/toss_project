@@ -18,6 +18,7 @@ from .data_quality import (
     validate_dataset_freshness,
 )
 from .dart import (
+    DartDisclosureRow,
     disclosure_rows_to_event_rows,
     fetch_dart_disclosures_for_symbols,
     fetch_dart_financial_rows_for_symbols,
@@ -70,6 +71,10 @@ from .ml_explainability_failure_analysis import (
 from .ml_financial_feature_schema_plan import (
     build_ml_financial_feature_schema_plan,
     save_ml_financial_feature_schema_plan,
+)
+from .ml_financial_pit_audit import (
+    build_ml_financial_pit_audit_reports,
+    save_ml_financial_pit_audit_reports,
 )
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
@@ -2204,6 +2209,34 @@ def main() -> int:
         default="data/reports/ml_financial_feature_schema_plan.md",
     )
 
+    ml_financial_pit_parser = subparsers.add_parser(
+        "ml-financial-pit-audit",
+        help="Write a limited OpenDART financial observation sample and PIT audit",
+    )
+    ml_financial_pit_parser.add_argument("--symbol", default=None, help="KRX symbol, e.g. 005930")
+    ml_financial_pit_parser.add_argument("--symbols", default="005930,000660", help="Comma-separated KRX symbols")
+    ml_financial_pit_parser.add_argument("--business-year", default="2025")
+    ml_financial_pit_parser.add_argument("--report-code", default="11011")
+    ml_financial_pit_parser.add_argument("--fs-div", default="CFS", choices=["CFS", "OFS"])
+    ml_financial_pit_parser.add_argument("--disclosure-start", default="2025-01-01")
+    ml_financial_pit_parser.add_argument("--disclosure-end", default=None)
+    ml_financial_pit_parser.add_argument("--collected-at", default=None)
+    ml_financial_pit_parser.add_argument("--train-cutoff", default="2026-06-18")
+    ml_financial_pit_parser.add_argument("--financial-input", default=None)
+    ml_financial_pit_parser.add_argument("--disclosure-input", default=None)
+    ml_financial_pit_parser.add_argument(
+        "--sample-output",
+        default="data/reports/ml_financial_observations_sample.csv",
+    )
+    ml_financial_pit_parser.add_argument(
+        "--audit-output",
+        default="data/reports/ml_financial_pit_audit.csv",
+    )
+    ml_financial_pit_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_financial_feature_readiness_report.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3406,6 +3439,65 @@ def main() -> int:
         print("production_effect  none")
         print(f"external_feature_plan_report  {args.output}")
         print(f"external_feature_plan_markdown  {args.markdown_output}")
+        return 0
+
+    if args.command == "ml-financial-pit-audit":
+        collected_at = args.collected_at or f"{date.today().isoformat()}T00:00:00"
+        if args.financial_input:
+            financial_rows = _load_dart_financial_input(args.financial_input)
+        else:
+            api_key = os.environ.get("DART_API_KEY")
+            if not api_key:
+                raise SystemExit("DART_API_KEY environment variable is required")
+            symbols = parse_symbol_list(args.symbols or args.symbol or "")
+            if not symbols:
+                raise SystemExit("--symbol or --symbols is required")
+            financial_rows = fetch_dart_financial_rows_for_symbols(
+                api_key=api_key,
+                symbols=symbols,
+                business_year=args.business_year,
+                report_code=args.report_code,
+                fs_div=args.fs_div,
+            )
+        if args.disclosure_input:
+            disclosure_rows = _load_dart_disclosure_input(args.disclosure_input)
+        else:
+            api_key = os.environ.get("DART_API_KEY")
+            if not api_key:
+                raise SystemExit("DART_API_KEY environment variable is required")
+            symbols = parse_symbol_list(args.symbols or args.symbol or "")
+            if not symbols:
+                raise SystemExit("--symbol or --symbols is required")
+            disclosure_rows = fetch_dart_disclosures_for_symbols(
+                api_key=api_key,
+                symbols=symbols,
+                start=args.disclosure_start,
+                end=args.disclosure_end or date.today().isoformat(),
+                page_count=100,
+            )
+        observations, audit_rows, readiness_markdown = build_ml_financial_pit_audit_reports(
+            financial_rows,
+            disclosure_rows,
+            collected_at=collected_at,
+            train_cutoff=args.train_cutoff,
+        )
+        save_ml_financial_pit_audit_reports(
+            observations,
+            audit_rows,
+            readiness_markdown,
+            args.sample_output,
+            args.audit_output,
+            args.markdown_output,
+        )
+        pit_audit_status = next(row["check_status"] for row in audit_rows if row["check_name"] == "readiness_status")
+        print(f"pit_audit_status  {pit_audit_status}")
+        print("post_cutoff_data_used_for_train  False")
+        print("training_allowed_now  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"financial_observations_sample  {args.sample_output}")
+        print(f"financial_pit_audit  {args.audit_output}")
+        print(f"financial_readiness_markdown  {args.markdown_output}")
         return 0
 
     if args.command == "fetch-toss":
@@ -5084,6 +5176,27 @@ def _add_flow_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min-flow-score", type=float, default=-0.2)
     parser.add_argument("--force-flow-sell-score", type=float, default=-0.8)
     parser.add_argument("--flow-scale-value", type=float, default=100_000_000.0)
+
+
+def _load_dart_financial_input(path: str | Path) -> list[dict[str, str]]:
+    with Path(path).open(newline="", encoding="utf-8") as f:
+        return [dict(row) for row in csv.DictReader(f)]
+
+
+def _load_dart_disclosure_input(path: str | Path) -> list[DartDisclosureRow]:
+    rows: list[DartDisclosureRow] = []
+    with Path(path).open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            rows.append(
+                DartDisclosureRow(
+                    date=str(row.get("date", "")).strip(),
+                    symbol=str(row.get("symbol", "")).strip(),
+                    corp_name=str(row.get("corp_name", "")).strip(),
+                    report_name=str(row.get("report_name", "")).strip(),
+                    receipt_no=str(row.get("receipt_no", "")).strip(),
+                )
+            )
+    return rows
 
 
 def _resolve_output_path(root: Path, value: str) -> Path:

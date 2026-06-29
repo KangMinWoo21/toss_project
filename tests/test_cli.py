@@ -750,6 +750,55 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Do Not Trade / Schema Plan Only", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_financial_pit_audit_cli_writes_reports_from_local_inputs(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            financial_input = root / "financial.csv"
+            disclosure_input = root / "disclosures.csv"
+            sample_output = root / "data" / "reports" / "ml_financial_observations_sample.csv"
+            audit_output = root / "data" / "reports" / "ml_financial_pit_audit.csv"
+            md_output = root / "data" / "reports" / "ml_financial_feature_readiness_report.md"
+            financial_input.write_text(
+                "symbol,corp_code,business_year,report_code,fs_div,statement_name,account_name,current_amount,previous_amount,currency,ord\n"
+                "005930,00126380,2025,11011,CFS,income_statement,Revenue,1000,900,KRW,1\n",
+                encoding="utf-8",
+            )
+            disclosure_input.write_text(
+                "date,symbol,corp_name,report_name,receipt_no\n"
+                "2026-03-15,005930,Samsung Electronics,Annual Report,20260315000001\n"
+                "2026-04-01,005930,Samsung Electronics,Correction Annual Report,20260401000001\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-financial-pit-audit",
+                    "--financial-input",
+                    str(financial_input),
+                    "--disclosure-input",
+                    str(disclosure_input),
+                    "--collected-at",
+                    "2026-06-30T09:00:00",
+                    "--sample-output",
+                    str(sample_output),
+                    "--audit-output",
+                    str(audit_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("pit_audit_status  BLOCK", completed.stdout)
+            self.assertIn("training_allowed_now  False", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertTrue(sample_output.exists())
+            self.assertTrue(audit_output.exists())
+            self.assertTrue(md_output.exists())
+            self.assertIn("Do Not Trade / PIT Audit Only", md_output.read_text(encoding="utf-8"))
+
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(
             [

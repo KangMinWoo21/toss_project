@@ -1,0 +1,5 @@
+check_name,check_status,evidence,train_cutoff,post_cutoff_data_used_for_train,training_allowed_now,trading_allowed,production_effect,protected_candidate_unchanged
+usable_from_presence,PASS,459/459 observations include usable_from,2026-06-18,False,False,False,none,True
+post_cutoff_train_leakage,PASS,"459 observations are post-cutoff, all remain training_allowed_now=False",2026-06-18,False,False,False,none,True
+correction_lineage,PASS,69 correction disclosures observed; original receipt linked=True,2026-06-18,False,False,False,none,True
+readiness_status,BLOCK,limited sample is PIT-audited only; training_allowed_now remains False,2026-06-18,False,False,False,none,True

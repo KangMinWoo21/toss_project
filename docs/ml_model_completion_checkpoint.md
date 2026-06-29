@@ -15,8 +15,10 @@ Current status:
 - `review_allowed=False`
 - `production_effect=none`
 - Current local data is ready only for `baseline_tabular_ml`.
-- External financial, news, and sentiment features are plan-only and not ready
-  for training.
+- Phase 6 limited OpenDART PIT audit is complete and remains
+  `training_allowed_now=False`.
+- Financial features have only a limited PIT-audited sample and are not ready
+  for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
 
 Model completion means the paper-only ML research model has dataset lineage,
