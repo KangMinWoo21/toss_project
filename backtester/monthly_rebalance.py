@@ -27,6 +27,8 @@ from .momentum_validation import (
 from .monthly.reporting import format_equal_symbol_weights as _format_equal_symbol_weights
 from .monthly.reporting import format_optional_float as _format_optional_float
 from .monthly.reporting import unique_join as _unique_join
+from .monthly.paper_orders import mark_order_plan_execution
+from .monthly.paper_orders import normalize_liquidity_status as _normalize_liquidity_status
 from .monthly.validation import numeric_delta as _numeric_delta
 from .monthly.validation import scenario_delta_classification as _scenario_delta_classification
 from .monthly.validation import scenario_delta_diagnostic as _scenario_delta_diagnostic
@@ -2326,51 +2328,6 @@ def _annotate_order_liquidity(
         estimated_slippage_rate=estimated_slippage_rate,
         estimated_total_cost=estimated_total_cost,
     )
-
-
-def _normalize_liquidity_status(value: str) -> str:
-    normalized = str(value).strip().upper()
-    if normalized in {"WARN", "PASS", "NOT_CHECKED"}:
-        return normalized
-    return "BLOCK"
-
-
-def mark_order_plan_execution(
-    orders: list[PlannedOrder],
-    *,
-    risk_status_value: str,
-    production_trading_enabled: bool = False,
-) -> list[PlannedOrder]:
-    normalized = str(risk_status_value).strip().upper()
-    marked: list[PlannedOrder] = []
-    for order in orders:
-        if normalized == "PASS" and order.action in {"BUY", "SELL"} and production_trading_enabled:
-            marked.append(
-                replace(
-                    order,
-                    execution_allowed=True,
-                    execution_mode="live_ready",
-                    execution_block_reason="",
-                    risk_status="PASS",
-                    risk_reasons="",
-                )
-            )
-        else:
-            if normalized == "PASS" and order.action in {"BUY", "SELL"}:
-                reason = "production_trading_disabled"
-            else:
-                reason = f"risk_status_{normalized}" if normalized != "PASS" else f"action_{order.action}"
-            marked.append(
-                replace(
-                    order,
-                    execution_allowed=False,
-                    execution_mode="blocked",
-                    execution_block_reason=reason,
-                    risk_status="BLOCKED",
-                    risk_reasons=reason,
-                )
-            )
-    return marked
 
 
 def candidate_decision_required_for_report_paths(paths: list[str | Path | None]) -> bool:
