@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-09 ML v2 training readiness gate
+Last updated: 2026-06-30 CP-10 ML v2 blocked training report
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,20 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-10 Paper-Only Training Report:
+  `data/reports/ml_v2_training_report.csv` and `.md` were added as a blocked
+  paper-only training report because CP-09 returned `gate_result=BLOCK`.
+  `model_training_performed=False`, `model_artifact_created=False`,
+  `dataset_merge_performed=False`, `candidate_creation=False`,
+  `candidate_promotion=False`, `broker_submission=False`,
+  `order_execution=False`, `trading_allowed=False`, and
+  `production_effect=none`. No model was trained, no feature matrix was merged,
+  no score was produced, no candidate was created, no monthly plan was
+  regenerated, no strategy parameter was changed, no protected candidate change
+  occurred, no broker work occurred, no production readiness changed, no push
+  occurred, and no trading authorization was performed. Production remains
+  `BLOCK` and protected candidate remains `PAPER_REVIEW`. Next ML v2
+  checkpoint: CP-11 ML v2 Validation Report.
 - ML v2 CP-09 Training Readiness Gate:
   `data/reports/ml_v2_training_readiness_gate.csv` and `.md` were added as the
   explicit ML v2 paper-only training gate. The result is `gate_result=BLOCK`
