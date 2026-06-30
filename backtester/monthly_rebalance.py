@@ -34,6 +34,8 @@ from .monthly.paper_orders import annotate_order_liquidity as _annotate_order_li
 from .monthly.paper_orders import average_daily_trading_value
 from .monthly.paper_orders import mark_order_plan_execution
 from .monthly.paper_orders import normalize_liquidity_status as _normalize_liquidity_status
+from .monthly.universe import exclude_invalid_price_symbols
+from .monthly.universe import has_nonpositive_price as _has_nonpositive_price
 from .monthly.validation import candidate_decision_required_for_report_paths
 from .monthly.validation import numeric_delta as _numeric_delta
 from .monthly.validation import risk_exit_code
@@ -13847,18 +13849,6 @@ def _normalize_date_value(value: Any) -> str:
 
 def _metadata_is_false(value: Any) -> bool:
     return str(value).strip().lower() in {"0", "false", "no", "n", "f"}
-
-
-def exclude_invalid_price_symbols(symbol_candles: dict[str, list[Candle]]) -> dict[str, list[Candle]]:
-    return {
-        symbol: candles
-        for symbol, candles in symbol_candles.items()
-        if candles and not any(_has_nonpositive_price(candle) for candle in candles)
-    }
-
-
-def _has_nonpositive_price(candle: Candle) -> bool:
-    return candle.open <= 0 or candle.high <= 0 or candle.low <= 0 or candle.close <= 0
 
 
 def _position_trailing_stop_decision_matches(
