@@ -24,6 +24,9 @@ from .momentum_validation import (
     select_best_train_candidate,
     slice_asof_symbol_candles,
 )
+from .monthly.reporting import format_equal_symbol_weights as _format_equal_symbol_weights
+from .monthly.reporting import format_optional_float as _format_optional_float
+from .monthly.reporting import unique_join as _unique_join
 
 
 @dataclass(frozen=True)
@@ -13004,19 +13007,6 @@ def _max_numeric(values: Any) -> float | None:
     return max(numeric_values) if numeric_values else None
 
 
-def _format_optional_float(value: float | None) -> str:
-    if value is None:
-        return ""
-    return f"{value:.4f}".rstrip("0").rstrip(".")
-
-
-def _format_equal_symbol_weights(symbols: list[str]) -> str:
-    if not symbols:
-        return ""
-    weight = 1 / len(symbols)
-    return ";".join(f"{symbol}:{_format_optional_float(weight)}" for symbol in symbols)
-
-
 def _numeric_delta(candidate_value: float | None, baseline_value: float | None) -> float | None:
     if candidate_value is None or baseline_value is None:
         return None
@@ -13075,18 +13065,6 @@ def _scenario_delta_diagnostic(
             return "same_failure_persists"
         return "failure_shifted_reason"
     return "no_required_failure_change"
-
-
-def _unique_join(values: Any) -> str:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for value in values:
-        cleaned = str(value).strip()
-        if not cleaned or cleaned in seen:
-            continue
-        seen.add(cleaned)
-        ordered.append(cleaned)
-    return "; ".join(ordered)
 
 
 def _worst_failure_metric_value(rows: list[dict[str, Any]]) -> str:
