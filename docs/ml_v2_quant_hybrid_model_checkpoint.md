@@ -579,3 +579,27 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 blocked training report after reopen`.
 - Next checkpoint entry condition: stop unless the user explicitly requests
   manual lineage review or another paper-only blocker-resolution goal.
+
+### POST-16 Manual Lineage Review
+
+- Goal: manually classify unresolved trial dependency groups using existing
+  local report names, trial ids, method families, formula hashes, and scenario
+  labels, without calculating effective trial count.
+- Deliverables:
+  `data/reports/ml_v2_manual_lineage_review.csv` and `.md`.
+- Completion conditions: classifies groups as manual-review-required,
+  unresolved, or resolved non-selection overlay; documents remaining missing
+  fields, selection-trial permission, blocked effective-count status, blocked
+  training/validation status, and safety fields.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  effective-trial-count calculation, Deflated Sharpe calculation, performance
+  metric computation, data fetch, API call, OOS rerun, candidate comparison
+  rerun, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms classification counts, no selection
+  trial permission, no effective-count calculation, blocked training/validation
+  status, and no-production safety fields.
+- Commit message: `Add ML v2 manual lineage review`.
+- Next checkpoint entry condition: create a training-readiness refresh after
+  manual lineage review; it should remain `BLOCK` unless enough lineage is
+  resolved.

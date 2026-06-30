@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-15 blocked training report after reopen
+Last updated: 2026-06-30 POST-16 manual lineage review
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,18 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-16 manual lineage review:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-16, and
+  `data/reports/ml_v2_manual_lineage_review.csv` plus `.md` were added. The
+  review classified 23 dependency groups as 19 `manual_review_required`, 3
+  `unresolved`, and 1 `resolved_non_selection_overlay`. No group is allowed as
+  an independent model-selection trial; effective trial count, Deflated Sharpe,
+  ML v2 training, and ML v2 validation remain blocked. No model training,
+  validation run, formula evaluation, effective-trial-count calculation,
+  Deflated Sharpe calculation, performance metric computation, data fetch, API
+  call, OOS rerun, candidate comparison rerun, candidate creation, strategy
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization was performed.
 - ML v2 POST-15 blocked training report after reopen:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-15, and
   `data/reports/ml_v2_blocked_training_report_after_reopen.csv` plus `.md`
