@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 final ML research packet
+Last updated: 2026-06-30 ML v2 checkpoint roadmap
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,126 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 quant hybrid model checkpoint roadmap:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was added as the dedicated
+  paper-only model checkpoint roadmap, and `docs/goal-mode-minimal-prompt.md`
+  was simplified to reference it instead of carrying the full roadmap in every
+  prompt. The roadmap starts at CP-01 Deflated Sharpe placeholder report and
+  ends at CP-15 final ML v2 research packet, with one-checkpoint loop protocol,
+  focused commits, no push, and stop-after-one-checkpoint guidance. Production
+  remains `BLOCK`, protected candidate remains `PAPER_REVIEW`,
+  `trading_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. No model training, formula generation, formula
+  evaluation, data fetch, API call, news/SNS scrape, OOS rerun, candidate
+  comparison rerun, candidate creation, monthly plan regeneration, strategy
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization was performed.
+- Candidate trial ledger bootstrap:
+  `data/reports/candidate_trial_ledger.csv` and `.md`. This narrow
+  ledger/bootstrap-only loop uses existing local `data/reports` artifacts and
+  the candidate trial ledger schema plan to index known report/trial families:
+  monthly baseline reports, protected `PAPER_REVIEW` candidate reports,
+  rejected/blocked diagnostics where locally supported, monthly comparison
+  reports, ML baseline dataset/training/validation reports, ML v1 reports, ML
+  vs original comparison, fee/tax/slippage expectancy, month/symbol
+  concentration, external source inventory, US quant math inventory, formulaic
+  alpha schema plan, and trial ledger schema plan. The bootstrap ledger has 23
+  rows, keeps source commands/dates/hashes as `not_available` where missing,
+  reserves `raw_trial_count` and `effective_trial_count` placeholders, uses the
+  explicit sourced `total_candidates_tested=5` only from
+  `monthly_candidate_research_trial_summary.csv`, and does not calculate
+  Deflated Sharpe. Production remains `BLOCK`, protected candidate remains
+  `PAPER_REVIEW`, `trading_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. No formula generation, formula evaluation,
+  training, fetch, API call, news/SNS scrape, OOS rerun, candidate comparison
+  rerun, new candidate, monthly plan regeneration, strategy parameter change,
+  protected candidate modification, broker work, commit, or push was performed.
+- Formulaic alpha schema and candidate trial ledger schema plan:
+  `data/reports/formulaic_alpha_schema_plan.csv` and `.md`, plus
+  `data/reports/candidate_trial_ledger_schema_plan.csv` and `.md`. This narrow
+  schema/design-only loop defines OHLCV-only formulaic alpha inputs, allowed
+  operators, disallowed leakage operators, lookback metadata, label horizon
+  metadata, PIT availability checks, missingness policy, `feature_hash`,
+  `formula_hash`, `operator_version`, and `parameter_summary`. It also defines
+  the candidate trial ledger fields required before any alpha generation,
+  sweep, comparison, or model selection, including reserved `raw_trial_count`
+  and `effective_trial_count` placeholders for future Deflated Sharpe/data
+  snooping controls. It recommends no formula sweep until the ledger exists, no
+  model selection without trial counts, no Deflated Sharpe calculation yet, no
+  production strategy output changes, and all outputs paper-only. Production
+  remains `BLOCK`, protected candidate remains `PAPER_REVIEW`,
+  `trading_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. No formula generation, formula evaluation,
+  training, fetch, API call, news/SNS scrape, OOS rerun, candidate comparison
+  rerun, new candidate, monthly plan regeneration, strategy parameter change,
+  protected candidate modification, broker work, commit, or push was performed.
+- US quant math model research inventory:
+  `data/reports/us_quant_math_model_research_inventory.csv` and `.md`. This
+  narrow paper-only loop creates a US quant-style mathematical modeling
+  research inventory covering Renaissance-style statistical modeling,
+  WorldQuant-style formulaic alphas, cross-sectional ML ranking, factor models
+  and timing, tree/ensemble ML, Gaussian process/Bayesian uncertainty,
+  purged/embargo/CPCV validation, Deflated Sharpe/data-snooping controls,
+  transaction cost/slippage realism, macro/news/SNS risk overlay, and
+  LLM/agentic quant research as later-stage only. It recommends not copying
+  Renaissance/WorldQuant blindly, starting with an OHLCV-only formulaic alpha
+  inventory, adding candidate trial counts before large sweeps, adding a
+  Deflated Sharpe placeholder before model selection, using purged/embargo
+  validation before serious ML v2 training, keeping macro/news/SNS as
+  risk-overlay-only, and keeping all outputs paper-only. Production remains
+  `BLOCK`, protected candidate remains `PAPER_REVIEW`,
+  `trading_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. No training, fetch, API call, news/SNS scrape, OOS
+  rerun, candidate comparison rerun, new candidate, monthly plan regeneration,
+  strategy parameter change, protected candidate modification, broker work,
+  commit, or push was performed.
+- ML v2 external research source inventory:
+  `data/reports/ml_v2_external_research_source_inventory.csv` and `.md`. This
+  narrow paper-only loop creates a source-candidate inventory for macro data,
+  market regime data, disclosure/event data, news data, CEO/related-person SNS
+  data, sentiment model/open-source references, and validation/research papers.
+  It recommends macro data first, OpenDART/Naver/GDELT event-news second,
+  official CEO/company account whitelist third, and FinBERT/LLM/agentic models
+  later-stage only. All external inputs remain risk-overlay-only and disabled
+  by default. Production remains `BLOCK`, protected candidate remains
+  `PAPER_REVIEW`, `trading_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. No fetch, API call, SNS/news scrape, scoring,
+  training, OOS rerun, candidate comparison rerun, new candidate, monthly plan
+  regeneration, strategy parameter change, protected candidate modification,
+  broker work, commit, or push was performed.
+- Month and symbol concentration report:
+  `data/reports/month_symbol_concentration_report.csv` and `.md`. This narrow
+  paper-only loop used existing local `data/reports` artifacts only to compare
+  the existing monthly baseline, protected `PAPER_REVIEW` candidate, and ML v1
+  where compatible. It records that the baseline has month and symbol
+  attribution detail, the protected candidate has saved concentration summary
+  detail but lacks compatible top-symbol attribution, and ML v1 lacks saved
+  month/symbol return-contribution artifacts. Production remains `BLOCK` /
+  non-live, protected candidate remains `PAPER_REVIEW`,
+  `trading_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. No fetch, OOS rerun, candidate comparison rerun,
+  new candidate, monthly plan regeneration, strategy parameter change,
+  protected candidate modification, broker work, commit, or push was performed.
+- Fee/tax/slippage-adjusted expectancy report:
+  `data/reports/fee_tax_slippage_adjusted_expectancy_report.csv` and `.md`.
+  This narrow paper-only loop used existing local `data/reports` artifacts only,
+  including saved monthly expectancy/performance/gate reports, protected
+  candidate blocked order-cost/risk/review reports, paper-operation safety
+  status, and ML v1 validation/observation reports as read-only research rows.
+  It records unavailable fields explicitly rather than inventing missing
+  fee/tax/slippage/true expectancy components. Production remains `BLOCK` /
+  non-live, protected candidate remains `PAPER_REVIEW`,
+  `trading_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. No fetch, OOS rerun, candidate comparison rerun,
+  new candidate, monthly plan regeneration, strategy parameter change,
+  protected candidate modification, broker work, commit, or push was performed.
 - codebase-memory-mcp project setup preparation:
   `.cbmignore` and `docs/codebase_memory_mcp_project_setup.md` were added for
   future Codex code exploration, impact-scope analysis, and token savings. This
