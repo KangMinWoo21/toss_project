@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-23 fixed-spec ML diagnostic comparison
+Last updated: 2026-06-30 POST-24 fixed-spec robustness plan
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,21 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-24 fixed-spec robustness plan:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-24, and
+  `data/reports/ml_v2_fixed_spec_robustness_plan.csv` plus `.md` were added.
+  The plan is design-only and covers joined sample coverage, chronological
+  split stability, label balance, fixed formula-hash locking, PIT/embargo
+  re-audit, cost/concentration/failure diagnostics, and a no-winner
+  interpretation gate. All rows keep `training_allowed_now=False`,
+  `validation_rerun_allowed_now=False`, `oos_rerun_allowed_now=False`,
+  `candidate_decision_allowed=False`, `trading_allowed=False`, and
+  `production_effect=none`. No model training, validation rerun, OOS rerun,
+  candidate comparison rerun, model ranking for promotion, formula ranking,
+  formula generation, hyperparameter tuning, threshold tuning, class-weight
+  tuning, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization was
+  performed.
 - ML v2 POST-23 fixed-spec diagnostic comparison:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-23, and
   `data/reports/ml_v2_fixed_spec_vs_existing_ml_diagnostic_comparison.csv` plus

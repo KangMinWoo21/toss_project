@@ -771,3 +771,29 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: design a later paper-only robustness plan
   for ML v2 fixed-spec if requested; do not proceed to selection, promotion, or
   production readiness from this comparison.
+
+### POST-24 Fixed-Spec Robustness Plan
+
+- Goal: design future robustness checks for ML v2 fixed-spec without executing
+  any new training, validation rerun, OOS rerun, candidate comparison, model
+  selection, or production action.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_robustness_plan.csv` and `.md`.
+- Completion conditions: records planned checks for joined sample coverage,
+  chronological split stability, label balance, fixed formula-hash locking,
+  PIT/embargo re-audit, cost/concentration/failure diagnostics, and a no-winner
+  interpretation gate; marks all checks as design-only with
+  `training_allowed_now=False`, `validation_rerun_allowed_now=False`,
+  `oos_rerun_allowed_now=False`, `candidate_decision_allowed=False`,
+  `trading_allowed=False`, and `production_effect=none`.
+- Forbidden actions: no model training, validation rerun, OOS rerun, candidate
+  comparison rerun, model ranking for promotion, formula ranking, formula
+  generation, hyperparameter tuning, threshold tuning, class-weight tuning,
+  candidate creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms reports exist, all rows are design-only,
+  future execution remains gated, and safety fields are disabled.
+- Commit message: `Add ML v2 fixed-spec robustness plan`.
+- Next checkpoint entry condition: create a pre-registered robustness execution
+  gate only if requested; otherwise keep ML v2 fixed-spec as paper-only
+  diagnostic research with no candidate or production decision.
