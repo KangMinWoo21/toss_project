@@ -1002,3 +1002,28 @@ earliest incomplete checkpoint again.
 - Commit message: `Design ML v2 fixed-spec hybrid overlay`.
 - Next checkpoint entry condition: assemble the final ML v2 paper-only research
   packet.
+
+### POST-33 Fixed-Spec Final ML v2 Research Packet
+
+- Goal: assemble the final fixed-spec ML v2 paper-only research packet.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_final_research_packet.csv` and `.md`.
+- Completion conditions: consolidates safety state, fixed-spec ML v2
+  training/validation diagnostics, bounded robustness, no-winner analysis,
+  cost/slippage/concentration/failure diagnostics, hybrid overlay design,
+  external feature readiness, protected candidate boundary, final
+  recommendation, and all no-production safety fields. Final recommendation
+  must be `paper_only_complete_blocked_not_live_ready`.
+- Forbidden actions: no external fetch, API call, news/SNS scrape, LLM scoring,
+  sentiment scoring, external feature merge, model training, validation rerun,
+  OOS rerun, candidate comparison rerun, model ranking for promotion, formula
+  ranking, formula generation, hyperparameter tuning, threshold tuning,
+  class-weight tuning, candidate creation, order generation, strategy change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization.
+- Checks: schema/content check confirms final recommendation, no winner, no
+  candidate decision, no current reruns/training/order generation, protected
+  candidate unchanged, production blocked, and disabled safety fields.
+- Commit message: `Add final ML v2 fixed-spec research packet`.
+- Next checkpoint entry condition: none for this ML v2 paper-only packet; stop
+  unless a new explicit research goal or approval is provided.

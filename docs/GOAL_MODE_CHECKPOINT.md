@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-32 fixed-spec hybrid risk overlay design
+Last updated: 2026-06-30 POST-33 fixed-spec final ML v2 research packet
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,25 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-33 fixed-spec final research packet:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-33, and
+  `data/reports/ml_v2_fixed_spec_final_research_packet.csv` plus `.md` were
+  added. Final recommendation is `paper_only_complete_blocked_not_live_ready`.
+  The packet consolidates production `BLOCK`, protected candidate
+  `PAPER_REVIEW`, fixed-spec paper-only ML v2 training/validation diagnostics,
+  bounded robustness with warnings, no-winner analysis, cost/slippage/
+  concentration/failure blockers, disabled-by-default hybrid overlay design,
+  external feature readiness `BLOCK`, and protected-candidate boundary. It
+  keeps `model_winner_declared=False`, `candidate_decision_allowed=False`,
+  `candidate_promotion=False`, `broker_submission=False`,
+  `order_execution=False`, `trading_allowed=False`, and
+  `production_effect=none`. No external fetch, API call, news/SNS scrape, LLM
+  scoring, sentiment scoring, external feature merge, model training,
+  validation rerun, OOS rerun, candidate comparison rerun, order generation,
+  strategy change, protected candidate change, broker work, production
+  readiness change, push, or trading authorization was performed. No next ML
+  v2 checkpoint is required unless a new explicit research goal or approval is
+  provided.
 - ML v2 POST-32 fixed-spec hybrid risk overlay design:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-32, and
   `data/reports/ml_v2_fixed_spec_hybrid_risk_overlay_design.csv` plus `.md`
