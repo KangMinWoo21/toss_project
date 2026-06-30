@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-08 ML v2 formulaic alpha merge readiness
+Last updated: 2026-06-30 CP-09 ML v2 training readiness gate
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,23 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-09 Training Readiness Gate:
+  `data/reports/ml_v2_training_readiness_gate.csv` and `.md` were added as the
+  explicit ML v2 paper-only training gate. The result is `gate_result=BLOCK`
+  and `training_allowed_now=False` because CP-08 formulaic alpha merge
+  readiness is `BLOCK`, feature values and final `feature_hash` values are not
+  materialized, effective trial count is `not_available`, Deflated Sharpe is
+  placeholder-only, `min_history244` PIT universe evidence is incomplete,
+  post-cutoff OOS proof does not authorize review/promotion/production, and
+  external overlays remain disabled-by-default risk overlays. No model
+  training, dataset merge, formula evaluation, OOS rerun, data fetch, API call,
+  news/SNS scrape, candidate comparison rerun, candidate creation, monthly plan
+  regeneration, strategy parameter change, protected candidate change, broker
+  work, production readiness change, push, or trading authorization was
+  performed. Production remains `BLOCK`, protected candidate remains
+  `PAPER_REVIEW`, `candidate_promotion=False`, `broker_submission=False`,
+  `order_execution=False`, and `production_effect=none`. Next ML v2 checkpoint:
+  CP-10 ML v2 Paper-Only Training blocked report.
 - ML v2 CP-08 Formulaic Alpha Merge Readiness:
   `data/reports/ml_v2_formulaic_alpha_merge_readiness.csv` and `.md` were
   added as a paper-only readiness gate for merging CP-06 formulaic alpha
