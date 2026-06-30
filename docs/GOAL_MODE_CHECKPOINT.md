@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-13 Deflated Sharpe readiness gate
+Last updated: 2026-06-30 POST-14 training readiness gate reopen
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,17 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-14 training readiness gate reopen:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-14, and
+  `data/reports/ml_v2_training_readiness_gate_reopen.csv` plus `.md` were
+  added. Gate result is `BLOCK`: exact raw count remains lower-bound only,
+  lineage has 0 resolved and 23 unresolved groups, effective trial count is
+  `not_available`, Deflated Sharpe readiness is blocked, and Stage 1 feature
+  merge readiness remains a warning. ML v2 training and validation were not
+  run. No formula evaluation, performance metric computation, data fetch, API
+  call, OOS rerun, candidate comparison rerun, candidate creation, strategy
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization was performed.
 - ML v2 POST-13 Deflated Sharpe readiness gate:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-13, and
   `data/reports/ml_v2_deflated_sharpe_readiness_gate.csv` plus `.md` were

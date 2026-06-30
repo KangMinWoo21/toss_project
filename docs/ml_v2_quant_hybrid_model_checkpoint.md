@@ -536,3 +536,26 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 Deflated Sharpe readiness gate`.
 - Next checkpoint entry condition: reopen ML v2 training-readiness gate using
   the latest trial-count and Deflated Sharpe readiness evidence.
+
+### POST-14 Training Readiness Gate Reopen
+
+- Goal: reopen the ML v2 training-readiness question using latest exact raw
+  count, lineage, effective-trial-count, Deflated Sharpe, feature, PIT/leakage,
+  and safety evidence.
+- Deliverables:
+  `data/reports/ml_v2_training_readiness_gate_reopen.csv` and `.md`.
+- Completion conditions: returns exactly one of `ALLOW_PAPER_ONLY_TRAINING`,
+  `BLOCK`, or `deferred_later_stage`; documents sources, blockers, allowed or
+  blocked next action, and all no-production safety fields.
+- Forbidden actions: no model training or validation unless this gate returns
+  `ALLOW_PAPER_ONLY_TRAINING`; no formula evaluation, performance metric
+  computation, data fetch, API call, OOS rerun, candidate comparison rerun,
+  candidate creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms gate vocabulary, source references,
+  blocked/allowed status, training/validation flags, and no-production safety
+  fields.
+- Commit message: `Reopen ML v2 training readiness gate`.
+- Next checkpoint entry condition: if gate returns `ALLOW_PAPER_ONLY_TRAINING`,
+  run ML v2 paper-only training; otherwise create a blocked training report and
+  stop or continue only with safe blocker analysis.
