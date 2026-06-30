@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 Formulaic broader materialized feature stage 1
+Last updated: 2026-06-30 ML v2 Stage 1 readiness refresh
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,23 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 Stage 1 readiness refresh:
+  `data/reports/ml_v2_formulaic_alpha_merge_readiness_stage1_refresh.csv` and
+  `.md`, plus
+  `data/reports/ml_v2_training_readiness_gate_stage1_refresh.csv` and `.md`,
+  were added after the broader Stage 1 materialized feature audit. Merge
+  readiness improved to `merge_readiness=WARN_STAGE1_NOT_FULL_COVERAGE` with
+  7200 audited rows, 50 symbols, 24 feature dates, 6 formulas, PIT `PASS`,
+  label isolation `PASS`, and missing rate `0.003333`, but remains not approved
+  for dataset merge. Training readiness remains `gate_result=BLOCK`,
+  `training_allowed_now=False`, `paper_only_training_allowed_next=False`,
+  `model_training_performed=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. No dataset merge,
+  model training, formula evaluation, candidate creation, OOS rerun, candidate
+  comparison rerun, monthly plan regeneration, strategy parameter change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization was performed. Production remains `BLOCK` and
+  protected candidate remains `PAPER_REVIEW`.
 - Formulaic alpha broader materialized feature Stage 1:
   `data/reports/formulaic_alpha_broader_materialized_feature_stage1.csv`,
   `.md`, and `_manifest.csv`, plus
