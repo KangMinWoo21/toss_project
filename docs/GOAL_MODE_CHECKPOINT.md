@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-06 Small formulaic alpha sample
+Last updated: 2026-06-30 CP-07 Formulaic alpha feature audit
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,23 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-07 Formulaic Alpha Feature Audit:
+  `data/reports/formulaic_alpha_feature_audit.csv` and `.md` were added as a
+  paper-only audit of the six CP-06 formula samples. The audit confirms formula
+  hashes and lookback metadata exist, but records `audit_status=BLOCK`,
+  `feature_values_generated=False`, `merge_ready=False`,
+  `training_allowed_now=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none` because PIT
+  availability fields, assigned label horizons, concrete missingness policies,
+  and materialized `feature_hash` values are not available. No formula
+  evaluation, model training, formula selection, OOS rerun, data fetch, API
+  call, news/SNS scrape, candidate comparison rerun, candidate creation,
+  monthly plan regeneration, strategy parameter change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization was performed. Production remains `BLOCK`, protected candidate
+  remains `PAPER_REVIEW`, `broker_submission=False`, and
+  `order_execution=False`. Next ML v2 checkpoint: CP-08 ML v2 Formulaic Alpha
+  Merge Readiness.
 - ML v2 CP-06 Small OHLCV Formulaic Alpha Sample Generation:
   `data/reports/formulaic_alpha_sample_generation.csv` and `.md` were added,
   and six `formulaic_alpha_sample` rows were appended to
