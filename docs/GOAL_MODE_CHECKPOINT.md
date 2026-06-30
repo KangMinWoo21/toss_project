@@ -78,6 +78,16 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- codebase-memory-mcp project setup preparation:
+  `.cbmignore` and `docs/codebase_memory_mcp_project_setup.md` were added for
+  future Codex code exploration, impact-scope analysis, and token savings. This
+  is tooling preparation only: no installation, network download, MCP/Codex
+  configuration change, indexing, fetch, API call, data CSV summarization, ML
+  output change, trading feature change, protected candidate change, production
+  readiness change, or push was performed. The setup excludes secrets, API
+  keys, account information, `data/`, generated reports, large artifacts,
+  caches, and local codebase-memory outputs. Production remains `BLOCK`,
+  `trading_allowed=False`, and `production_effect=none`.
 - ML model final research packet:
   `data/reports/ml_model_research_packet.csv` and `.md`. Phase 14 is complete
   as a paper-only final packet consolidating local Phase 1-13 artifacts:
