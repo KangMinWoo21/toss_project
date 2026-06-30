@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-07 Formulaic alpha feature audit
+Last updated: 2026-06-30 CP-08 ML v2 formulaic alpha merge readiness
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,23 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-08 Formulaic Alpha Merge Readiness:
+  `data/reports/ml_v2_formulaic_alpha_merge_readiness.csv` and `.md` were
+  added as a paper-only readiness gate for merging CP-06 formulaic alpha
+  samples into ML v2. The report records `merge_readiness=BLOCK`,
+  materialized feature values `0`, materialized `feature_hash` values `0`, PIT
+  aligned samples `0`, missingness-audited samples `0`, label-isolated samples
+  `0`, `training_allowed_now=False`, `dataset_merge_performed=False`,
+  `model_training_performed=False`, `candidate_creation=False`,
+  `candidate_promotion=False`, `trading_allowed=False`, and
+  `production_effect=none`. No dataset merge, model training, comparison,
+  candidate creation, formula evaluation, OOS rerun, data fetch, API call,
+  news/SNS scrape, monthly plan regeneration, strategy parameter change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization was performed. Production remains `BLOCK`,
+  protected candidate remains `PAPER_REVIEW`, `broker_submission=False`, and
+  `order_execution=False`. Next ML v2 checkpoint: CP-09 ML v2 Training
+  Readiness Gate.
 - ML v2 CP-07 Formulaic Alpha Feature Audit:
   `data/reports/formulaic_alpha_feature_audit.csv` and `.md` were added as a
   paper-only audit of the six CP-06 formula samples. The audit confirms formula
