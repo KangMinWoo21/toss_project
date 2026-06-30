@@ -623,3 +623,26 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: stop unless human source-lineage decisions
   are provided or another paper-only blocker-resolution goal is explicitly
   requested.
+
+### POST-18 Recommended Lineage Decisions
+
+- Goal: provide conservative recommended lineage decisions for the dependency
+  groups from POST-16 without treating any group as an independent selection
+  trial.
+- Deliverables:
+  `data/reports/ml_v2_recommended_lineage_decisions.csv` and `.md`.
+- Completion conditions: classifies each dependency group as
+  `same_dependency_family`, `not_selection_trial`, or unresolved; confirms no
+  independent selection trial permission; preserves blocked effective-count,
+  Deflated Sharpe, training, validation, and production safety fields.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  effective-trial-count calculation, Deflated Sharpe calculation, performance
+  metric computation, data fetch, API call, OOS rerun, candidate comparison
+  rerun, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms decision counts, no independent-trial
+  permission, blocked training/validation status, and no-production safety
+  fields.
+- Commit message: `Add ML v2 recommended lineage decisions`.
+- Next checkpoint entry condition: refresh training readiness after applying
+  recommended lineage decisions; it should remain `BLOCK`.
