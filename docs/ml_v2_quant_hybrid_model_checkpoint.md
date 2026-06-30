@@ -688,3 +688,32 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 final blocked status packet`.
 - Next checkpoint entry condition: none for this goal; stop unless a new goal
   or explicit lineage override is provided.
+
+### POST-21 Fixed-Spec No-Selection Training Protocol And Gates
+
+- Goal: resolve the current ML v2 training block by converting the next ML v2
+  step from a model-selection problem into one fixed-spec, no-selection,
+  paper-only experiment.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_training_protocol.csv` and `.md`;
+  `data/reports/ml_v2_no_selection_dsr_exception_gate.csv` and `.md`;
+  `data/reports/ml_v2_fixed_spec_training_readiness_gate.csv` and `.md`.
+- Completion conditions: protocol defines exactly one model type, one feature
+  set, one split policy, no hyperparameter sweep, no formula/model selection,
+  no candidate creation, no production artifact, and `training_allowed_now=False`
+  for this checkpoint; DSR exception gate returns
+  `ALLOW_NO_SELECTION_TRAINING`; readiness gate returns
+  `ALLOW_PAPER_ONLY_TRAINING` for the next bounded paper-only checkpoint only.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  hyperparameter tuning, model comparison, formula ranking, Deflated Sharpe
+  calculation, performance metric computation, data fetch, API call, news/SNS
+  scrape, OOS rerun, candidate comparison rerun, candidate creation, strategy
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization.
+- Checks: schema/content check confirms all six reports exist, required gate
+  decisions are present, safety fields remain disabled, and no code changed.
+- Commit message: `Add ML v2 fixed-spec training protocol gates`.
+- Next checkpoint entry condition: run one fixed-spec paper-only ML v2
+  training/validation checkpoint using the approved protocol; stop if any
+  implementation step would require selection, tuning, production output, OOS
+  rerun, candidate comparison, data fetch, or broker/order work.

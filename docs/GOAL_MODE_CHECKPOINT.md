@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-20 final blocked status packet
+Last updated: 2026-06-30 POST-21 fixed-spec no-selection training protocol
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,20 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-21 fixed-spec no-selection training protocol and gates:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-21, and
+  `data/reports/ml_v2_fixed_spec_training_protocol.csv` plus `.md`,
+  `data/reports/ml_v2_no_selection_dsr_exception_gate.csv` plus `.md`, and
+  `data/reports/ml_v2_fixed_spec_training_readiness_gate.csv` plus `.md` were
+  added. The DSR exception gate returns `ALLOW_NO_SELECTION_TRAINING` because
+  the next experiment is fixed-spec and no-selection; the readiness gate returns
+  `ALLOW_PAPER_ONLY_TRAINING` for the next bounded paper-only checkpoint only.
+  No model training, validation run, formula evaluation, hyperparameter tuning,
+  model comparison, formula ranking, Deflated Sharpe calculation, performance
+  metric computation, data fetch, API call, news/SNS scrape, OOS rerun,
+  candidate comparison rerun, candidate creation, strategy change, protected
+  candidate change, broker work, production readiness change, push, or trading
+  authorization was performed.
 - ML v2 POST-20 final blocked status packet:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-20, and
   `data/reports/ml_v2_final_blocked_status_packet.csv` plus `.md` were added.
