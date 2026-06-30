@@ -448,3 +448,25 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: if still `BLOCK`, stop unless the user
   explicitly asks for exact raw-count inventory or another paper-only blocker
   analysis.
+
+### POST-10 Exact Raw Count Inventory
+
+- Goal: inventory exact raw-trial-count evidence from the existing candidate
+  trial ledger and referenced local reports without inferring counts from report
+  row counts.
+- Deliverables:
+  `data/reports/ml_v2_exact_raw_count_inventory.csv` and `.md`.
+- Completion conditions: records ledger rows, source existence, source row-count
+  audit evidence, exact numeric raw-count rows, missing exact-count rows,
+  lower-bound total, blocked training/validation status, and next safe action.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  effective-trial-count calculation, Deflated Sharpe calculation, performance
+  metric computation, data fetch, API call, OOS rerun, candidate comparison
+  rerun, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms exact-count evidence, lower-bound
+  handling, missing-count handling, source references, and no-production safety
+  fields.
+- Commit message: `Add ML v2 exact raw count inventory`.
+- Next checkpoint entry condition: inventory exists; the next checkpoint should
+  resolve lineage warnings or keep training blocked.

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-09 training readiness after trial manifest
+Last updated: 2026-06-30 POST-10 exact raw count inventory
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,18 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-10 exact raw count inventory:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-10, and
+  `data/reports/ml_v2_exact_raw_count_inventory.csv` plus `.md` were added.
+  The inventory records 29 source ledger rows, 30 inventory rows including
+  summary, 7 exact numeric raw-count rows, 22 rows still `not_available`, and
+  exact numeric lower-bound sum 41. Full project-wide exact raw trial count and
+  effective trial count remain `not_available`. No model training, validation
+  run, formula evaluation, effective-trial-count calculation, Deflated Sharpe
+  calculation, performance metric computation, data fetch, API call, OOS rerun,
+  candidate comparison rerun, candidate creation, strategy change, protected
+  candidate change, broker work, production readiness change, push, or trading
+  authorization was performed.
 - ML v2 POST-09 training readiness after trial manifest:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-09, and
   `data/reports/ml_v2_training_readiness_after_trial_manifest.csv` plus `.md`
