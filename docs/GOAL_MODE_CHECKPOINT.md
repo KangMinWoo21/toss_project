@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-01 Stage 1 experiment gate design
+Last updated: 2026-06-30 POST-02 Stage 1 experiment gate
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,20 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-02 Stage 1 paper-only experiment gate:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-02, and
+  `data/reports/ml_v2_stage1_paper_experiment_gate.csv` and `.md` were added.
+  The report-only gate returns `gate_result=ALLOW_PAPER_ONLY_EXPERIMENT`, but
+  this allows only a future tiny experiment protocol design checkpoint.
+  `training_allowed_now=False`, `model_training_performed=False`,
+  `formula_evaluation_performed=False`, `dataset_merge_performed=False`,
+  `candidate_creation=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. No model training,
+  formula evaluation, dataset merge, OOS rerun, candidate comparison rerun,
+  candidate creation, monthly plan regeneration, strategy parameter change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization was performed. Production remains `BLOCK` and
+  protected candidate remains `PAPER_REVIEW`.
 - ML v2 POST-01 Stage 1 paper-only experiment gate design:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-01, and
   `data/reports/ml_v2_stage1_paper_experiment_gate_design.csv` and `.md` were

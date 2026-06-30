@@ -278,3 +278,22 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 stage 1 experiment gate design`.
 - Next checkpoint entry condition: gate design exists and a future POST
   checkpoint can execute the gate as a report-only readiness decision.
+
+### POST-02 Stage 1 Paper-Only Experiment Gate Execution
+
+- Goal: execute the POST-01 gate as a report-only readiness decision for a
+  future bounded paper-only experiment.
+- Deliverables:
+  `data/reports/ml_v2_stage1_paper_experiment_gate.csv` and `.md`.
+- Completion conditions: returns exactly one of `ALLOW_PAPER_ONLY_EXPERIMENT`,
+  `BLOCK`, or `deferred_later_stage`; documents sources, blockers, allowed
+  future action, and safety fields.
+- Forbidden actions: no model training, formula evaluation, dataset merge,
+  candidate creation, OOS rerun, candidate comparison rerun, strategy change,
+  protected candidate change, broker work, or production readiness change.
+- Checks: schema/content check confirms exact gate result vocabulary, safety
+  fields, source references, and no forbidden actions.
+- Commit message: `Add ML v2 stage 1 experiment gate`.
+- Next checkpoint entry condition: if gate result is
+  `ALLOW_PAPER_ONLY_EXPERIMENT`, a future POST checkpoint may design the tiny
+  experiment protocol; otherwise future work must address blockers first.
