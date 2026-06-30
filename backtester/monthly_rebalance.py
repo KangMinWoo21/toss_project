@@ -27,6 +27,8 @@ from .momentum_validation import (
 from .monthly.reporting import format_equal_symbol_weights as _format_equal_symbol_weights
 from .monthly.reporting import format_optional_float as _format_optional_float
 from .monthly.reporting import unique_join as _unique_join
+from .monthly.paper_orders import annotate_order_liquidity as _annotate_order_liquidity
+from .monthly.paper_orders import average_daily_trading_value
 from .monthly.paper_orders import mark_order_plan_execution
 from .monthly.paper_orders import normalize_liquidity_status as _normalize_liquidity_status
 from .monthly.validation import numeric_delta as _numeric_delta
@@ -2270,64 +2272,6 @@ def build_order_plan(
             )
         orders.append(order)
     return sorted(orders, key=lambda order: 0 if order.action == "SELL" else 1)
-
-
-def average_daily_trading_value(
-    candles: list[Candle],
-    *,
-    as_of_date: str,
-    window_days: int = 20,
-) -> float:
-    if window_days <= 0:
-        return 0.0
-    history = [
-        candle
-        for candle in sorted(candles, key=lambda candle: candle.date)
-        if candle.date <= as_of_date and candle.close > 0 and candle.volume > 0
-    ]
-    if len(history) < window_days:
-        return 0.0
-    window = history[-window_days:]
-    return sum(candle.close * candle.volume for candle in window) / len(window)
-
-
-def _annotate_order_liquidity(
-    order: PlannedOrder,
-    candles: list[Candle],
-    *,
-    as_of_date: str,
-    adv_window_days: int,
-    base_slippage_rate: float,
-    impact_slippage_multiplier: float,
-    warn_adv_participation_rate: float,
-    max_adv_participation_rate: float,
-    liquidity_missing_adv_status: str,
-) -> PlannedOrder:
-    adv = average_daily_trading_value(candles, as_of_date=as_of_date, window_days=adv_window_days)
-    participation = abs(order.estimated_value) / adv if adv > 0 else 0.0
-    estimated_slippage_rate = max(0.0, base_slippage_rate) + participation * max(0.0, impact_slippage_multiplier)
-    estimated_total_cost = abs(order.estimated_value) * estimated_slippage_rate
-    if adv <= 0:
-        status = _normalize_liquidity_status(liquidity_missing_adv_status)
-        reason = f"adv_unavailable: need {adv_window_days} rows before {as_of_date}"
-    elif participation > max_adv_participation_rate + 1e-12:
-        status = "BLOCK"
-        reason = f"adv_participation_rate {participation:.4f} > max {max_adv_participation_rate:.4f}"
-    elif participation > warn_adv_participation_rate + 1e-12:
-        status = "WARN"
-        reason = f"adv_participation_rate {participation:.4f} > warn {warn_adv_participation_rate:.4f}"
-    else:
-        status = "PASS"
-        reason = f"adv_participation_rate {participation:.4f}"
-    return replace(
-        order,
-        adv_20d=adv,
-        adv_participation_rate=participation,
-        liquidity_status=status,
-        liquidity_reason=reason,
-        estimated_slippage_rate=estimated_slippage_rate,
-        estimated_total_cost=estimated_total_cost,
-    )
 
 
 def candidate_decision_required_for_report_paths(paths: list[str | Path | None]) -> bool:
