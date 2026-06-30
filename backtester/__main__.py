@@ -8,6 +8,10 @@ from pathlib import Path
 
 from .analysis import generate_rolling_windows, summarize_walk_forward, walk_forward
 from .auto_scalper import parse_symbol_list, run_auto_scalper_loop
+from .cli.common import arg_or_default as _arg_or_default
+from .cli.common import normalize_symbol as _normalize_symbol
+from .cli.common import parse_source_weights as _parse_source_weights
+from .cli.common import parse_windows as _parse_windows
 from .config import is_production_trading_enabled, load_env_into_process
 from .data import load_candles
 from .data_quality import (
@@ -5702,28 +5706,6 @@ def _apply_optional_filters(strategy: Strategy, args: argparse.Namespace) -> Str
     return filtered
 
 
-def _arg_or_default(value, default):
-    return default if value is None else value
-
-
-def _parse_source_weights(value: str | None) -> dict[str, float] | None:
-    if not value:
-        return None
-    weights: dict[str, float] = {}
-    for part in value.split(","):
-        item = part.strip()
-        if not item:
-            continue
-        if "=" not in item:
-            raise SystemExit(f"invalid source weight '{item}', expected source=weight")
-        source, weight = item.split("=", 1)
-        source = source.strip()
-        if not source:
-            raise SystemExit(f"invalid source weight '{item}', source is empty")
-        weights[source] = float(weight)
-    return weights or None
-
-
 def _apply_excluded_symbols(
     symbol_candles: dict[str, list],
     exclude_symbols_path: str | None,
@@ -6169,15 +6151,6 @@ def _load_excluded_symbols(path: str | None) -> set[str]:
     }
 
 
-def _normalize_symbol(value: str | None) -> str:
-    text = str(value or "").strip().strip("'").strip('"')
-    if not text:
-        return ""
-    if text.isdigit():
-        return text.zfill(6)
-    return text.upper()
-
-
 def _news_filtered(strategy: Strategy, args: argparse.Namespace) -> Strategy:
     if not args.events or not args.symbol:
         raise SystemExit("--events and --symbol are required with --news-filter")
@@ -6203,16 +6176,6 @@ def _flow_filtered(strategy: Strategy, args: argparse.Namespace) -> Strategy:
         force_sell_score=args.force_flow_sell_score,
         name=f"{strategy.name}+flow_filtered",
     )
-
-
-def _parse_windows(values: list[str]) -> list[tuple[str, str, str, str]]:
-    windows: list[tuple[str, str, str, str]] = []
-    for value in values:
-        parts = value.split(":")
-        if len(parts) != 4:
-            raise SystemExit(f"invalid --window: {value}")
-        windows.append((parts[0], parts[1], parts[2], parts[3]))
-    return windows
 
 
 def _max_candle_date(symbol_candles) -> str:
