@@ -362,3 +362,26 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: no next checkpoint unless a user explicitly
   authorizes a new research goal; stop with paper-only blocked-not-live-ready
   status.
+
+### POST-06 Trial Count And Deflated Sharpe Blocker Audit
+
+- Goal: audit whether existing local reports are sufficient to unblock ML v2
+  training with trial-count and Deflated Sharpe controls, without calculating
+  performance metrics or running training.
+- Deliverables:
+  `data/reports/ml_v2_trial_count_deflated_sharpe_blocker_audit.csv` and
+  `.md`.
+- Completion conditions: documents ledger row counts, numeric raw-trial
+  lower-bound evidence, unavailable effective-trial counts, Deflated Sharpe
+  required inputs, blocked/deferred status, and the next safe action.
+- Forbidden actions: no model training, formula evaluation, performance metric
+  computation, data fetch, API call, SNS/news scrape, OOS rerun, candidate
+  comparison rerun, candidate creation, monthly plan regeneration, strategy
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization.
+- Checks: schema/content check confirms count evidence, missing-input handling,
+  final gate result, and no-production safety fields.
+- Commit message: `Add ML v2 trial count Deflated Sharpe blocker audit`.
+- Next checkpoint entry condition: if blocker status remains `BLOCK`, future
+  work may only design a dependency-adjusted effective-trial-count method or a
+  blocked training-readiness refresh.

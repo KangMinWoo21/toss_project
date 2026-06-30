@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-05 post-CP15 completion packet
+Last updated: 2026-06-30 POST-06 trial count and Deflated Sharpe blocker audit
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,18 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-06 trial count and Deflated Sharpe blocker audit:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-06, and
+  `data/reports/ml_v2_trial_count_deflated_sharpe_blocker_audit.csv` plus
+  `.md` were added. The audit records 29 trial-ledger rows, 7 numeric
+  `raw_trial_count` rows, raw-trial lower-bound sum 41, 0 numeric
+  `effective_trial_count` rows, and Deflated Sharpe inputs still unavailable.
+  Result remains `BLOCK`: ML v2 training and validation are not allowed. No
+  model training, formula evaluation, performance metric computation, data
+  fetch, API call, SNS/news scrape, OOS rerun, candidate comparison rerun,
+  candidate creation, monthly plan regeneration, strategy parameter change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization was performed.
 - ML v2 POST-05 post-CP15 completion packet:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-05, and
   `data/reports/ml_v2_post_cp15_completion_packet.csv` plus `.md` were added.
