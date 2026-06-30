@@ -61,6 +61,44 @@ class MlModelObservationStatusTest(unittest.TestCase):
                 self.assertEqual("none", row["production_effect"])
                 self.assertEqual("True", row["protected_candidate_unchanged"])
 
+    def test_historical_backfill_can_satisfy_observation_months_without_trading(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sources = self._write_sources(root)
+            dataset = root / "data" / "reports" / "ml_baseline_feature_label_sample.csv"
+            _write(
+                dataset,
+                "symbol,feature_date,label_end_date,return_1m,return_3m,return_6m,volatility_3m,volume_change_1m,price_vs_3m_sma,drawdown_3m,label_return,label,train_cutoff,post_cutoff_data_used_for_train,training_ran,trading_allowed,production_effect\n"
+                "111111,2024-01-31,2024-02-29,0.01,0.02,0.03,0.01,0.10,0.02,0.00,0.020,positive,2024-12-31,False,False,False,none\n"
+                "222222,2024-01-31,2024-02-29,-0.01,-0.02,-0.03,0.02,-0.10,-0.02,-0.03,-0.020,negative,2024-12-31,False,False,False,none\n"
+                "111111,2024-02-29,2024-03-29,0.02,0.03,0.04,0.01,0.10,0.02,0.00,0.015,positive,2024-12-31,False,False,False,none\n"
+                "222222,2024-02-29,2024-03-29,-0.02,-0.03,-0.04,0.02,-0.10,-0.02,-0.04,-0.015,negative,2024-12-31,False,False,False,none\n"
+                "111111,2024-03-29,2024-04-30,0.03,0.04,0.05,0.01,0.10,0.03,0.00,0.018,positive,2024-12-31,False,False,False,none\n"
+                "222222,2024-03-29,2024-04-30,-0.03,-0.04,-0.05,0.02,-0.10,-0.03,-0.05,-0.018,negative,2024-12-31,False,False,False,none\n"
+                "111111,2024-04-30,2024-05-31,0.04,0.05,0.06,0.01,0.10,0.04,0.00,0.012,positive,2024-12-31,False,False,False,none\n"
+                "222222,2024-04-30,2024-05-31,-0.04,-0.05,-0.06,0.02,-0.10,-0.04,-0.06,-0.012,negative,2024-12-31,False,False,False,none\n",
+            )
+
+            rows = build_ml_model_observation_status_report(
+                **sources,
+                historical_dataset_csv=dataset,
+                use_historical_backfill=True,
+                min_observation_months=3,
+            )
+
+            by_metric = {row["metric"]: row for row in rows}
+            self.assertEqual("paper_only_observation_mature", by_metric["summary"]["status"])
+            self.assertEqual("historical_backfill", by_metric["observation_basis"]["value"])
+            self.assertEqual("4", by_metric["observation_months"]["value"])
+            self.assertEqual("True", by_metric["sufficient_observation_months"]["value"])
+            self.assertEqual("historical_backfill_stable", by_metric["performance_stability"]["value"])
+            self.assertEqual("PASS", by_metric["post_cutoff_train_leakage"]["status"])
+            for row in rows:
+                self.assertEqual("False", row["candidate_promotion"])
+                self.assertEqual("False", row["trading_allowed"])
+                self.assertEqual("none", row["production_effect"])
+                self.assertEqual("True", row["protected_candidate_unchanged"])
+
     def test_save_writes_observation_csv_and_markdown(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

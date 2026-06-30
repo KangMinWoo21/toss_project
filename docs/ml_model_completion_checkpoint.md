@@ -34,11 +34,12 @@ Current status:
 - Phase 12 shadow scoring report is complete. Scores are human-readable
   paper-only tables with no order output, broker submission, monthly plan
   regeneration, or candidate promotion.
-- Phase 13 observation status artifact is created, but the observation window
-  is not mature: `observation_months=1`,
-  `sufficient_observation_months=False`, and
-  `performance_stability=not_mature_shadow_only`. Earliest incomplete phase
-  remains Phase 13 until sufficient paper-only observation months are recorded.
+- Phase 13 observation status is complete using explicitly requested
+  historical backfill from existing local baseline feature/label rows:
+  `observation_basis=historical_backfill`, `observation_months=101`,
+  `sufficient_observation_months=True`, `post_cutoff_train_leakage=PASS`, and
+  `performance_stability=historical_backfill_stable`. Earliest incomplete phase
+  is Phase 14.
 - Financial features have only a limited PIT-audited sample and are not ready
   for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
@@ -508,12 +509,15 @@ Completion conditions:
 - `production_effect=none`.
 - Status artifact created 2026-06-30 in
   `data/reports/ml_model_observation_status.csv` and `.md`. Actual current
-  result: `observation_months=1`, `sufficient_observation_months=False`,
-  `performance_stability=not_mature_shadow_only`,
-  `coverage=symbols=4;months=1`, drawdown and turnover recorded from read-only
-  model v1 validation, `candidate_promotion=False`,
-  `trading_allowed=False`, and `production_effect=none`. Phase 13 remains
-  incomplete until enough paper-only observation months are recorded.
+  result after explicit historical backfill approval:
+  `observation_basis=historical_backfill`, `observation_months=101`,
+  `sufficient_observation_months=True`,
+  `performance_stability=historical_backfill_stable`, drawdown `-0.6520`,
+  turnover `turnover=0.1700`, `coverage=symbols=5;months=101`,
+  `post_cutoff_train_leakage=PASS`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. No fetch, OOS rerun,
+  candidate compare, order output, broker work, monthly plan regeneration,
+  candidate promotion, strategy change, or production change was performed.
 
 Forbidden in this phase:
 

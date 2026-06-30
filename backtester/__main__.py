@@ -2408,6 +2408,15 @@ def main() -> int:
         default="data/reports/ml_model_v1_validation_report.csv",
     )
     ml_observation_parser.add_argument(
+        "--historical-dataset-csv",
+        default="data/reports/ml_baseline_feature_label_sample.csv",
+    )
+    ml_observation_parser.add_argument(
+        "--use-historical-backfill",
+        action="store_true",
+        help="Use existing local feature/label rows as historical paper-only observation evidence",
+    )
+    ml_observation_parser.add_argument(
         "--output",
         default="data/reports/ml_model_observation_status.csv",
     )
@@ -3793,12 +3802,16 @@ def main() -> int:
         rows = build_ml_model_observation_status_report(
             shadow_scoring_csv=args.shadow_scoring_csv,
             model_v1_validation_csv=args.model_v1_validation_csv,
+            historical_dataset_csv=args.historical_dataset_csv,
+            use_historical_backfill=args.use_historical_backfill,
         )
         save_ml_model_observation_status_report(rows, args.output, args.markdown_output)
         summary = next(row for row in rows if row["metric"] == "summary")
         print(f"observation_status  {summary['status']}")
+        print(f"observation_basis  {summary['observation_basis']}")
         print(f"observation_months  {summary['observation_months']}")
         print(f"sufficient_observation_months  {summary['sufficient_observation_months']}")
+        print(f"post_cutoff_train_leakage  {summary['post_cutoff_train_leakage']}")
         print(f"performance_stability  {summary['performance_stability']}")
         print(f"coverage  {summary['coverage']}")
         print("candidate_promotion  False")

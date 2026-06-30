@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML shadow scoring report
+Last updated: 2026-06-30 ML observation backfill report
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -79,17 +79,17 @@ protected paper-review candidate.
 ## Latest Local Report Additions
 
 - ML model observation status report:
-  `data/reports/ml_model_observation_status.csv` and `.md`. Phase 13 has a
-  paper-only observation status artifact, but the observation window is not
-  mature yet: `observation_months=1`,
-  `sufficient_observation_months=False`,
-  `performance_stability=not_mature_shadow_only`, `coverage=symbols=4;months=1`,
-  drawdown and turnover are recorded from the read-only model v1 validation
-  report, `candidate_promotion=False`, `trading_allowed=False`, and
-  `production_effect=none`. No order output, broker work, monthly plan
-  regeneration, candidate promotion, strategy change, or production change was
-  performed. Earliest incomplete phase remains Phase 13 until sufficient
-  observation months are recorded.
+  `data/reports/ml_model_observation_status.csv` and `.md`. Phase 13 is
+  complete using explicitly requested historical backfill from existing local
+  baseline feature/label rows: `observation_basis=historical_backfill`,
+  `observation_months=101`, `sufficient_observation_months=True`,
+  `performance_stability=historical_backfill_stable`, drawdown `-0.6520`,
+  turnover `turnover=0.1700`, `coverage=symbols=5;months=101`,
+  `post_cutoff_train_leakage=PASS`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. No fetch, OOS rerun,
+  candidate compare, order output, broker work, monthly plan regeneration,
+  candidate promotion, strategy change, or production change was performed.
+  Earliest incomplete phase is Phase 14.
 - ML shadow scoring report:
   `data/reports/ml_shadow_scoring_report.csv` and `.md`. Phase 12 applies
   paper-only ML model v1 scores as human-readable shadow scores only. It
@@ -232,7 +232,7 @@ protected paper-review candidate.
 
 Recent completed loops verified:
 
-- Full `unittest`: latest recorded `740` tests passing.
+- Full `unittest`: latest recorded `742` tests passing.
 - `python -m compileall -q backtester`: passing.
 - Safe production-check: `BLOCK` retained.
 - Safe health-check with `--scalper-mode warn`: `WARN` only for stale scalper

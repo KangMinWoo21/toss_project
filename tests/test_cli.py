@@ -1130,6 +1130,64 @@ class CliTests(unittest.TestCase):
             self.assertTrue(md_output.exists())
             self.assertIn("Paper-Only Observation Status", md_output.read_text(encoding="utf-8"))
 
+    def test_ml_model_observation_status_cli_can_use_historical_backfill(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reports = root / "data" / "reports"
+            shadow = reports / "ml_shadow_scoring_report.csv"
+            validation = reports / "ml_model_v1_validation_report.csv"
+            dataset = reports / "ml_baseline_feature_label_sample.csv"
+            csv_output = reports / "ml_model_observation_status.csv"
+            md_output = reports / "ml_model_observation_status.md"
+            reports.mkdir(parents=True, exist_ok=True)
+            shadow.write_text(
+                "rank,symbol,feature_date,score_type,shadow_score,score_bucket,model_version,source_model_report,order_output,broker_submission,monthly_plan_regenerated,candidate_promotion,trading_allowed,production_effect,protected_candidate_unchanged\n"
+                "1,111111,2024-05-31,technical_only_shadow_score,0.600000,medium,ml_model_v1_technical_only,training.csv,False,False,False,False,False,none,True\n",
+                encoding="utf-8",
+            )
+            validation.write_text(
+                "metric,status,value,reason,source,post_cutoff_data_used_for_train,external_features_used,trading_allowed,production_effect,protected_candidate_unchanged\n"
+                "drawdown,PASS,-0.1200,ok,derived,False,False,False,none,True\n"
+                "turnover,PASS,turnover=0.2500,ok,derived,False,False,False,none,True\n",
+                encoding="utf-8",
+            )
+            dataset.write_text(
+                "symbol,feature_date,label_end_date,return_1m,return_3m,return_6m,volatility_3m,volume_change_1m,price_vs_3m_sma,drawdown_3m,label_return,label,train_cutoff,post_cutoff_data_used_for_train,training_ran,trading_allowed,production_effect\n"
+                "111111,2024-01-31,2024-02-29,0.01,0.02,0.03,0.01,0.10,0.02,0.00,0.020,positive,2024-12-31,False,False,False,none\n"
+                "222222,2024-01-31,2024-02-29,-0.01,-0.02,-0.03,0.02,-0.10,-0.02,-0.03,-0.020,negative,2024-12-31,False,False,False,none\n"
+                "111111,2024-02-29,2024-03-29,0.02,0.03,0.04,0.01,0.10,0.02,0.00,0.015,positive,2024-12-31,False,False,False,none\n"
+                "222222,2024-02-29,2024-03-29,-0.02,-0.03,-0.04,0.02,-0.10,-0.02,-0.04,-0.015,negative,2024-12-31,False,False,False,none\n"
+                "111111,2024-03-29,2024-04-30,0.03,0.04,0.05,0.01,0.10,0.03,0.00,0.018,positive,2024-12-31,False,False,False,none\n"
+                "222222,2024-03-29,2024-04-30,-0.03,-0.04,-0.05,0.02,-0.10,-0.03,-0.05,-0.018,negative,2024-12-31,False,False,False,none\n",
+                encoding="utf-8",
+            )
+
+            completed = self._run_backtester_in_cwd(
+                root,
+                [
+                    "ml-model-observation-status",
+                    "--shadow-scoring-csv",
+                    str(shadow),
+                    "--model-v1-validation-csv",
+                    str(validation),
+                    "--historical-dataset-csv",
+                    str(dataset),
+                    "--use-historical-backfill",
+                    "--output",
+                    str(csv_output),
+                    "--markdown-output",
+                    str(md_output),
+                ],
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("observation_status  paper_only_observation_mature", completed.stdout)
+            self.assertIn("sufficient_observation_months  True", completed.stdout)
+            self.assertIn("observation_basis  historical_backfill", completed.stdout)
+            self.assertIn("trading_allowed  False", completed.stdout)
+            self.assertIn("production_effect  none", completed.stdout)
+            self.assertIn("Historical backfill", md_output.read_text(encoding="utf-8"))
+
     def test_walk_forward_command_prints_period_and_summary_tables(self):
         completed = subprocess.run(
             [
