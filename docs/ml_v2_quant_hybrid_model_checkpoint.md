@@ -845,3 +845,27 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: create the pre-registered robustness
   execution packet; do not execute robustness checks until that packet is
   complete and separately reviewed.
+
+### POST-27 Pre-Registered Robustness Execution Packet
+
+- Goal: pre-register ML v2 fixed-spec robustness diagnostics without executing
+  them.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_pre_registered_robustness_execution_packet.csv`
+  and `.md`.
+- Completion conditions: records coverage threshold fields, split manifest
+  rules, six-formula hash lock, label-balance warning thresholds,
+  joined-row PIT/embargo re-audit fields, all-results/no-selection reporting,
+  no-winner interpretation rule, cost/concentration/failure scope, final packet
+  status, and disabled safety fields. Packet must be complete as design but
+  keep `execution_allowed_now=False`.
+- Forbidden actions: no robustness execution, model training, validation rerun,
+  OOS rerun, candidate comparison rerun, model ranking for promotion, formula
+  ranking, formula generation, hyperparameter tuning, threshold tuning,
+  candidate creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms packet complete, execution blocked,
+  no-selection fields, and disabled safety fields.
+- Commit message: `Add ML v2 pre-registered robustness packet`.
+- Next checkpoint entry condition: create a separate execution approval gate
+  that either allows one bounded robustness run or keeps execution blocked.
