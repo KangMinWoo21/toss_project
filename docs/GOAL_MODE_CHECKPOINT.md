@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-04 Stage 1 tiny experiment execution gate
+Last updated: 2026-06-30 POST-05 post-CP15 completion packet
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,19 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-05 post-CP15 completion packet:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-05, and
+  `data/reports/ml_v2_post_cp15_completion_packet.csv` plus `.md` were added.
+  Final recommendation is `paper_only_complete_blocked_not_live_ready`. CP-01
+  through CP-15 are complete, POST-01 through POST-04 are complete, and the
+  remaining safe local post-CP15 loops are resolved as report-only, `BLOCK`,
+  `WARN`, or deferred later-stage evidence. ML v2 training, tiny experiment
+  execution, model selection, production readiness, broker work, and trading
+  remain blocked. No model training, formula evaluation, data fetch, API call,
+  SNS/news scrape, OOS rerun, candidate comparison rerun, candidate creation,
+  monthly plan regeneration, strategy parameter change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization was performed.
 - ML v2 POST-04 Stage 1 tiny experiment execution gate:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-04, and
   `data/reports/ml_v2_stage1_tiny_experiment_execution_gate.csv` and `.md`

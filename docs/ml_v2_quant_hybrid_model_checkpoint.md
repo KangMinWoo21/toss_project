@@ -338,3 +338,27 @@ earliest incomplete checkpoint again.
   `ALLOW_PAPER_ONLY_TINY_EXPERIMENT`, a future POST checkpoint may execute the
   bounded paper-only experiment; otherwise future work must resolve or defer
   the blockers before any experiment execution.
+
+### POST-05 Post-CP-15 Completion Packet
+
+- Goal: consolidate CP-01 through CP-15 and POST-01 through POST-04 into a
+  final post-CP-15 paper-only completion packet.
+- Deliverables:
+  `data/reports/ml_v2_post_cp15_completion_packet.csv` and `.md`.
+- Completion conditions: summarizes checkpoints, commits, blockers, gates,
+  feature coverage, PIT/leakage, trial ledger, Deflated Sharpe, cost,
+  concentration, failure analysis, overlay, and final recommendation. Final
+  recommendation must be one of `paper_only_complete_not_live_ready`,
+  `paper_only_complete_blocked_not_live_ready`, or
+  `paper_only_incomplete_blocked`.
+- Forbidden actions: no model training, formula evaluation, data fetch, API
+  call, SNS/news scrape, OOS rerun, candidate comparison rerun, candidate
+  creation, monthly plan regeneration, strategy change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization.
+- Checks: schema/content check confirms packet coverage, final recommendation
+  vocabulary, source references, blocked/deferred handling, and safety fields.
+- Commit message: `Add ML v2 post-CP15 completion packet`.
+- Next checkpoint entry condition: no next checkpoint unless a user explicitly
+  authorizes a new research goal; stop with paper-only blocked-not-live-ready
+  status.
