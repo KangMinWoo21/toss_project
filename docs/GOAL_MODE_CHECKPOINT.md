@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-15 Final ML v2 research packet
+Last updated: 2026-06-30 Formulaic feature materialization plan
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,24 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- Formulaic alpha feature materialization plan:
+  `data/reports/formulaic_alpha_feature_materialization_plan.csv` and `.md`
+  were added as the first post-CP-15 blocker-resolution artifact. The plan
+  defines the future feature table contract, PIT fields, label-isolation
+  controls, missingness policy, operator versioning, and final `feature_hash`
+  requirements for the six CP-06 formula samples. It is design-only:
+  `feature_values_generated_now=False`, `evaluation_performed_now=False`,
+  `training_allowed_now=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. It does not unblock
+  CP-08/CP-09 yet; a future paper-only materialization implementation and audit
+  are still required. No feature values were generated, no formula was
+  evaluated, no model was trained, no data was fetched, no API was called, no
+  news/SNS was scraped, no OOS was rerun, no candidate comparison was rerun, no
+  candidate was created, no monthly plan was regenerated, no strategy parameter
+  was changed, no protected candidate was modified, no broker work occurred, no
+  production readiness changed, no push occurred, and no trading authorization
+  was performed. Production remains `BLOCK` and protected candidate remains
+  `PAPER_REVIEW`.
 - ML v2 CP-15 Final Research Packet:
   `data/reports/ml_v2_final_research_packet.csv` and `.md` were added as the
   final paper-only ML v2 packet consolidating CP-01 through CP-14. Final status
