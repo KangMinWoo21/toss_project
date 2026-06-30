@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-31 fixed-spec cost slippage concentration failure diagnostics
+Last updated: 2026-06-30 POST-32 fixed-spec hybrid risk overlay design
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,25 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-32 fixed-spec hybrid risk overlay design:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-32, and
+  `data/reports/ml_v2_fixed_spec_hybrid_risk_overlay_design.csv` plus `.md`
+  were added. The design uses existing local reports only and keeps macro,
+  disclosure/event, news, official SNS, community/SNS rejection, sentiment
+  model, internal blocker, and governance overlays disabled by default,
+  risk-control-only, and manual-review gated. It records
+  `default_enabled=False`, `risk_control_only=True`,
+  `fetch_allowed_now=False`, `api_call_allowed_now=False`,
+  `news_or_sns_scrape_allowed_now=False`, `llm_scoring_allowed_now=False`,
+  `training_allowed_now=False`, `feature_merge_allowed_now=False`,
+  `candidate_decision_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`,
+  `trading_allowed=False`, and `production_effect=none`. No external fetch,
+  API call, news/SNS scrape, LLM scoring, sentiment scoring, external feature
+  merge, model training, validation rerun, OOS rerun, candidate comparison
+  rerun, order generation, strategy change, protected candidate change, broker
+  work, production readiness change, push, or trading authorization was
+  performed.
 - ML v2 POST-31 fixed-spec cost/slippage/concentration/failure diagnostics:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-31, and
   `data/reports/ml_v2_fixed_spec_cost_slippage_concentration_failure_diagnostics.csv`

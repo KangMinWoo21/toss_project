@@ -975,3 +975,30 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 fixed-spec risk diagnostics`.
 - Next checkpoint entry condition: design the ML v2 hybrid risk overlay with
   all overlays disabled by default and risk-control-only.
+
+### POST-32 Fixed-Spec Hybrid Risk Overlay Design
+
+- Goal: design the fixed-spec ML v2 hybrid risk overlay after POST-31, with all
+  overlays disabled by default and risk-control-only.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_hybrid_risk_overlay_design.csv` and `.md`.
+- Completion conditions: documents macro/regime, disclosure/event, news,
+  official SNS, community/SNS rejection, sentiment model, internal blocker, and
+  governance overlays; keeps every overlay `default_enabled=False`,
+  `risk_control_only=True`, manual-review gated, and unable to authorize
+  trading, candidate decisions, strategy changes, broker submission, or order
+  execution.
+- Forbidden actions: no external fetch, API call, news/SNS scrape, LLM scoring,
+  sentiment scoring, external feature merge, model training, validation rerun,
+  OOS rerun, candidate comparison rerun, model ranking for promotion, formula
+  ranking, formula generation, hyperparameter tuning, threshold tuning,
+  class-weight tuning, candidate creation, order generation, strategy change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization.
+- Checks: schema/content check confirms overlay groups exist, all overlays are
+  disabled by default and risk-control-only, no current external/scoring/trading
+  actions are allowed, next safe action is final packet assembly, and disabled
+  safety fields remain disabled.
+- Commit message: `Design ML v2 fixed-spec hybrid overlay`.
+- Next checkpoint entry condition: assemble the final ML v2 paper-only research
+  packet.
