@@ -31,7 +31,10 @@ from .monthly.paper_orders import annotate_order_liquidity as _annotate_order_li
 from .monthly.paper_orders import average_daily_trading_value
 from .monthly.paper_orders import mark_order_plan_execution
 from .monthly.paper_orders import normalize_liquidity_status as _normalize_liquidity_status
+from .monthly.validation import candidate_decision_required_for_report_paths
 from .monthly.validation import numeric_delta as _numeric_delta
+from .monthly.validation import risk_exit_code
+from .monthly.validation import risk_status
 from .monthly.validation import scenario_delta_classification as _scenario_delta_classification
 from .monthly.validation import scenario_delta_diagnostic as _scenario_delta_diagnostic
 
@@ -2274,16 +2277,6 @@ def build_order_plan(
     return sorted(orders, key=lambda order: 0 if order.action == "SELL" else 1)
 
 
-def candidate_decision_required_for_report_paths(paths: list[str | Path | None]) -> bool:
-    for raw_path in paths:
-        if raw_path is None:
-            continue
-        name = Path(str(raw_path)).name.lower()
-        if "candidate" in name:
-            return True
-    return False
-
-
 def validate_candidate_decision_risk(
     rows: list[dict[str, Any]] | None,
     *,
@@ -2536,19 +2529,6 @@ def validate_pre_trade_risk(
         add("liquidity", "PASS", f"max_adv_participation_rate={max_participation:.4f}")
 
     return checks
-
-
-def risk_status(checks: list[RiskCheck]) -> str:
-    statuses = {check.status for check in checks}
-    if "BLOCK" in statuses:
-        return "BLOCK"
-    if "WARN" in statuses:
-        return "WARN"
-    return "PASS"
-
-
-def risk_exit_code(status: str) -> int:
-    return 2 if status == "BLOCK" else 0
 
 
 def validate_report_freshness(

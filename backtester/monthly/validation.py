@@ -1,7 +1,34 @@
+from pathlib import Path
+from typing import Any
+
+
+def candidate_decision_required_for_report_paths(paths: list[str | Path | None]) -> bool:
+    for raw_path in paths:
+        if raw_path is None:
+            continue
+        name = Path(str(raw_path)).name.lower()
+        if "candidate" in name:
+            return True
+    return False
+
+
 def numeric_delta(candidate_value: float | None, baseline_value: float | None) -> float | None:
     if candidate_value is None or baseline_value is None:
         return None
     return candidate_value - baseline_value
+
+
+def risk_status(checks: list[Any]) -> str:
+    statuses = {check.status for check in checks}
+    if "BLOCK" in statuses:
+        return "BLOCK"
+    if "WARN" in statuses:
+        return "WARN"
+    return "PASS"
+
+
+def risk_exit_code(status: str) -> int:
+    return 2 if status == "BLOCK" else 0
 
 
 def scenario_delta_classification(baseline_failed: bool, candidate_failed: bool) -> str:
