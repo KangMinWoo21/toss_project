@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 *.zip
+.tmp/
 data/toss/
 data/real/
 data/scalper/
