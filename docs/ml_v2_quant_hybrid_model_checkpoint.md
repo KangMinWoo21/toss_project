@@ -869,3 +869,30 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 pre-registered robustness packet`.
 - Next checkpoint entry condition: create a separate execution approval gate
   that either allows one bounded robustness run or keeps execution blocked.
+
+### POST-28 Fixed-Spec Robustness Approval Gate
+
+- Goal: decide whether the POST-27 pre-registered robustness packet allows one
+  bounded paper-only robustness diagnostic in a future checkpoint.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_robustness_approval_gate.csv` and `.md`.
+- Completion conditions: returns exactly one of
+  `ALLOW_ONE_BOUNDED_PAPER_ROBUSTNESS_RUN`, `BLOCK`, or
+  `deferred_later_stage`; documents source evidence, warnings, allowed next
+  action, blocked actions, and all no-production safety fields. If allowed,
+  approval is limited to exactly one future bounded diagnostic and does not
+  authorize selection, tuning, promotion, production readiness, broker
+  submission, or order execution.
+- Forbidden actions: no robustness execution, model training, validation rerun,
+  OOS rerun, candidate comparison rerun, model ranking for promotion, formula
+  ranking, formula generation, hyperparameter tuning, threshold tuning,
+  candidate creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms exact gate result vocabulary, source
+  references, bounded-next-run approval, no current execution, no-selection
+  fields, and disabled safety fields.
+- Commit message: `Add ML v2 robustness approval gate`.
+- Next checkpoint entry condition: if gate result is
+  `ALLOW_ONE_BOUNDED_PAPER_ROBUSTNESS_RUN`, run exactly one bounded paper-only
+  robustness diagnostic; otherwise continue only with report-only blocker
+  analysis.

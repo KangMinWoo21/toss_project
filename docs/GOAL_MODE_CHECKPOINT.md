@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-27 pre-registered robustness execution packet
+Last updated: 2026-06-30 POST-28 fixed-spec robustness approval gate
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,19 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-28 fixed-spec robustness approval gate:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-28, and
+  `data/reports/ml_v2_fixed_spec_robustness_approval_gate.csv` plus `.md` were
+  added. Gate decision is `ALLOW_ONE_BOUNDED_PAPER_ROBUSTNESS_RUN` for exactly
+  one future bounded paper-only robustness diagnostic using the fixed ML v2
+  specification and POST-27 packet. This checkpoint performed no robustness
+  execution, model training, validation rerun, OOS rerun, candidate comparison
+  rerun, model ranking for promotion, formula ranking, formula generation,
+  hyperparameter tuning, threshold tuning, candidate creation, strategy change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization. Safety remains production `BLOCK`, protected
+  candidate `PAPER_REVIEW`, `trading_allowed=False`, and
+  `production_effect=none`.
 - ML v2 POST-27 pre-registered robustness execution packet:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-27, and
   `data/reports/ml_v2_fixed_spec_pre_registered_robustness_execution_packet.csv`
