@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-11 trial lineage resolution audit
+Last updated: 2026-06-30 POST-12 effective trial count estimate
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,18 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-12 effective trial count estimate:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-12, and
+  `data/reports/ml_v2_effective_trial_count_estimate.csv` plus `.md` were
+  added. Result is `BLOCK_NO_ESTIMATE`: exact raw-count evidence remains
+  lower-bound only at 41, lineage resolved groups are 0, and unresolved groups
+  are 23. Effective trial count remains `not_available`; Deflated Sharpe, ML v2
+  training, and ML v2 validation remain blocked. No model training, validation
+  run, formula evaluation, effective-trial-count calculation, Deflated Sharpe
+  calculation, performance metric computation, data fetch, API call, OOS rerun,
+  candidate comparison rerun, candidate creation, strategy change, protected
+  candidate change, broker work, production readiness change, push, or trading
+  authorization was performed.
 - ML v2 POST-11 trial lineage resolution audit:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-11, and
   `data/reports/ml_v2_trial_lineage_resolution_audit.csv` plus `.md` were

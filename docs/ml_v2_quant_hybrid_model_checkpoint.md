@@ -493,3 +493,24 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 trial lineage resolution audit`.
 - Next checkpoint entry condition: if lineage remains unresolved, create a
   BLOCK effective-trial-count estimate report or require manual review.
+
+### POST-12 Effective Trial Count Estimate
+
+- Goal: determine whether effective trial count can be estimated from the exact
+  raw-count inventory and lineage audit.
+- Deliverables:
+  `data/reports/ml_v2_effective_trial_count_estimate.csv` and `.md`.
+- Completion conditions: either records a conservative effective-trial-count
+  estimate with supporting evidence or records `BLOCK_NO_ESTIMATE` with missing
+  prerequisites, preserving all safety fields.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  Deflated Sharpe calculation, Sharpe/PnL/ranking computation, data fetch, API
+  call, OOS rerun, candidate comparison rerun, candidate creation, strategy
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization.
+- Checks: schema/content check confirms estimate/block status, no performance
+  metric computation, blocked training/validation status, and no-production
+  safety fields.
+- Commit message: `Add ML v2 effective trial count estimate`.
+- Next checkpoint entry condition: run Deflated Sharpe readiness gate using the
+  effective-trial-count status.
