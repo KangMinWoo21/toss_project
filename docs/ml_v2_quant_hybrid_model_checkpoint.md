@@ -603,3 +603,23 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: create a training-readiness refresh after
   manual lineage review; it should remain `BLOCK` unless enough lineage is
   resolved.
+
+### POST-17 Training Readiness After Manual Lineage Review
+
+- Goal: refresh ML v2 training readiness after POST-16 manual lineage review.
+- Deliverables:
+  `data/reports/ml_v2_training_readiness_after_manual_lineage.csv` and `.md`.
+- Completion conditions: records manual lineage counts, selection-trial
+  permission, effective-count status, Deflated Sharpe status, training and
+  validation gate result, and no-production safety fields.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  effective-trial-count calculation, Deflated Sharpe calculation, performance
+  metric computation, data fetch, API call, OOS rerun, candidate comparison
+  rerun, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms gate result, manual-lineage counts,
+  blocked training/validation status, and no-production safety fields.
+- Commit message: `Refresh ML v2 training readiness after manual lineage`.
+- Next checkpoint entry condition: stop unless human source-lineage decisions
+  are provided or another paper-only blocker-resolution goal is explicitly
+  requested.

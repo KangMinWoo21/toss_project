@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-16 manual lineage review
+Last updated: 2026-06-30 POST-17 training readiness after manual lineage
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,19 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-17 training readiness after manual lineage:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-17, and
+  `data/reports/ml_v2_training_readiness_after_manual_lineage.csv` plus `.md`
+  were added. Gate result remains `BLOCK`: manual lineage review leaves 19
+  groups `manual_review_required`, 3 groups `unresolved`, and 1 group resolved
+  only as non-selection overlay. No independent model-selection trial is
+  allowed, effective trial count remains unavailable, and Deflated Sharpe
+  readiness remains blocked. No model training, validation run, formula
+  evaluation, effective-trial-count calculation, Deflated Sharpe calculation,
+  performance metric computation, data fetch, API call, OOS rerun, candidate
+  comparison rerun, candidate creation, strategy change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization was performed.
 - ML v2 POST-16 manual lineage review:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-16, and
   `data/reports/ml_v2_manual_lineage_review.csv` plus `.md` were added. The
