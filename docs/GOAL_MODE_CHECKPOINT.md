@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-02 Stage 1 experiment gate
+Last updated: 2026-06-30 POST-03 Stage 1 tiny experiment protocol
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,20 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-03 Stage 1 tiny experiment protocol:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-03, and
+  `data/reports/ml_v2_stage1_tiny_experiment_protocol.csv` and `.md` were
+  added. The protocol is design-only and bounded to the existing Stage 1
+  feature table, existing six CP-06 formulas, 50 symbols, and 24 feature dates.
+  It preserves `training_allowed_now=False`,
+  `formula_evaluation_allowed_now=False`, `dataset_merge_allowed_now=False`,
+  `candidate_creation=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. No model training,
+  formula evaluation, dataset merge, OOS rerun, candidate comparison rerun,
+  candidate creation, monthly plan regeneration, strategy parameter change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization was performed. Production remains `BLOCK` and
+  protected candidate remains `PAPER_REVIEW`.
 - ML v2 POST-02 Stage 1 paper-only experiment gate:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-02, and
   `data/reports/ml_v2_stage1_paper_experiment_gate.csv` and `.md` were added.

@@ -297,3 +297,21 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: if gate result is
   `ALLOW_PAPER_ONLY_EXPERIMENT`, a future POST checkpoint may design the tiny
   experiment protocol; otherwise future work must address blockers first.
+
+### POST-03 Stage 1 Tiny Experiment Protocol Design
+
+- Goal: design the tiny paper-only experiment protocol allowed by POST-02
+  without executing training or evaluation.
+- Deliverables:
+  `data/reports/ml_v2_stage1_tiny_experiment_protocol.csv` and `.md`.
+- Completion conditions: defines input scope, split placeholders, allowed
+  outputs, disallowed metrics, failure handling, and safety fields.
+- Forbidden actions: no model training, formula evaluation, dataset merge for
+  training, candidate creation, OOS rerun, candidate comparison rerun, strategy
+  change, protected candidate change, broker work, or production readiness
+  change.
+- Checks: schema/content check confirms protocol boundaries, safety fields, and
+  no training/evaluation authorization.
+- Commit message: `Add ML v2 stage 1 tiny experiment protocol`.
+- Next checkpoint entry condition: protocol design exists; a future POST
+  checkpoint may create a report-only experiment execution gate.
