@@ -948,3 +948,30 @@ earliest incomplete checkpoint again.
 - Commit message: `Analyze ML v2 robustness without winner`.
 - Next checkpoint entry condition: add cost, slippage, concentration, and
   failure diagnostics for the fixed-spec ML v2 paper-only research packet.
+
+### POST-31 Fixed-Spec Cost / Slippage / Concentration / Failure Diagnostics
+
+- Goal: add fixed-spec ML v2 cost, slippage, concentration, and failure
+  diagnostics using existing local reports only.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_cost_slippage_concentration_failure_diagnostics.csv`
+  and `.md`.
+- Completion conditions: documents cost realism blockers, slippage context,
+  turnover missing evidence, sample concentration, missing return-contribution
+  artifacts, label/failure warnings, overfit context, failure taxonomy context,
+  final paper-only blocked-not-live-ready status, and all no-production safety
+  fields.
+- Forbidden actions: no model training, validation rerun, OOS rerun, candidate
+  comparison rerun, model ranking for promotion, formula ranking, formula
+  generation, hyperparameter tuning, threshold tuning, class-weight tuning,
+  candidate creation, order generation, strategy change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization.
+- Checks: schema/content check confirms cost/slippage/concentration/failure
+  groups exist, missing-evidence fields are explicit, no winner or candidate
+  decision is declared, no current reruns/training/order generation occurred,
+  next safe action is overlay design, and disabled safety fields remain
+  disabled.
+- Commit message: `Add ML v2 fixed-spec risk diagnostics`.
+- Next checkpoint entry condition: design the ML v2 hybrid risk overlay with
+  all overlays disabled by default and risk-control-only.

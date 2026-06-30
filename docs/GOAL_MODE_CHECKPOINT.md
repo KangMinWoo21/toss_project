@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-30 fixed-spec robustness no-winner analysis
+Last updated: 2026-06-30 POST-31 fixed-spec cost slippage concentration failure diagnostics
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,26 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-31 fixed-spec cost/slippage/concentration/failure diagnostics:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-31, and
+  `data/reports/ml_v2_fixed_spec_cost_slippage_concentration_failure_diagnostics.csv`
+  plus `.md` were added. The diagnostics use existing local reports only and
+  record that ML v2 fixed-spec cost realism and turnover remain blocked because
+  no trades, weights, fills, order rows, or rebalance path exist. Existing
+  slippage reports are context only, not ML v2 estimates. Concentration remains
+  a warning because the bounded diagnostic covers 98 joined rows, 5 symbols,
+  and 23 date groups, while ML v2 return-contribution artifacts are missing.
+  Failure diagnostics carry forward label-balance warnings, unresolved overfit
+  context, and ML failure taxonomy as context only. Final status is
+  `WARN_BLOCKED_NOT_LIVE_READY`; `model_winner_declared=False`,
+  `candidate_decision_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`,
+  `trading_allowed=False`, and `production_effect=none`. No model training,
+  validation rerun, OOS rerun, candidate comparison rerun, formula ranking,
+  hyperparameter tuning, threshold tuning, class-weight tuning, candidate
+  creation, order generation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization was
+  performed.
 - ML v2 POST-30 fixed-spec robustness no-winner analysis:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-30, and
   `data/reports/ml_v2_fixed_spec_robustness_no_winner_analysis.csv` plus `.md`
