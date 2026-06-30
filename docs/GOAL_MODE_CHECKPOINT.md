@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-10 ML v2 blocked training report
+Last updated: 2026-06-30 CP-11 ML v2 blocked validation report
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,19 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-11 Validation Report:
+  `data/reports/ml_v2_validation_report.csv` and `.md` were added as a blocked
+  paper-only validation report because CP-10 did not train an ML v2 model.
+  `model_available=False`, `validation_status=BLOCK_NO_MODEL`,
+  `oos_rerun_performed=False`, `candidate_promotion=False`,
+  `order_output=False`, `broker_submission=False`, `trading_allowed=False`,
+  and `production_effect=none`. No validation metrics, benchmark comparison,
+  shadow score, order output, OOS rerun, data fetch, API call, news/SNS scrape,
+  candidate comparison rerun, candidate creation, monthly plan regeneration,
+  strategy parameter change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization was performed.
+  Production remains `BLOCK` and protected candidate remains `PAPER_REVIEW`.
+  Next ML v2 checkpoint: CP-12 ML v2 Cost / Concentration / Failure Analysis.
 - ML v2 CP-10 Paper-Only Training Report:
   `data/reports/ml_v2_training_report.csv` and `.md` were added as a blocked
   paper-only training report because CP-09 returned `gate_result=BLOCK`.
