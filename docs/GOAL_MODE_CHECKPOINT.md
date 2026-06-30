@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-08 trial dependency group manifest
+Last updated: 2026-06-30 POST-09 training readiness after trial manifest
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,18 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-09 training readiness after trial manifest:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-09, and
+  `data/reports/ml_v2_training_readiness_after_trial_manifest.csv` plus `.md`
+  were added. The refreshed gate remains `BLOCK`: POST-06 and POST-08 improve
+  blocker visibility, but raw trial count remains lower-bound only, effective
+  trial count is `not_available`, all dependency groups retain incomplete
+  lineage warnings, Deflated Sharpe inputs are missing, tiny experiment
+  execution remains blocked, and no ML v2 model is available for validation.
+  No model training, validation run, formula evaluation, performance metric
+  computation, OOS rerun, candidate comparison rerun, candidate creation,
+  strategy change, protected candidate change, broker work, production
+  readiness change, push, or trading authorization was performed.
 - ML v2 POST-08 trial dependency group manifest:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-08, and
   `data/reports/ml_v2_trial_dependency_group_manifest.csv` plus `.md` were

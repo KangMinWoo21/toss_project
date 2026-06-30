@@ -427,3 +427,24 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 trial dependency group manifest`.
 - Next checkpoint entry condition: manifest exists; a future checkpoint may
   produce a blocked training-readiness refresh or an exact raw-count inventory.
+
+### POST-09 Training Readiness Refresh After Trial Manifest
+
+- Goal: refresh the ML v2 training-readiness gate using POST-06 and POST-08
+  trial-count evidence, without training or validating ML v2.
+- Deliverables:
+  `data/reports/ml_v2_training_readiness_after_trial_manifest.csv` and `.md`.
+- Completion conditions: states whether training is allowed, references the
+  blocker audit and dependency manifest, preserves safety fields, and documents
+  the next safe blocker-resolution action.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  performance metric computation, data fetch, API call, OOS rerun, candidate
+  comparison rerun, candidate creation, strategy change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization.
+- Checks: schema/content check confirms gate vocabulary, source references,
+  blocked training status, and no-production safety fields.
+- Commit message: `Refresh ML v2 training readiness after trial manifest`.
+- Next checkpoint entry condition: if still `BLOCK`, stop unless the user
+  explicitly asks for exact raw-count inventory or another paper-only blocker
+  analysis.
