@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 Formulaic feature materialized sample
+Last updated: 2026-06-30 ML v2 readiness refresh after feature sample
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,23 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 readiness refresh after formulaic feature sample:
+  `data/reports/ml_v2_formulaic_alpha_merge_readiness_refresh.csv` and `.md`,
+  plus `data/reports/ml_v2_training_readiness_gate_refresh.csv` and `.md`,
+  were added as paper-only readiness refresh reports after the 30-row
+  materialized feature sample. Merge readiness improved from no materialized
+  values to audited sample evidence, but remains
+  `merge_readiness=BLOCK_PARTIAL_SAMPLE_ONLY` because coverage is limited to 5
+  symbols and one feature date. Training readiness remains
+  `gate_result=BLOCK`, `training_allowed_now=False`,
+  `paper_only_training_allowed_next=False`, `model_training_performed=False`,
+  `candidate_promotion=False`, `trading_allowed=False`, and
+  `production_effect=none`. No dataset merge, model training, formula
+  evaluation, candidate creation, OOS rerun, candidate comparison rerun,
+  monthly plan regeneration, strategy parameter change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization was performed. Production remains `BLOCK` and protected
+  candidate remains `PAPER_REVIEW`.
 - Formulaic alpha materialized feature sample and audit refresh:
   `data/reports/formulaic_alpha_materialized_feature_sample.csv` and `.md`,
   plus `data/reports/formulaic_alpha_feature_audit_refresh.csv` and `.md`,
