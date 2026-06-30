@@ -717,3 +717,33 @@ earliest incomplete checkpoint again.
   training/validation checkpoint using the approved protocol; stop if any
   implementation step would require selection, tuning, production output, OOS
   rerun, candidate comparison, data fetch, or broker/order work.
+
+### POST-22 Fixed-Spec Paper-Only Training And Validation
+
+- Goal: run exactly one fixed-spec ML v2 paper-only training/validation
+  checkpoint using the POST-21 protocol and readiness gate.
+- Deliverables:
+  `backtester/ml_v2_fixed_spec_training.py`,
+  `tests/test_ml_v2_fixed_spec_training.py`,
+  `data/reports/ml_v2_fixed_spec_paper_training_report.csv`,
+  `data/reports/ml_v2_fixed_spec_paper_validation_report.csv`, and
+  `data/reports/ml_v2_fixed_spec_paper_training_report.md`.
+- Completion conditions: uses only existing local Stage 1 formulaic OHLCV
+  features and existing local baseline labels; trains one
+  `logistic_regression_sgd_fixed_v2` model; uses chronological date-group
+  validation with one embargo date group; writes paper-only training and
+  validation diagnostics; writes no model artifact; records no formula
+  selection, no model selection, no hyperparameter sweep, no candidate
+  creation, no candidate promotion, no broker submission, no order execution,
+  `trading_allowed=False`, and `production_effect=none`.
+- Forbidden actions: no additional model family, hyperparameter tuning,
+  formula ranking, formula generation, candidate creation, production artifact,
+  data fetch, API call, news/SNS scrape, OOS rerun, candidate comparison rerun,
+  strategy change, protected candidate change, broker work, production
+  readiness change, push, or trading authorization.
+- Checks: targeted unit test, schema/content check for generated reports,
+  `python -m compileall -q backtester`, and git status summary.
+- Commit message: `Run ML v2 fixed-spec paper training`.
+- Next checkpoint entry condition: compare/report ML v2 fixed-spec diagnostics
+  against existing local ML baseline/v1 reports only if done as paper-only
+  analysis with no candidate decision or production effect.

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-21 fixed-spec no-selection training protocol
+Last updated: 2026-06-30 POST-22 fixed-spec paper-only training
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,24 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-22 fixed-spec paper-only training and validation:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-22;
+  `backtester/ml_v2_fixed_spec_training.py` and
+  `tests/test_ml_v2_fixed_spec_training.py` were added; and
+  `data/reports/ml_v2_fixed_spec_paper_training_report.csv`,
+  `data/reports/ml_v2_fixed_spec_paper_validation_report.csv`, and
+  `data/reports/ml_v2_fixed_spec_paper_training_report.md` were generated.
+  One fixed `logistic_regression_sgd_fixed_v2` model was trained and validated
+  using existing local Stage 1 formulaic OHLCV features and existing local
+  baseline labels only. The run records `formula_selection_used=False`,
+  `model_selection_used=False`, `hyperparameter_sweep_used=False`,
+  `candidate_creation=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, `trading_allowed=False`,
+  and `production_effect=none`. No additional model family, hyperparameter
+  tuning, formula ranking, formula generation, candidate creation, production
+  artifact, data fetch, API call, news/SNS scrape, OOS rerun, candidate
+  comparison rerun, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization was performed.
 - ML v2 POST-21 fixed-spec no-selection training protocol and gates:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-21, and
   `data/reports/ml_v2_fixed_spec_training_protocol.csv` plus `.md`,

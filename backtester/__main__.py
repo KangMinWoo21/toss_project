@@ -96,6 +96,10 @@ from .ml_model_v1_experiment import (
     build_ml_model_v1_experiment_reports,
     save_ml_model_v1_experiment_reports,
 )
+from .ml_v2_fixed_spec_training import (
+    build_ml_v2_fixed_spec_training_reports,
+    save_ml_v2_fixed_spec_training_reports,
+)
 from .ml_shadow_scoring import (
     build_ml_shadow_scoring_report,
     save_ml_shadow_scoring_report,
@@ -2374,6 +2378,35 @@ def main() -> int:
         default="data/reports/ml_model_v1_risk_report.md",
     )
 
+    ml_v2_fixed_spec_parser = subparsers.add_parser(
+        "ml-v2-fixed-spec-training",
+        help="Run one paper-only fixed-spec ML v2 training and validation report",
+    )
+    ml_v2_fixed_spec_parser.add_argument(
+        "--feature-csv",
+        default="data/reports/formulaic_alpha_broader_materialized_feature_stage1.csv",
+    )
+    ml_v2_fixed_spec_parser.add_argument(
+        "--label-csv",
+        default="data/reports/ml_baseline_feature_label_sample.csv",
+    )
+    ml_v2_fixed_spec_parser.add_argument(
+        "--readiness-csv",
+        default="data/reports/ml_v2_fixed_spec_training_readiness_gate.csv",
+    )
+    ml_v2_fixed_spec_parser.add_argument(
+        "--training-output",
+        default="data/reports/ml_v2_fixed_spec_paper_training_report.csv",
+    )
+    ml_v2_fixed_spec_parser.add_argument(
+        "--validation-output",
+        default="data/reports/ml_v2_fixed_spec_paper_validation_report.csv",
+    )
+    ml_v2_fixed_spec_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_v2_fixed_spec_paper_training_report.md",
+    )
+
     ml_shadow_parser = subparsers.add_parser(
         "ml-shadow-scoring",
         help="Write paper-only ML shadow scoring report with no order output",
@@ -3851,6 +3884,33 @@ def main() -> int:
         print(f"model_v1_training_report  {args.training_output}")
         print(f"model_v1_validation_report  {args.validation_output}")
         print(f"model_v1_risk_report  {args.risk_markdown_output}")
+        return 0
+
+    if args.command == "ml-v2-fixed-spec-training":
+        reports = build_ml_v2_fixed_spec_training_reports(
+            feature_csv=args.feature_csv,
+            label_csv=args.label_csv,
+            readiness_csv=args.readiness_csv,
+        )
+        save_ml_v2_fixed_spec_training_reports(
+            reports,
+            args.training_output,
+            args.validation_output,
+            args.markdown_output,
+        )
+        summary = next(row for row in reports.training_rows if row["metric"] == "summary")
+        validation_summary = next(row for row in reports.validation_rows if row["metric"] == "summary")
+        print(f"ml_v2_fixed_spec_status  {summary['status']}")
+        print(f"ml_v2_fixed_spec_validation_status  {validation_summary['status']}")
+        print("formula_selection_used  False")
+        print("model_selection_used  False")
+        print("hyperparameter_sweep_used  False")
+        print("candidate_creation  False")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print(f"ml_v2_fixed_spec_training_report  {args.training_output}")
+        print(f"ml_v2_fixed_spec_validation_report  {args.validation_output}")
+        print(f"ml_v2_fixed_spec_markdown_report  {args.markdown_output}")
         return 0
 
     if args.command == "ml-shadow-scoring":

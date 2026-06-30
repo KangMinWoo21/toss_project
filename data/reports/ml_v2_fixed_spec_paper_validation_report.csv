@@ -1,0 +1,15 @@
+metric,status,value,reason,source,post_cutoff_data_used_for_train,external_features_used,formula_selection_used,model_selection_used,hyperparameter_sweep_used,candidate_creation,candidate_promotion,broker_submission,order_execution,trading_allowed,production_effect,protected_candidate_unchanged
+summary,paper_only_ml_v2_fixed_spec_validated,paper_only_ml_v2_fixed_spec_validated,"Fixed-spec ML v2 validation is pre-cutoff, local-only, and paper-only.",derived,False,False,False,False,False,False,False,False,False,False,none,True
+split_policy,PASS,date_group_chronological_train_then_validation_with_purge_embargo_v1,Fixed split policy from POST-21; no random row split.,data/reports/ml_v2_fixed_spec_training_protocol.csv,False,False,False,False,False,False,False,False,False,False,none,True
+validation_accuracy,PASS,0.5500,Pre-cutoff validation diagnostic only; no OOS rerun.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+label_distribution_validation,PASS,positive=8;negative=12,Validation labels are pre-cutoff only.,data/reports/ml_baseline_feature_label_sample.csv,False,False,False,False,False,False,False,False,False,False,none,True
+formula_selection_used,PASS,False,All fixed feature hashes are used together; no formula ranking.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+model_selection_used,PASS,False,Only the fixed logistic SGD model is used.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+hyperparameter_sweep_used,PASS,False,No hyperparameter sweep or threshold tuning.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+oos_rerun,PASS,False,Validation is not an OOS rerun.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+candidate_comparison_rerun,PASS,False,No candidate comparison is run.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+candidate_promotion,PASS,False,No candidate promotion occurs.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+broker_submission,PASS,False,No broker submission.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+order_execution,PASS,False,No order execution.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+trading_allowed,PASS,False,Validation report only.,derived,False,False,False,False,False,False,False,False,False,False,none,True
+production_effect,PASS,none,No production effect.,derived,False,False,False,False,False,False,False,False,False,False,none,True
