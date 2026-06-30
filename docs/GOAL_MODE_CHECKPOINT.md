@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 Formulaic feature materialization plan
+Last updated: 2026-06-30 Formulaic feature materialized sample
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,24 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- Formulaic alpha materialized feature sample and audit refresh:
+  `data/reports/formulaic_alpha_materialized_feature_sample.csv` and `.md`,
+  plus `data/reports/formulaic_alpha_feature_audit_refresh.csv` and `.md`,
+  were added as a narrow paper-only implementation of the post-CP-15
+  materialization blocker. The sample materializes the six CP-06 formula
+  strings for 5 local symbols on `2026-06-18`, creating 30 feature rows, 6
+  final feature hashes, and 30 feature row hashes from existing local OHLCV
+  only. The audit refresh records PIT status `PASS`, label isolation `PASS`,
+  missing rows `0`, and
+  `audit_status=PASS_SAMPLE_ONLY_NOT_TRAINING_READY`. It remains sample-only:
+  `evaluation_performed=False`, `training_allowed_now=False`,
+  `merge_ready=False`, `candidate_promotion=False`, `trading_allowed=False`,
+  and `production_effect=none`. No model training, formula evaluation,
+  candidate scoring, OOS rerun, candidate comparison rerun, new trading
+  candidate creation, monthly plan regeneration, strategy parameter change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization was performed. Production remains `BLOCK` and
+  protected candidate remains `PAPER_REVIEW`.
 - Formulaic alpha feature materialization plan:
   `data/reports/formulaic_alpha_feature_materialization_plan.csv` and `.md`
   were added as the first post-CP-15 blocker-resolution artifact. The plan
