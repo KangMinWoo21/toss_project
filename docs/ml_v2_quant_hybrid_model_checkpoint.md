@@ -896,3 +896,30 @@ earliest incomplete checkpoint again.
   `ALLOW_ONE_BOUNDED_PAPER_ROBUSTNESS_RUN`, run exactly one bounded paper-only
   robustness diagnostic; otherwise continue only with report-only blocker
   analysis.
+
+### POST-29 Fixed-Spec Bounded Robustness Diagnostic
+
+- Goal: execute exactly one bounded paper-only robustness diagnostic allowed by
+  POST-28, using existing local reports and local CSV inputs only.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_bounded_robustness_diagnostic.csv` and `.md`.
+- Completion conditions: records POST-28 approval, source availability, joined
+  sample coverage, fixed six-formula hash lock, pre-registered split manifest
+  diagnostics, label-balance warnings, PIT/embargo re-audit status, no-winner
+  interpretation, and all no-production safety fields. The diagnostic may
+  report counts and warning flags but must not train a model, rerun validation,
+  rerun OOS, compare candidates, tune thresholds, select a model, or change
+  production readiness.
+- Forbidden actions: no model training, validation rerun, OOS rerun, candidate
+  comparison rerun, model ranking for promotion, formula ranking, formula
+  generation, hyperparameter tuning, threshold tuning, class-weight tuning,
+  candidate creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms one bounded diagnostic report exists,
+  POST-28 approval is cited, all pre-registered diagnostic groups are reported,
+  no winner is declared, no current training/validation/OOS/candidate
+  comparison rerun occurred, and disabled safety fields remain disabled.
+- Commit message: `Run ML v2 bounded robustness diagnostic`.
+- Next checkpoint entry condition: analyze robustness diagnostic results
+  without selecting a winner, tuning, promoting, or changing production
+  readiness.

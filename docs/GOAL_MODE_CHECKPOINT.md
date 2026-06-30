@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-28 fixed-spec robustness approval gate
+Last updated: 2026-06-30 POST-29 fixed-spec bounded robustness diagnostic
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,21 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-29 fixed-spec bounded robustness diagnostic:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-29, and
+  `data/reports/ml_v2_fixed_spec_bounded_robustness_diagnostic.csv` plus `.md`
+  were added. The diagnostic consumed the one bounded paper-only robustness
+  run allowed by POST-28 and used existing local reports/CSV inputs only. It
+  reports joined rows `98`, symbols `5`, date groups `20`, train rows `74`,
+  validation rows `20`, one embargo date group, fixed six-formula hash lock,
+  pre-registered split manifest label diagnostics, PIT/cutoff status, and
+  no-winner interpretation. It performed no model training, validation rerun,
+  OOS rerun, candidate comparison rerun, model ranking for promotion, formula
+  ranking, formula generation, hyperparameter tuning, threshold tuning,
+  class-weight tuning, candidate creation, strategy change, protected
+  candidate change, broker work, production readiness change, push, or trading
+  authorization. Safety remains production `BLOCK`, protected candidate
+  `PAPER_REVIEW`, `trading_allowed=False`, and `production_effect=none`.
 - ML v2 POST-28 fixed-spec robustness approval gate:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-28, and
   `data/reports/ml_v2_fixed_spec_robustness_approval_gate.csv` plus `.md` were
