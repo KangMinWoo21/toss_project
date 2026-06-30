@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML v2 Stage 1 readiness refresh
+Last updated: 2026-06-30 POST-01 Stage 1 experiment gate design
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,20 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-01 Stage 1 paper-only experiment gate design:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-01, and
+  `data/reports/ml_v2_stage1_paper_experiment_gate_design.csv` and `.md` were
+  added. The design defines future gate outcomes
+  `ALLOW_PAPER_ONLY_EXPERIMENT`, `BLOCK`, and `deferred_later_stage`, while
+  preserving `training_allowed_now=False`, `dataset_merge_allowed_now=False`,
+  `candidate_promotion=False`, `broker_submission=False`,
+  `order_execution=False`, `trading_allowed=False`, and
+  `production_effect=none`. No model training, formula evaluation, dataset
+  merge, OOS rerun, candidate comparison rerun, candidate creation, monthly
+  plan regeneration, strategy parameter change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization was
+  performed. Production remains `BLOCK` and protected candidate remains
+  `PAPER_REVIEW`.
 - ML v2 Stage 1 readiness refresh:
   `data/reports/ml_v2_formulaic_alpha_merge_readiness_stage1_refresh.csv` and
   `.md`, plus

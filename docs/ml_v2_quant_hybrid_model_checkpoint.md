@@ -258,3 +258,23 @@ earliest incomplete checkpoint again.
 - Commit message: `Add final ML v2 research packet`.
 - Next checkpoint entry condition: no next checkpoint; stop with paper-only
   final packet and `production_effect=none`.
+
+## Post-CP-15 Blocker-Resolution Checkpoints
+
+### POST-01 Stage 1 Paper-Only Experiment Gate Design
+
+- Goal: define the gate that decides whether the Stage 1 broader formulaic
+  feature table can support a future bounded paper-only experiment.
+- Deliverables:
+  `data/reports/ml_v2_stage1_paper_experiment_gate_design.csv` and `.md`.
+- Completion conditions: documents required inputs, allowable experiment
+  boundaries, required blocker checks, explicit `ALLOW_PAPER_ONLY_EXPERIMENT`
+  versus `BLOCK` outcomes, and no-production safety fields.
+- Forbidden actions: no model training, formula evaluation, dataset merge,
+  candidate creation, OOS rerun, candidate comparison rerun, strategy change,
+  protected candidate change, broker work, or production readiness change.
+- Checks: schema/content check confirms gate outcomes, safety fields, source
+  references, and blocked/deferred handling.
+- Commit message: `Add ML v2 stage 1 experiment gate design`.
+- Next checkpoint entry condition: gate design exists and a future POST
+  checkpoint can execute the gate as a report-only readiness decision.
