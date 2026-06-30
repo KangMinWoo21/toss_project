@@ -923,3 +923,28 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: analyze robustness diagnostic results
   without selecting a winner, tuning, promoting, or changing production
   readiness.
+
+### POST-30 Fixed-Spec Robustness No-Winner Analysis
+
+- Goal: analyze POST-29 bounded robustness diagnostics without selecting a
+  model winner, tuning, promotion, candidate decision, or production change.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_robustness_no_winner_analysis.csv` and `.md`.
+- Completion conditions: documents POST-29 coverage, feature-lock, split
+  manifest, label-balance warnings, PIT/cutoff status, existing overfit
+  context, non-comparable model context, allowed interpretations, blocked
+  interpretations, and all no-production safety fields. It must explicitly
+  keep `winner_declared=False`, `candidate_decision_allowed=False`,
+  `trading_allowed=False`, and `production_effect=none`.
+- Forbidden actions: no robustness rerun, model training, validation rerun,
+  OOS rerun, candidate comparison rerun, model ranking for promotion, formula
+  ranking, formula generation, hyperparameter tuning, threshold tuning,
+  class-weight tuning, candidate creation, strategy change, protected
+  candidate change, broker work, production readiness change, push, or trading
+  authorization.
+- Checks: schema/content check confirms no winner, no current reruns/training,
+  no candidate decision, warning treatment, blocked interpretations, next safe
+  action, and disabled safety fields.
+- Commit message: `Analyze ML v2 robustness without winner`.
+- Next checkpoint entry condition: add cost, slippage, concentration, and
+  failure diagnostics for the fixed-spec ML v2 paper-only research packet.

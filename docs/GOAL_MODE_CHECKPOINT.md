@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-29 fixed-spec bounded robustness diagnostic
+Last updated: 2026-06-30 POST-30 fixed-spec robustness no-winner analysis
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,24 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-30 fixed-spec robustness no-winner analysis:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-30, and
+  `data/reports/ml_v2_fixed_spec_robustness_no_winner_analysis.csv` plus `.md`
+  were added. The analysis uses existing local reports only and carries POST-29
+  robustness evidence forward without selecting a model winner. It records
+  bounded coverage, fixed six-formula hash lock, chronological and
+  pre-registered split diagnostics, rolling-origin and primary validation
+  label-balance warnings, PIT/cutoff pass status, unresolved ML v2 overfit
+  warning, and non-comparable baseline/v1/v2 context. It keeps
+  `winner_declared=False`, `candidate_decision_allowed=False`,
+  `candidate_promotion=False`, `broker_submission=False`,
+  `order_execution=False`, `trading_allowed=False`, and
+  `production_effect=none`. No robustness rerun, model training, validation
+  rerun, OOS rerun, candidate comparison rerun, model ranking for promotion,
+  formula ranking, formula generation, hyperparameter tuning, threshold
+  tuning, class-weight tuning, candidate creation, strategy change, protected
+  candidate change, broker work, production readiness change, push, or trading
+  authorization was performed.
 - ML v2 POST-29 fixed-spec bounded robustness diagnostic:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-29, and
   `data/reports/ml_v2_fixed_spec_bounded_robustness_diagnostic.csv` plus `.md`
