@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML observation backfill report
+Last updated: 2026-06-30 final ML research packet
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,20 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML model final research packet:
+  `data/reports/ml_model_research_packet.csv` and `.md`. Phase 14 is complete
+  as a paper-only final packet consolidating local Phase 1-13 artifacts:
+  `model_completion_status=paper_only_complete_not_live_ready`, data lineage,
+  baseline dataset/training/validation, feature importance/failure analysis,
+  external readiness, model v1, shadow scoring, observation status, leakage
+  checks, overfit/data-snooping risk, and final recommendation are documented.
+  OpenDART/news/sentiment/external features remain `not_ready` unless an
+  existing readiness report explicitly says otherwise. Production `BLOCK` is
+  retained, protected candidate is unchanged, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, `trading_allowed=False`,
+  and `production_effect=none`. No fetch, API call, OOS rerun, candidate
+  compare, new candidate, monthly plan regeneration, strategy change, broker
+  work, production readiness change, or trading authorization was performed.
 - ML model observation status report:
   `data/reports/ml_model_observation_status.csv` and `.md`. Phase 13 is
   complete using explicitly requested historical backfill from existing local

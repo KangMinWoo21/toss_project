@@ -38,8 +38,14 @@ Current status:
   historical backfill from existing local baseline feature/label rows:
   `observation_basis=historical_backfill`, `observation_months=101`,
   `sufficient_observation_months=True`, `post_cutoff_train_leakage=PASS`, and
-  `performance_stability=historical_backfill_stable`. Earliest incomplete phase
-  is Phase 14.
+  `performance_stability=historical_backfill_stable`.
+- Phase 14 final paper-only ML research packet is complete in
+  `data/reports/ml_model_research_packet.csv` and `.md`:
+  `model_completion_status=paper_only_complete_not_live_ready`,
+  `trading_allowed=False`, `production_effect=none`,
+  `candidate_promotion=False`, `broker_submission=False`,
+  `order_execution=False`, `production_readiness_change=False`, production
+  `BLOCK` retained, and protected candidate unchanged.
 - Financial features have only a limited PIT-audited sample and are not ready
   for training; news and sentiment features remain plan-only.
 - Deep learning is `not_ready`.
@@ -549,6 +555,19 @@ Completion conditions:
 - `trading_allowed=False`.
 - `production_effect=none`.
 - Production `BLOCK` is retained.
+- Completed 2026-06-30 in `data/reports/ml_model_research_packet.csv` and
+  `.md`. Actual result:
+  `model_completion_status=paper_only_complete_not_live_ready`, OpenDART
+  financial/news/sentiment/external features remain `not_ready` unless an
+  existing readiness report explicitly says ready, leakage checks `PASS`,
+  overfit/data-snooping risk `WARN`, final recommendation
+  `keep_paper_only_do_not_trade`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`,
+  `production_readiness_change=False`, `trading_allowed=False`,
+  `production_effect=none`, production `BLOCK` retained, and protected
+  candidate unchanged. No fetch, API call, OOS rerun, candidate compare, new
+  candidate, monthly plan regeneration, strategy change, broker work,
+  production readiness change, or trading authorization was performed.
 
 Forbidden in this phase:
 
@@ -562,7 +581,8 @@ Next phase entry condition:
 
 ## Completion Definition
 
-The roadmap is complete only when the paper-only ML research model has:
+The roadmap is complete as a paper-only research track when the paper-only ML
+research model has:
 
 - A PIT-safe feature/label dataset lineage.
 - A documented baseline training report.
@@ -577,4 +597,5 @@ train leakage, hidden API keys, protected candidate changes, or production
 effects.
 
 Completion never implies live trading readiness. The final state remains
-paper-only unless a separate explicitly approved process changes that.
+paper-only and not live-ready unless a separate explicitly approved process
+changes that.

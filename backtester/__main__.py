@@ -104,6 +104,10 @@ from .ml_model_observation_status import (
     build_ml_model_observation_status_report,
     save_ml_model_observation_status_report,
 )
+from .ml_model_research_packet import (
+    build_ml_model_research_packet,
+    save_ml_model_research_packet,
+)
 from .ml_external_feature_readiness_plan import (
     OVERALL_CONCLUSION,
     build_ml_external_feature_readiness_plan,
@@ -2425,6 +2429,75 @@ def main() -> int:
         default="data/reports/ml_model_observation_status.md",
     )
 
+    ml_research_packet_parser = subparsers.add_parser(
+        "ml-model-research-packet",
+        help="Write the final paper-only ML research packet without live-readiness changes",
+    )
+    ml_research_packet_parser.add_argument(
+        "--dataset-audit-csv",
+        default="data/reports/ml_baseline_feature_label_dataset_audit.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--baseline-training-csv",
+        default="data/reports/ml_baseline_model_training_report.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--baseline-validation-csv",
+        default="data/reports/ml_baseline_validation_report.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--feature-importance-csv",
+        default="data/reports/ml_feature_importance_report.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--failure-analysis-csv",
+        default="data/reports/ml_failure_analysis_report.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--financial-merge-audit-csv",
+        default="data/reports/ml_financial_feature_merge_audit.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--news-schema-csv",
+        default="data/reports/ml_news_event_schema_plan.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--sentiment-plan-csv",
+        default="data/reports/ml_sentiment_scoring_plan.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--external-readiness-csv",
+        default="data/reports/ml_external_feature_readiness_reaudit.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--model-v1-training-csv",
+        default="data/reports/ml_model_v1_training_report.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--model-v1-validation-csv",
+        default="data/reports/ml_model_v1_validation_report.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--shadow-scoring-csv",
+        default="data/reports/ml_shadow_scoring_report.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--observation-status-csv",
+        default="data/reports/ml_model_observation_status.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--production-readiness-csv",
+        default="data/reports/paper_operation_safety_status_index.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--output",
+        default="data/reports/ml_model_research_packet.csv",
+    )
+    ml_research_packet_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/ml_model_research_packet.md",
+    )
+
     ml_external_plan_parser = subparsers.add_parser(
         "ml-external-feature-readiness-plan",
         help="Write a report-only PIT-safe readiness plan for financial, news, sentiment, and SNS ML features",
@@ -3819,6 +3892,39 @@ def main() -> int:
         print("production_effect  none")
         print(f"observation_status_report  {args.output}")
         print(f"observation_status_markdown  {args.markdown_output}")
+        return 0
+
+    if args.command == "ml-model-research-packet":
+        rows = build_ml_model_research_packet(
+            dataset_audit_csv=args.dataset_audit_csv,
+            baseline_training_csv=args.baseline_training_csv,
+            baseline_validation_csv=args.baseline_validation_csv,
+            feature_importance_csv=args.feature_importance_csv,
+            failure_analysis_csv=args.failure_analysis_csv,
+            financial_merge_audit_csv=args.financial_merge_audit_csv,
+            news_schema_csv=args.news_schema_csv,
+            sentiment_plan_csv=args.sentiment_plan_csv,
+            external_readiness_csv=args.external_readiness_csv,
+            model_v1_training_csv=args.model_v1_training_csv,
+            model_v1_validation_csv=args.model_v1_validation_csv,
+            shadow_scoring_csv=args.shadow_scoring_csv,
+            observation_status_csv=args.observation_status_csv,
+            production_readiness_csv=args.production_readiness_csv,
+        )
+        save_ml_model_research_packet(rows, args.output, args.markdown_output)
+        summary = next(row for row in rows if row["section"] == "model_completion_status")
+        print(f"model_completion_status  {summary['value']}")
+        print("final_state  paper-only complete / not live-ready")
+        print("trading_allowed  False")
+        print("production_effect  none")
+        print("candidate_promotion  False")
+        print("broker_submission  False")
+        print("order_execution  False")
+        print("production_readiness_change  False")
+        print("production_block_retained  True")
+        print("protected_candidate_unchanged  True")
+        print(f"research_packet_report  {args.output}")
+        print(f"research_packet_markdown  {args.markdown_output}")
         return 0
 
     if args.command == "fetch-toss":
