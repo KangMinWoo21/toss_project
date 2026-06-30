@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-14 ML v2 hybrid overlay design
+Last updated: 2026-06-30 CP-15 Final ML v2 research packet
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,24 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-15 Final Research Packet:
+  `data/reports/ml_v2_final_research_packet.csv` and `.md` were added as the
+  final paper-only ML v2 packet consolidating CP-01 through CP-14. Final status
+  is `paper_only_complete_blocked_not_live_ready`,
+  `training_allowed_now=False`, `model_available=False`,
+  `shadow_scores_created=0`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, `trading_allowed=False`,
+  and `production_effect=none`. The packet recommends no training, trading,
+  promotion, demotion, or deployment until a future paper-only gate resolves
+  formulaic feature materialization, PIT, label-isolation, missingness,
+  `feature_hash`, effective-trial-count, OOS proof, and training-readiness
+  blockers. No model training, data fetch, API call, news/SNS scrape, OOS
+  rerun, candidate comparison rerun, new trading candidate creation, monthly
+  plan regeneration, strategy parameter change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization was
+  performed. Production remains `BLOCK` and protected candidate remains
+  `PAPER_REVIEW`. ML v2 checkpoint roadmap CP-01 through CP-15 is complete as
+  blocked paper-only research.
 - ML v2 CP-14 Hybrid Overlay Design:
   `data/reports/ml_v2_hybrid_overlay_design.csv` and `.md` were added as a
   paper-only disabled-by-default overlay design. Macro/regime, disclosure/event,
