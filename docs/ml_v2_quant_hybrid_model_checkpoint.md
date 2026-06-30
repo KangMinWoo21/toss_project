@@ -668,3 +668,23 @@ earliest incomplete checkpoint again.
 - Commit message: `Refresh ML v2 training readiness after recommended lineage`.
 - Next checkpoint entry condition: create a final blocked status packet or stop
   unless a new explicit research goal is provided.
+
+### POST-20 Final Blocked Status Packet
+
+- Goal: close the current ML v2 training/validation attempt with a final
+  blocked paper-only status packet.
+- Deliverables:
+  `data/reports/ml_v2_final_blocked_status_packet.csv` and `.md`.
+- Completion conditions: summarizes raw-count, lineage, effective-count,
+  Deflated Sharpe, training-gate, and safety evidence; confirms no training,
+  no validation, no model artifact, and next user decision.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  effective-trial-count calculation, Deflated Sharpe calculation, performance
+  metric computation, data fetch, API call, OOS rerun, candidate comparison
+  rerun, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms final status, blocked gates, no
+  training/validation, no-production safety fields, and next user decision.
+- Commit message: `Add ML v2 final blocked status packet`.
+- Next checkpoint entry condition: none for this goal; stop unless a new goal
+  or explicit lineage override is provided.

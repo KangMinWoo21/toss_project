@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-19 training readiness after recommended lineage
+Last updated: 2026-06-30 POST-20 final blocked status packet
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,18 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-20 final blocked status packet:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-20, and
+  `data/reports/ml_v2_final_blocked_status_packet.csv` plus `.md` were added.
+  Final status is `paper_only_training_validation_blocked`: exact raw count is
+  incomplete, recommended lineage decisions authorize 0 independent trials,
+  effective trial count is `not_available`, Deflated Sharpe readiness is
+  `BLOCK`, and ML v2 training/validation remain blocked. No model training,
+  validation run, formula evaluation, effective-trial-count calculation,
+  Deflated Sharpe calculation, performance metric computation, data fetch, API
+  call, OOS rerun, candidate comparison rerun, candidate creation, strategy
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization was performed.
 - ML v2 POST-19 training readiness after recommended lineage:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-19, and
   `data/reports/ml_v2_training_readiness_after_recommended_lineage.csv` plus
