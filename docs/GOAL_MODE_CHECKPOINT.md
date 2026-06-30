@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-14 training readiness gate reopen
+Last updated: 2026-06-30 POST-15 blocked training report after reopen
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,16 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-15 blocked training report after reopen:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-15, and
+  `data/reports/ml_v2_blocked_training_report_after_reopen.csv` plus `.md`
+  were added. Because POST-14 returned `BLOCK`, ML v2 training was not run, no
+  model artifact was created, no dataset merge was performed, and validation is
+  not allowed. No model training, validation run, formula evaluation,
+  performance metric computation, data fetch, API call, OOS rerun, candidate
+  comparison rerun, candidate creation, strategy change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization was performed.
 - ML v2 POST-14 training readiness gate reopen:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-14, and
   `data/reports/ml_v2_training_readiness_gate_reopen.csv` plus `.md` were

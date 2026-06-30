@@ -559,3 +559,23 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: if gate returns `ALLOW_PAPER_ONLY_TRAINING`,
   run ML v2 paper-only training; otherwise create a blocked training report and
   stop or continue only with safe blocker analysis.
+
+### POST-15 Blocked Training Report After Reopen
+
+- Goal: record that ML v2 training was not run because the reopened training
+  gate returned `BLOCK`.
+- Deliverables:
+  `data/reports/ml_v2_blocked_training_report_after_reopen.csv` and `.md`.
+- Completion conditions: records source gate result, blocked training status,
+  no model artifact, no dataset merge, no validation permission, and all
+  no-production safety fields.
+- Forbidden actions: no model training, validation run, dataset merge for
+  training, formula evaluation, performance metric computation, data fetch, API
+  call, OOS rerun, candidate comparison rerun, candidate creation, strategy
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization.
+- Checks: schema/content check confirms blocked status, no model artifact, no
+  validation permission, and no-production safety fields.
+- Commit message: `Add ML v2 blocked training report after reopen`.
+- Next checkpoint entry condition: stop unless the user explicitly requests
+  manual lineage review or another paper-only blocker-resolution goal.
