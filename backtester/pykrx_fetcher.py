@@ -439,6 +439,15 @@ def build_missing_ohlcv_fetch_plan(
         raise ValueError("max_batches must be greater than zero")
     if batch_timeout_seconds <= 0:
         raise ValueError("batch_timeout_seconds must be greater than zero")
+    for name, value in {
+        "universe_file": universe_file,
+        "data_dir": data_dir,
+        "targets_output": targets_output,
+        "report_dir": report_dir,
+        "start": start,
+        "end": end,
+    }.items():
+        _reject_shell_metacharacters(name, value)
 
     sorted_targets = sorted(
         target_rows,
@@ -490,6 +499,13 @@ def build_missing_ohlcv_fetch_plan(
             "risk_note": risk_note,
         }
     ]
+
+
+def _reject_shell_metacharacters(name: str, value: Path | str) -> None:
+    text = str(value)
+    unsafe = {'"', "'", "$", "&", "|", ";", "<", ">", "`", "\n", "\r"}
+    if any(character in text for character in unsafe):
+        raise ValueError(f"{name} contains unsafe shell metacharacters")
 
 
 def save_missing_ohlcv_fetch_plan(rows: list[dict[str, Any]], output_path: Path | str) -> int:

@@ -255,6 +255,22 @@ class MonthlyPaperOperationConsistencyAuditTest(unittest.TestCase):
 
             self.assertEqual("BLOCK", next(row for row in rows if row["check"] == "actionable_rows_zero")["status"])
 
+    def test_broker_submission_allowed_in_packet_blocks_even_when_summary_is_stale(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._write_valid_sources(root)
+            text = paths["review_packet_csv"].read_text(encoding="utf-8")
+            paths["review_packet_csv"].write_text(
+                text.replace("broker_submission=forbidden", "broker_submission=allowed"),
+                encoding="utf-8",
+            )
+
+            rows = build_monthly_paper_operation_consistency_audit(**paths)
+
+            check = next(row for row in rows if row["check"] == "broker_submission_forbidden")
+            self.assertEqual("BLOCK", check["status"])
+            self.assertIn("broker_submission=allowed", check["observed"])
+
     def test_trading_allowed_true_blocks_audit(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

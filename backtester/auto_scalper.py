@@ -1,6 +1,7 @@
 import time
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -11,10 +12,11 @@ from .toss import fetch_tick_snapshot
 KR_SESSIONS = ["regularMarket"]
 US_SESSIONS = ["dayMarket", "preMarket", "regularMarket", "afterMarket"]
 KST = ZoneInfo("Asia/Seoul")
+_SAFE_SYMBOL_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def parse_symbol_list(value: str) -> list[str]:
-    return [part.strip() for part in value.split(",") if part.strip()]
+    return [_validate_symbol(part.strip()) for part in value.split(",") if part.strip()]
 
 
 def is_market_open(calendar: dict[str, object], now: datetime, session_names: list[str]) -> bool:
@@ -68,6 +70,7 @@ def run_auto_scalper_once(
     required_date = now.date().isoformat()
     rows: list[tuple[str, str, int]] = []
     for symbol in symbols:
+        symbol = _validate_symbol(symbol)
         output_path = Path(output_dir) / f"{symbol}_{required_date}_paper_scalp.csv"
         saved = runner(symbol, output_path, required_date)
         rows.append((market, symbol, saved))
@@ -161,3 +164,9 @@ def _session_from_day(day: dict[str, object], session_name: str) -> object:
     if isinstance(integrated, dict):
         return integrated.get(session_name)
     return None
+
+
+def _validate_symbol(symbol: str) -> str:
+    if not _SAFE_SYMBOL_RE.fullmatch(symbol) or symbol in {".", ".."}:
+        raise ValueError(f"unsafe symbol for output path: {symbol}")
+    return symbol

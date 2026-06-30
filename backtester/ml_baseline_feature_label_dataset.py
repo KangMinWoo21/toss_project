@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from .csv_safety import neutralize_csv_formula_fields
 from .ml_data_readiness_audit import (
     FEATURE_CANDIDATES,
     _baseline_cutoff,
@@ -239,7 +240,7 @@ def save_ml_baseline_feature_label_dataset_audit(
         with sample_path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=FEATURE_LABEL_COLUMNS)
             writer.writeheader()
-            writer.writerows(result.sample_rows)
+            writer.writerows(neutralize_csv_formula_fields(result.sample_rows, {"symbol"}))
 
     summary = result.audit_rows[0] if result.audit_rows else {}
     lines = [

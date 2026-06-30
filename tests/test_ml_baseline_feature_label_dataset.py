@@ -122,6 +122,24 @@ class MlBaselineFeatureLabelDatasetTest(unittest.TestCase):
             self.assertIn("Do Not Trade / Feature-Label Dataset Only", markdown)
             self.assertIn("does not train models", markdown)
 
+    def test_save_neutralizes_formula_symbols_in_sample_csv(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._write_sources(root)
+            result = build_ml_baseline_feature_label_dataset(**paths)
+            result.sample_rows[0]["symbol"] = " \t=HYPERLINK(\"http://example.test\")"
+            sample_csv = root / "data" / "reports" / "ml_baseline_feature_label_sample.csv"
+
+            save_ml_baseline_feature_label_dataset_audit(
+                result,
+                root / "audit.csv",
+                root / "audit.md",
+                sample_csv,
+            )
+
+            sample_rows = _read_rows(sample_csv)
+            self.assertEqual("' \t=HYPERLINK(\"http://example.test\")", sample_rows[0]["symbol"])
+
 
 if __name__ == "__main__":
     unittest.main()

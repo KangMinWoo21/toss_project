@@ -412,6 +412,38 @@ class PykrxFetcherTests(unittest.TestCase):
         self.assertEqual(plan[0]["top_symbols"], "000660:5; 035420:3; 005930:1")
         self.assertIn("fetch-pykrx-missing-ohlcv-loop", plan[0]["recommended_command"])
 
+    def test_build_missing_ohlcv_fetch_plan_rejects_shell_metacharacters_in_command_paths(self):
+        with self.assertRaises(ValueError):
+            build_missing_ohlcv_fetch_plan(
+                [{"symbol": "000660", "missing_snapshots": "5"}],
+                batch_size=1,
+                max_batches=1,
+                batch_timeout_seconds=120,
+                batch_pause_seconds=5,
+                universe_file='safe.csv" & echo PWNED & "',
+                data_dir="data/krx_expanded",
+                targets_output="data/reports/krx_missing_ohlcv_targets.csv",
+                report_dir="data/reports",
+                start="2024-01-01",
+                end="2026-06-18",
+            )
+
+    def test_build_missing_ohlcv_fetch_plan_rejects_command_substitution(self):
+        with self.assertRaises(ValueError):
+            build_missing_ohlcv_fetch_plan(
+                [{"symbol": "000660", "missing_snapshots": "5"}],
+                batch_size=1,
+                max_batches=1,
+                batch_timeout_seconds=120,
+                batch_pause_seconds=5,
+                universe_file="safe.csv",
+                data_dir="data/krx_expanded",
+                targets_output="data/reports/krx_missing_ohlcv_targets.csv",
+                report_dir="reports/$(whoami)",
+                start="2024-01-01",
+                end="2026-06-18",
+            )
+
     def test_save_missing_ohlcv_fetch_plan_writes_csv(self):
         with TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "fetch_plan.csv"

@@ -89,6 +89,20 @@ class HealthCheckTests(unittest.TestCase):
         self.assertEqual(scalper.status, "WARN")
         self.assertIn("mode=warn", scalper.detail)
 
+    def test_missing_scalper_data_blocks_in_required_mode(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_required_health_files(root)
+            for item in (root / "data" / "scalper").glob("*"):
+                item.unlink()
+            (root / "data" / "scalper").rmdir()
+
+            report = evaluate_health(root=root, as_of=AS_OF, scalper_mode="required")
+
+        scalper = [check for check in report.checks if check.name == "scalper_data"][0]
+        self.assertEqual(report.status, "BLOCK")
+        self.assertEqual(scalper.status, "BLOCK")
+
     def test_scalper_monitoring_can_be_disabled_explicitly(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

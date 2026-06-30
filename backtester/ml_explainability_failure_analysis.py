@@ -5,6 +5,7 @@ from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
 
+from .csv_safety import neutralize_csv_formula_fields
 from .ml_baseline_model_training import (
     _audit_value,
     _eligible_rows,
@@ -318,4 +319,4 @@ def save_ml_explainability_failure_analysis_reports(
     with failure_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FAILURE_ANALYSIS_COLUMNS)
         writer.writeheader()
-        writer.writerows(failure_rows)
+        writer.writerows(neutralize_csv_formula_fields(failure_rows, {"symbol"}))

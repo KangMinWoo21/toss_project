@@ -199,7 +199,6 @@ def build_monthly_paper_operation_consistency_audit(
                 "broker_submission_forbidden",
                 "PASS"
                 if packet_values.get("broker_submission") == "forbidden"
-                or "broker submission: forbidden" in blocked_summary_text.lower()
                 else "BLOCK",
                 "broker_submission=forbidden",
                 f"broker_submission={packet_values.get('broker_submission', 'summary_text')}",

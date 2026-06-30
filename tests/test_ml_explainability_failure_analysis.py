@@ -82,6 +82,23 @@ class MlExplainabilityFailureAnalysisTest(unittest.TestCase):
             self.assertEqual("1", _read_rows(feature_csv)[0]["rank"])
             self.assertTrue(any(row["row_type"] == "failure_symbol" for row in _read_rows(failure_csv)))
 
+    def test_save_neutralizes_formula_symbols_in_failure_csv(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._write_sources(root)
+            feature_rows, failure_rows = build_ml_explainability_failure_analysis_reports(**paths)
+            failure_rows[0]["symbol"] = "\t@SUM(1,1)"
+            failure_csv = root / "data" / "reports" / "ml_failure_analysis_report.csv"
+
+            save_ml_explainability_failure_analysis_reports(
+                feature_rows,
+                failure_rows,
+                root / "data" / "reports" / "ml_feature_importance_report.csv",
+                failure_csv,
+            )
+
+            self.assertEqual("'\t@SUM(1,1)", _read_rows(failure_csv)[0]["symbol"])
+
 
 if __name__ == "__main__":
     unittest.main()

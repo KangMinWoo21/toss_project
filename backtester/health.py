@@ -383,7 +383,7 @@ def _scalper_directory_check(
             suggested_action="Use scalper_mode required, warn, or off.",
         )
     if not path.exists():
-        status = "WARN" if normalized_mode == "warn" else "WARN"
+        status = "WARN" if normalized_mode == "warn" else "BLOCK"
         return HealthCheck(
             "scalper_data",
             status,
@@ -393,7 +393,7 @@ def _scalper_directory_check(
         )
     files = [item for item in path.glob("*.csv") if item.is_file()]
     if not files:
-        status = "WARN" if normalized_mode == "warn" else "WARN"
+        status = "WARN" if normalized_mode == "warn" else "BLOCK"
         return HealthCheck(
             "scalper_data",
             status,
