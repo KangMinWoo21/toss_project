@@ -112,6 +112,16 @@ protected paper-review candidate.
   change, production readiness change, or push was performed. No
   `.codebase-memory/` or `graphify-out/` directory was created in the project
   root.
+- codebase-memory-mcp Codex MCP connection:
+  after explicit connection approval, a minimal
+  `[mcp_servers.codebase-memory-mcp]` entry was added to
+  `C:\Users\KangMinWoo\.codex\config.toml` pointing at the existing
+  binary-only install. The automatic `codebase-memory-mcp install` path was not
+  used because dry-run prompted for index deletion. No reinstall, PATH change,
+  automatic agent setup, reindex, network download, trading/ML behavior
+  change, protected candidate change, production readiness change, or push was
+  performed. `auto_index=false` remains set, and the existing indexed project
+  remains `C-tmp-toss-cbm-project`.
 - ML model final research packet:
   `data/reports/ml_model_research_packet.csv` and `.md`. Phase 14 is complete
   as a paper-only final packet consolidating local Phase 1-13 artifacts:

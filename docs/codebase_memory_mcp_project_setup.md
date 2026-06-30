@@ -156,3 +156,38 @@ Post-index read-only graph checks returned zero `File` rows for:
   `.joblib`
 
 MCP/Codex configuration remains disconnected. PATH remains unchanged.
+
+## Codex MCP Connection Status
+
+Codex/MCP connection approval was granted after safe indexing.
+
+A minimal Codex MCP server entry was added manually to:
+
+```text
+C:\Users\KangMinWoo\.codex\config.toml
+```
+
+Configured server:
+
+```toml
+[mcp_servers.codebase-memory-mcp]
+command = 'C:\Users\KangMinWoo\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe'
+args = []
+```
+
+The automatic `codebase-memory-mcp install` path was not used because its
+dry-run prompted for index deletion. The manual connection avoids reinstalling,
+PATH changes, automatic agent setup, and reindexing.
+
+Verification after the connection:
+
+- configured binary version: `codebase-memory-mcp 0.8.1`
+- `auto_index=false`
+- indexed project remains `C-tmp-toss-cbm-project`
+- indexed project root remains `C:/tmp/toss-cbm-project`
+- Codex config backup was created before editing
+- no project files, trading code, ML outputs, or strategy parameters were
+  changed
+
+Codex may need to be restarted before the new MCP server appears in available
+tools for a session.
