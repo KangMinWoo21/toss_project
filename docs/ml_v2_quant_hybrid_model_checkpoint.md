@@ -646,3 +646,25 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 recommended lineage decisions`.
 - Next checkpoint entry condition: refresh training readiness after applying
   recommended lineage decisions; it should remain `BLOCK`.
+
+### POST-19 Training Readiness After Recommended Lineage Decisions
+
+- Goal: refresh ML v2 training readiness after applying POST-18 recommended
+  lineage decisions.
+- Deliverables:
+  `data/reports/ml_v2_training_readiness_after_recommended_lineage.csv` and
+  `.md`.
+- Completion conditions: records recommended decision counts, independent-trial
+  count, selection-trial permission, effective-count status, Deflated Sharpe
+  status, training/validation gate result, and no-production safety fields.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  effective-trial-count calculation, Deflated Sharpe calculation, performance
+  metric computation, data fetch, API call, OOS rerun, candidate comparison
+  rerun, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms gate result, decision counts, zero
+  independent trials, blocked training/validation status, and no-production
+  safety fields.
+- Commit message: `Refresh ML v2 training readiness after recommended lineage`.
+- Next checkpoint entry condition: create a final blocked status packet or stop
+  unless a new explicit research goal is provided.
