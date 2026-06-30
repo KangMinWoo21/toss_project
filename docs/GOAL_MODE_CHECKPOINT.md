@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-12 effective trial count estimate
+Last updated: 2026-06-30 POST-13 Deflated Sharpe readiness gate
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,18 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-13 Deflated Sharpe readiness gate:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-13, and
+  `data/reports/ml_v2_deflated_sharpe_readiness_gate.csv` plus `.md` were
+  added. Gate result is `BLOCK`: raw Sharpe, skew, kurtosis, sample length,
+  complete raw trial count, and effective trial count remain unavailable or not
+  calculation-ready. Deflated Sharpe was not calculated, model selection is not
+  allowed, and ML v2 training/validation remain blocked. No model training,
+  validation run, formula evaluation, Deflated Sharpe calculation, performance
+  metric computation, data fetch, API call, OOS rerun, candidate comparison
+  rerun, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization was
+  performed.
 - ML v2 POST-12 effective trial count estimate:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-12, and
   `data/reports/ml_v2_effective_trial_count_estimate.csv` plus `.md` were

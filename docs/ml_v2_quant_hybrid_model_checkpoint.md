@@ -514,3 +514,25 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 effective trial count estimate`.
 - Next checkpoint entry condition: run Deflated Sharpe readiness gate using the
   effective-trial-count status.
+
+### POST-13 Deflated Sharpe Readiness Gate
+
+- Goal: decide whether Deflated Sharpe can be calculated from approved local
+  evidence after the effective-trial-count estimate step.
+- Deliverables:
+  `data/reports/ml_v2_deflated_sharpe_readiness_gate.csv` and `.md`.
+- Completion conditions: checks raw Sharpe, skew, kurtosis, sample length, raw
+  trial count, effective trial count, model-selection permission, blocked
+  training/validation status, and no-production safety fields.
+- Forbidden actions: no Deflated Sharpe calculation unless all inputs are
+  available, no model training, validation run, formula evaluation,
+  Sharpe/PnL/ranking computation, data fetch, API call, OOS rerun, candidate
+  comparison rerun, candidate creation, strategy change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization.
+- Checks: schema/content check confirms gate result, missing inputs,
+  no-calculation status, blocked training/validation status, and no-production
+  safety fields.
+- Commit message: `Add ML v2 Deflated Sharpe readiness gate`.
+- Next checkpoint entry condition: reopen ML v2 training-readiness gate using
+  the latest trial-count and Deflated Sharpe readiness evidence.
