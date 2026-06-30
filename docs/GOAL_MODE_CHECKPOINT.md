@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML v2 checkpoint roadmap
+Last updated: 2026-06-30 CP-01 Deflated Sharpe placeholder
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,22 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-01 Deflated Sharpe placeholder report:
+  `data/reports/deflated_sharpe_placeholder_report.csv` and `.md` were added
+  as a paper-only data-snooping control placeholder before model selection or
+  formulaic alpha sweeps. The report reserves required fields for raw Sharpe,
+  skew, kurtosis, sample length, `raw_trial_count`, `effective_trial_count`,
+  and a Deflated Sharpe adjusted-score placeholder, while explicitly recording
+  that no Deflated Sharpe calculation, formula generation, formula evaluation,
+  model training, model selection, OOS rerun, candidate comparison rerun,
+  candidate creation, monthly plan regeneration, strategy parameter change,
+  protected candidate change, broker work, data fetch, API call, news/SNS
+  scrape, production readiness change, push, or trading authorization was
+  performed. Production remains `BLOCK`, protected candidate remains
+  `PAPER_REVIEW`, `trading_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. Next ML v2 checkpoint: CP-02 Purged / Embargo
+  Validation Schema Plan.
 - ML v2 quant hybrid model checkpoint roadmap:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was added as the dedicated
   paper-only model checkpoint roadmap, and `docs/goal-mode-minimal-prompt.md`
