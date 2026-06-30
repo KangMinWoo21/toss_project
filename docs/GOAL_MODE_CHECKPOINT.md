@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 Broader formulaic materialization coverage plan
+Last updated: 2026-06-30 Formulaic broader materialized feature stage 1
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,25 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- Formulaic alpha broader materialized feature Stage 1:
+  `data/reports/formulaic_alpha_broader_materialized_feature_stage1.csv`,
+  `.md`, and `_manifest.csv`, plus
+  `data/reports/formulaic_alpha_broader_feature_audit_stage1.csv` and `.md`,
+  were added as the bounded Stage 1 implementation of the broader
+  materialization plan. Stage 1 uses existing local OHLCV only, keeps the
+  existing six CP-06 formulas, covers 50 symbols and 24 monthly feature dates
+  from `2024-07-31` through `2026-06-18`, creates 7200 feature rows under the
+  10000-row cap, materializes 6 feature hashes and 7200 feature row hashes, and
+  records 24 missing rows with missing rate `0.003333`. The audit status is
+  `PASS_BROADER_SAMPLE_NOT_TRAINING_READY`; `evaluation_performed=False`,
+  `training_allowed_now=False`, `merge_ready=False`,
+  `candidate_promotion=False`, `trading_allowed=False`, and
+  `production_effect=none`. No formula evaluation, model training, dataset
+  merge, OOS rerun, candidate comparison rerun, candidate creation, monthly
+  plan regeneration, strategy parameter change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization was
+  performed. Production remains `BLOCK` and protected candidate remains
+  `PAPER_REVIEW`.
 - Formulaic alpha broader materialization coverage plan:
   `data/reports/formulaic_alpha_broader_materialization_coverage_plan.csv` and
   `.md` were added as a paper-only plan for the next staged materialization
