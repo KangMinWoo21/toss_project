@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-01 Deflated Sharpe placeholder
+Last updated: 2026-06-30 CP-02 Purged embargo validation schema
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,23 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-02 Purged / Embargo Validation Schema Plan:
+  `data/reports/purged_embargo_validation_schema_plan.csv` and `.md` were
+  added as a paper-only schema/design checkpoint before serious ML v2 training.
+  The plan defines split identifiers, monthly-compatible date grouping, label
+  horizon fields, purge window fields, embargo window fields, post-cutoff
+  exclusion fields, PIT feature visibility fields, and leakage audit fields.
+  Existing local baseline evidence is referenced only as design context; no
+  validation rerun, OOS rerun, formula evaluation, model training, data fetch,
+  API call, news/SNS scrape, candidate comparison rerun, candidate creation,
+  monthly plan regeneration, strategy parameter change, protected candidate
+  change, broker work, production readiness change, push, or trading
+  authorization was performed. Production remains `BLOCK`, protected candidate
+  remains `PAPER_REVIEW`, `trading_allowed=False`,
+  `candidate_promotion=False`, `broker_submission=False`,
+  `order_execution=False`, and `production_effect=none`. Next ML v2 checkpoint:
+  CP-03 Post-Cutoff OOS Proof Inventory.
+  Next ML v2 checkpoint: CP-03 Post-Cutoff OOS Proof Inventory.
 - ML v2 CP-01 Deflated Sharpe placeholder report:
   `data/reports/deflated_sharpe_placeholder_report.csv` and `.md` were added
   as a paper-only data-snooping control placeholder before model selection or
