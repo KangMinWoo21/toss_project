@@ -26,6 +26,9 @@ from .momentum_validation import (
 )
 from .monthly.reporting import format_equal_symbol_weights as _format_equal_symbol_weights
 from .monthly.reporting import format_optional_float as _format_optional_float
+from .monthly.reporting import count_diagnostic_rows as _count_diagnostic
+from .monthly.reporting import min_numeric_row as _min_numeric_row
+from .monthly.reporting import sum_numeric as _sum_numeric
 from .monthly.reporting import unique_join as _unique_join
 from .monthly.paper_orders import annotate_order_liquidity as _annotate_order_liquidity
 from .monthly.paper_orders import average_daily_trading_value
@@ -5147,22 +5150,6 @@ def summarize_monthly_path_attribution_comparison(rows: list[dict[str, Any]]) ->
             }
         )
     return summary_rows
-
-
-def _count_diagnostic(rows: list[dict[str, Any]], token: str) -> int:
-    return sum(1 for row in rows if token in _split_semicolon_values(str(row.get("diagnostic", ""))))
-
-
-def _min_numeric_row(rows: list[dict[str, Any]], column: str) -> dict[str, Any]:
-    numeric_rows = [(value, row) for row in rows if (value := _float_or_none(row.get(column))) is not None]
-    if not numeric_rows:
-        return {}
-    return min(numeric_rows, key=lambda item: item[0])[1]
-
-
-def _sum_numeric(values: Any) -> float | None:
-    numeric = [value for value in (_float_or_none(value) for value in values) if value is not None]
-    return sum(numeric) if numeric else None
 
 
 def _path_symbol_list(row: dict[str, Any]) -> list[str]:
