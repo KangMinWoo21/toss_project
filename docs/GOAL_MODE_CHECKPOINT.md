@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-25 fixed-spec overfit analysis
+Last updated: 2026-06-30 POST-26 fixed-spec robustness execution gate
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,19 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-26 fixed-spec robustness execution gate:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-26, and
+  `data/reports/ml_v2_fixed_spec_robustness_execution_gate.csv` plus `.md` were
+  added. Final gate result is `BLOCK`; the next safe action is
+  `create_pre_registered_robustness_execution_packet`. Immediate robustness
+  execution remains blocked because sample thresholds, split manifest, label
+  balance warnings, formula hash lock, joined-row PIT/embargo re-audit, and
+  no-winner interpretation gate must be pre-registered first. No robustness
+  execution, model training, validation rerun, OOS rerun, candidate comparison
+  rerun, model ranking for promotion, formula ranking, formula generation,
+  hyperparameter tuning, threshold tuning, candidate creation, strategy change,
+  protected candidate change, broker work, production readiness change, push,
+  or trading authorization was performed.
 - ML v2 POST-25 fixed-spec overfit analysis:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-25, and
   `data/reports/ml_v2_fixed_spec_overfit_analysis.csv` plus `.md` were added.

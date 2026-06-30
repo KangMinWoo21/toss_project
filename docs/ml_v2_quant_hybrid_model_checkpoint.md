@@ -820,3 +820,28 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 fixed-spec overfit analysis`.
 - Next checkpoint entry condition: if continuing, create a pre-registered
   robustness execution gate; do not tune ML v2 directly from this analysis.
+
+### POST-26 Fixed-Spec Robustness Execution Gate
+
+- Goal: decide whether ML v2 fixed-spec robustness execution can begin, using
+  only existing local reports and without running new training or validation.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_robustness_execution_gate.csv` and `.md`.
+- Completion conditions: records current ML v2 status, overfit warning, sample
+  coverage gate, split pre-registration requirement, formula-hash lock, label
+  balance warning rule, PIT/embargo re-audit requirement, no-winner
+  interpretation gate, and final decision. Final decision must block immediate
+  execution until a pre-registered robustness execution packet exists; all
+  safety fields remain disabled.
+- Forbidden actions: no robustness execution, model training, validation rerun,
+  OOS rerun, candidate comparison rerun, model ranking for promotion, formula
+  ranking, formula generation, hyperparameter tuning, threshold tuning,
+  candidate creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms gate result, blocked execution,
+  required pre-registration packet, no-selection fields, and disabled safety
+  fields.
+- Commit message: `Add ML v2 robustness execution gate`.
+- Next checkpoint entry condition: create the pre-registered robustness
+  execution packet; do not execute robustness checks until that packet is
+  complete and separately reviewed.
