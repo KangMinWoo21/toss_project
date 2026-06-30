@@ -315,3 +315,26 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 stage 1 tiny experiment protocol`.
 - Next checkpoint entry condition: protocol design exists; a future POST
   checkpoint may create a report-only experiment execution gate.
+
+### POST-04 Stage 1 Tiny Experiment Execution Gate
+
+- Goal: decide whether the POST-03 tiny experiment protocol may proceed to
+  paper-only execution, without running training, evaluation, scoring, or
+  feature selection in this checkpoint.
+- Deliverables:
+  `data/reports/ml_v2_stage1_tiny_experiment_execution_gate.csv` and `.md`.
+- Completion conditions: returns exactly one of
+  `ALLOW_PAPER_ONLY_TINY_EXPERIMENT`, `BLOCK`, or `deferred_later_stage`;
+  documents source evidence, unresolved blockers, allowed future action,
+  blocked action, and all no-production safety fields.
+- Forbidden actions: no model training, formula evaluation, dataset merge for
+  training, feature selection, performance metric computation, candidate
+  creation, OOS rerun, candidate comparison rerun, strategy change, protected
+  candidate change, broker work, or production readiness change.
+- Checks: schema/content check confirms result vocabulary, source references,
+  blocker handling, and safety fields.
+- Commit message: `Add ML v2 stage 1 tiny experiment execution gate`.
+- Next checkpoint entry condition: if the gate result is
+  `ALLOW_PAPER_ONLY_TINY_EXPERIMENT`, a future POST checkpoint may execute the
+  bounded paper-only experiment; otherwise future work must resolve or defer
+  the blockers before any experiment execution.

@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-03 Stage 1 tiny experiment protocol
+Last updated: 2026-06-30 POST-04 Stage 1 tiny experiment execution gate
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,25 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-04 Stage 1 tiny experiment execution gate:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-04, and
+  `data/reports/ml_v2_stage1_tiny_experiment_execution_gate.csv` and `.md`
+  were added. The report-only gate returns `gate_result=BLOCK` because POST-02
+  allowed only protocol design, POST-03 did not execute the experiment, Stage 1
+  training readiness remains blocked, selection controls are incomplete, and
+  Stage 1 merge readiness is still not full readiness evidence.
+  `training_allowed_now=False`,
+  `paper_only_tiny_experiment_allowed_next=False`,
+  `model_training_performed=False`, `formula_evaluation_performed=False`,
+  `dataset_merge_performed=False`, `performance_metric_computed=False`,
+  `feature_selection_performed=False`, `candidate_creation=False`,
+  `candidate_promotion=False`, `trading_allowed=False`, and
+  `production_effect=none`. No model training, formula evaluation, dataset
+  merge, performance metric computation, OOS rerun, candidate comparison
+  rerun, candidate creation, monthly plan regeneration, strategy parameter
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization was performed. Production remains `BLOCK` and
+  protected candidate remains `PAPER_REVIEW`.
 - ML v2 POST-03 Stage 1 tiny experiment protocol:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-03, and
   `data/reports/ml_v2_stage1_tiny_experiment_protocol.csv` and `.md` were
