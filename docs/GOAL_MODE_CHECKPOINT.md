@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-10 exact raw count inventory
+Last updated: 2026-06-30 POST-11 trial lineage resolution audit
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,19 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-11 trial lineage resolution audit:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-11, and
+  `data/reports/ml_v2_trial_lineage_resolution_audit.csv` plus `.md` were
+  added. The audit reviewed 23 dependency groups and classified all 23 as
+  unresolved because lineage fields remain incomplete. Effective trial count,
+  Deflated Sharpe, ML v2 training, and ML v2 validation remain blocked with
+  `training_allowed_now=False`, `validation_allowed_now=False`,
+  `trading_allowed=False`, and `production_effect=none`. No model training,
+  validation run, formula evaluation, effective-trial-count calculation,
+  Deflated Sharpe calculation, performance metric computation, data fetch, API
+  call, OOS rerun, candidate comparison rerun, candidate creation, strategy
+  change, protected candidate change, broker work, production readiness change,
+  push, or trading authorization was performed.
 - ML v2 POST-10 exact raw count inventory:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-10, and
   `data/reports/ml_v2_exact_raw_count_inventory.csv` plus `.md` were added.

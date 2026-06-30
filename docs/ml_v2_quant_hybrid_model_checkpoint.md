@@ -470,3 +470,26 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 exact raw count inventory`.
 - Next checkpoint entry condition: inventory exists; the next checkpoint should
   resolve lineage warnings or keep training blocked.
+
+### POST-11 Trial Lineage Resolution Audit
+
+- Goal: classify trial dependency groups as resolved, unresolved, or
+  manual-review-required using the exact raw-count inventory and dependency
+  manifest.
+- Deliverables:
+  `data/reports/ml_v2_trial_lineage_resolution_audit.csv` and `.md`.
+- Completion conditions: records dependency group resolution status, missing
+  lineage fields, exact raw-count status, lower-bound evidence, blocked
+  effective-count status, blocked training/validation status, and next safe
+  action.
+- Forbidden actions: no model training, validation run, formula evaluation,
+  effective-trial-count calculation, Deflated Sharpe calculation, performance
+  metric computation, data fetch, API call, OOS rerun, candidate comparison
+  rerun, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms resolution counts, no effective-count
+  calculation, blocked training/validation status, and no-production safety
+  fields.
+- Commit message: `Add ML v2 trial lineage resolution audit`.
+- Next checkpoint entry condition: if lineage remains unresolved, create a
+  BLOCK effective-trial-count estimate report or require manual review.
