@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-02 Purged embargo validation schema
+Last updated: 2026-06-30 CP-03 Post-cutoff OOS proof inventory
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,24 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-03 Post-Cutoff OOS Proof Inventory:
+  `data/reports/post_cutoff_oos_proof_inventory.csv` and `.md` were added as a
+  local-report-only inventory of existing post-cutoff/OOS/readiness evidence.
+  The inventory records 12 source rows, all found locally, and keeps
+  `oos_rerun_performed=False`, `data_fetch_performed=False`,
+  `candidate_comparison_rerun=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. It preserves the
+  protected candidate OOS state as `REVIEW_NOT_ALLOWED` and records missing
+  evidence such as an approved post-cutoff OOS review result, complete
+  protected-candidate observation window, complete effective trial count, and
+  production readiness approval. No OOS rerun, data fetch, API call,
+  news/SNS scrape, candidate comparison rerun, candidate creation, monthly plan
+  regeneration, strategy parameter change, protected candidate change, broker
+  work, production readiness change, push, or trading authorization was
+  performed. Production remains `BLOCK`, protected candidate remains
+  `PAPER_REVIEW`, `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. Next ML v2 checkpoint: CP-04 min_history244 PIT
+  Universe Safety Review.
 - ML v2 CP-02 Purged / Embargo Validation Schema Plan:
   `data/reports/purged_embargo_validation_schema_plan.csv` and `.md` were
   added as a paper-only schema/design checkpoint before serious ML v2 training.
