@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-05 Formulaic alpha inventory
+Last updated: 2026-06-30 CP-06 Small formulaic alpha sample
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,22 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-06 Small OHLCV Formulaic Alpha Sample Generation:
+  `data/reports/formulaic_alpha_sample_generation.csv` and `.md` were added,
+  and six `formulaic_alpha_sample` rows were appended to
+  `data/reports/candidate_trial_ledger.csv` with `sample_only_no_eval`,
+  deterministic formula hashes, `entered_comparison=False`,
+  `candidate_promotion=False`, `trading_allowed=False`, and
+  `production_effect=none`. The sample is bounded to 6 OHLCV-only formula
+  strings and creates no feature values, evaluation metrics, model training,
+  trading candidate, comparison result, order output, broker submission, or
+  production effect. No OOS rerun, data fetch, API call, news/SNS scrape,
+  monthly plan regeneration, strategy parameter change, protected candidate
+  change, production readiness change, push, or trading authorization was
+  performed. Production remains `BLOCK`, protected candidate remains
+  `PAPER_REVIEW`, `broker_submission=False`, and `order_execution=False`. Next
+  ML v2 checkpoint: CP-07 Formulaic Alpha Feature Audit.
+  Next ML v2 checkpoint: CP-07 Formulaic Alpha Feature Audit.
 - ML v2 CP-05 Formulaic Alpha Candidate Inventory:
   `data/reports/formulaic_alpha_candidate_inventory.csv` and `.md` were added
   as a no-generation inventory of possible OHLCV-only formulaic alpha families.
