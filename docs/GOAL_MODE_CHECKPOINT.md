@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 ML v2 readiness refresh after feature sample
+Last updated: 2026-06-30 Broader formulaic materialization coverage plan
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,21 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- Formulaic alpha broader materialization coverage plan:
+  `data/reports/formulaic_alpha_broader_materialization_coverage_plan.csv` and
+  `.md` were added as a paper-only plan for the next staged materialization
+  loop. The plan recommends a bounded Stage 1 scope of 50 local OHLCV symbols,
+  24 monthly feature dates, and the existing six CP-06 formulas, for an
+  estimated 7200 rows with a 10000-row hard cap. It defines chunking, PIT,
+  missingness, hashing, audit, and fail-closed stop rules. It is design-only:
+  `feature_values_generated_now=False`, `dataset_merge_performed=False`,
+  `training_allowed_now=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. No feature values,
+  formula evaluations, model training, dataset merge, OOS rerun, candidate
+  comparison rerun, candidate creation, monthly plan regeneration, strategy
+  parameter change, protected candidate change, broker work, production
+  readiness change, push, or trading authorization was performed. Production
+  remains `BLOCK` and protected candidate remains `PAPER_REVIEW`.
 - ML v2 readiness refresh after formulaic feature sample:
   `data/reports/ml_v2_formulaic_alpha_merge_readiness_refresh.csv` and `.md`,
   plus `data/reports/ml_v2_training_readiness_gate_refresh.csv` and `.md`,
