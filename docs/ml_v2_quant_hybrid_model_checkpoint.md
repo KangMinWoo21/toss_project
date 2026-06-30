@@ -405,3 +405,25 @@ earliest incomplete checkpoint again.
 - Commit message: `Add ML v2 effective trial count method design`.
 - Next checkpoint entry condition: method design exists; a future checkpoint may
   apply it as a report-only count estimate before any training gate is reopened.
+
+### POST-08 Trial Dependency Group Manifest
+
+- Goal: apply the POST-07 grouping method to the existing candidate trial
+  ledger as a report-only dependency group manifest, without calculating
+  effective trial count or Deflated Sharpe.
+- Deliverables:
+  `data/reports/ml_v2_trial_dependency_group_manifest.csv` and `.md`.
+- Completion conditions: lists dependency groups, group keys, member counts,
+  raw-count lower-bound evidence, unresolved lineage flags, and blocked
+  training status.
+- Forbidden actions: no effective-trial-count calculation, Deflated Sharpe
+  calculation, model training, formula evaluation, performance metric
+  computation, data fetch, API call, OOS rerun, candidate comparison rerun,
+  candidate creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms manifest rows, group counts, no
+  effective-count calculation, blocked training status, and no-production
+  safety fields.
+- Commit message: `Add ML v2 trial dependency group manifest`.
+- Next checkpoint entry condition: manifest exists; a future checkpoint may
+  produce a blocked training-readiness refresh or an exact raw-count inventory.

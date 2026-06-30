@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-07 effective trial count method design
+Last updated: 2026-06-30 POST-08 trial dependency group manifest
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,16 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-08 trial dependency group manifest:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-08, and
+  `data/reports/ml_v2_trial_dependency_group_manifest.csv` plus `.md` were
+  added. The manifest maps 29 candidate-trial ledger rows into 23 dependency
+  groups, with raw-trial lower-bound sum 41 and all groups retaining incomplete
+  lineage warnings. It does not calculate effective trial count, Deflated
+  Sharpe, Sharpe, PnL, rankings, model-selection metrics, or formula
+  performance. ML v2 training and validation remain blocked with
+  `training_allowed_now=False`, `trading_allowed=False`, and
+  `production_effect=none`.
 - ML v2 POST-07 effective trial count method design:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-07, and
   `data/reports/ml_v2_effective_trial_count_method_design.csv` plus `.md` were
