@@ -54,21 +54,37 @@ Do not index or summarize `data/` or report CSV contents.
 
 ## Installation Status
 
-No installation was performed for this setup.
+Installation approval was granted after the initial setup commit.
 
-If `codebase-memory-mcp` is not already installed locally, installation requires
-separate user approval before any network download or package install command
-is run.
+Binary-only installation was completed from the upstream GitHub release:
 
-Potential install commands to review later, depending on the upstream project
-instructions:
+- installed binary:
+  `C:\Users\KangMinWoo\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe`
+- installed version: `codebase-memory-mcp 0.8.1`
+- checksum verification: passed
+- agent configuration: not run
+- MCP/Codex configuration change: not performed
+- indexing: not performed
+- PATH modification: not performed by this setup
+
+The upstream installer supports `--skip-config`, but the install script can also
+modify the user PATH. To keep this setup narrow, the release archive and
+`checksums.txt` were downloaded directly, verified, extracted, and copied to
+the install directory without running the agent configuration step.
+
+Future configuration or indexing still requires separate user approval.
+
+If reinstalling or updating later, review the upstream release instructions
+again before any network download or package install command is run.
+
+Potential source checkout command used only for upstream instruction review:
 
 ```powershell
 git clone https://github.com/DeusData/codebase-memory-mcp
 ```
 
-Additional package-manager commands may be required by the repository, but they
-must be checked against upstream documentation in a separate approved step
+Additional package-manager commands may be available for the repository, but
+they must be checked against upstream documentation in a separate approved step
 before execution.
 
 Risks to review before installation:

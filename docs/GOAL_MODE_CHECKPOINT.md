@@ -88,6 +88,15 @@ protected paper-review candidate.
   keys, account information, `data/`, generated reports, large artifacts,
   caches, and local codebase-memory outputs. Production remains `BLOCK`,
   `trading_allowed=False`, and `production_effect=none`.
+- codebase-memory-mcp binary-only installation:
+  after explicit installation approval, upstream release version `0.8.1` was
+  installed to
+  `C:\Users\KangMinWoo\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe`
+  with checksum verification. Agent configuration, MCP/Codex configuration,
+  PATH modification, indexing, project cache generation, trading/ML behavior
+  changes, protected candidate changes, production readiness changes, and push
+  were not performed. The project root still has no `.codebase-memory/` or
+  `graphify-out/` output.
 - ML model final research packet:
   `data/reports/ml_model_research_packet.csv` and `.md`. Phase 14 is complete
   as a paper-only final packet consolidating local Phase 1-13 artifacts:
