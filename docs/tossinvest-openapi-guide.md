@@ -2,7 +2,7 @@
 
 이 문서는 토스증권 Open API를 프로젝트에서 빠르게 참조하기 위한 로컬 가이드입니다.
 
-원본 OpenAPI 스펙은 `docs/tossinvest-openapi.json`에 저장했습니다.
+원본 OpenAPI 스펙은 `docs/reference/tossinvest-openapi.json`에 저장했습니다.
 
 ## 기본 정보
 
@@ -107,5 +107,5 @@ X-Tossinvest-Account: {accountSeq}
 ## 주의
 
 - 주문 생성, 정정, 취소 API는 실제 거래로 이어질 수 있으므로 테스트 코드에서 기본 비활성화 상태로 두는 것이 좋습니다.
-- Rate limit과 에러 응답의 세부 필드는 `docs/tossinvest-openapi.json`을 기준으로 확인합니다.
+- Rate limit과 에러 응답의 세부 필드는 `docs/reference/tossinvest-openapi.json`을 기준으로 확인합니다.
 - 엔드포인트별 요청 파라미터와 응답 스키마는 원본 OpenAPI JSON을 source of truth로 사용합니다.
