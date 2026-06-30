@@ -797,3 +797,26 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: create a pre-registered robustness execution
   gate only if requested; otherwise keep ML v2 fixed-spec as paper-only
   diagnostic research with no candidate or production decision.
+
+### POST-25 Fixed-Spec Overfit Analysis
+
+- Goal: analyze overfit risk for ML v2 fixed-spec using existing local
+  baseline/v1/v2 reports only.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_overfit_analysis.csv` and `.md`.
+- Completion conditions: records train/validation row counts, train accuracy,
+  validation accuracy, train-validation gap, validation sample risk, label
+  balance risk, process-overfit risk, selection-overfit risk, allowed and
+  blocked interpretations, and safety fields; explicitly records no model
+  winner, no tuning, no candidate decision, `trading_allowed=False`, and
+  `production_effect=none`.
+- Forbidden actions: no model training, validation rerun, OOS rerun, candidate
+  comparison rerun, model ranking for promotion, formula ranking, formula
+  generation, hyperparameter tuning, threshold tuning, candidate creation,
+  strategy change, protected candidate change, broker work, production
+  readiness change, push, or trading authorization.
+- Checks: schema/content check confirms reports exist, no rerun/training flags
+  are false, candidate decision is false, and safety fields are disabled.
+- Commit message: `Add ML v2 fixed-spec overfit analysis`.
+- Next checkpoint entry condition: if continuing, create a pre-registered
+  robustness execution gate; do not tune ML v2 directly from this analysis.

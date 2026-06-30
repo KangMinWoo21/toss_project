@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-24 fixed-spec robustness plan
+Last updated: 2026-06-30 POST-25 fixed-spec overfit analysis
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,19 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-25 fixed-spec overfit analysis:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-25, and
+  `data/reports/ml_v2_fixed_spec_overfit_analysis.csv` plus `.md` were added.
+  The analysis uses existing local baseline/v1/v2 reports only. It records ML
+  v2 fixed-spec train accuracy `0.6486`, validation accuracy `0.5500`, gap
+  `0.0986`, validation sample risk `HIGH_SMALL_N`, and overall signal
+  `WARN_OVERFIT_RISK_NOT_PROVEN`. It declares no model winner, authorizes no
+  tuning, and keeps `candidate_decision_allowed=False`, `trading_allowed=False`,
+  and `production_effect=none`. No model training, validation rerun, OOS rerun,
+  candidate comparison rerun, model ranking for promotion, formula ranking,
+  formula generation, hyperparameter tuning, threshold tuning, candidate
+  creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization was performed.
 - ML v2 POST-24 fixed-spec robustness plan:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-24, and
   `data/reports/ml_v2_fixed_spec_robustness_plan.csv` plus `.md` were added.
