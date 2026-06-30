@@ -385,3 +385,23 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: if blocker status remains `BLOCK`, future
   work may only design a dependency-adjusted effective-trial-count method or a
   blocked training-readiness refresh.
+
+### POST-07 Effective Trial Count Method Design
+
+- Goal: design a paper-only method for deriving a future effective trial count
+  from the candidate trial ledger without calculating the count yet.
+- Deliverables:
+  `data/reports/ml_v2_effective_trial_count_method_design.csv` and `.md`.
+- Completion conditions: defines grouping keys, dependency rules,
+  non-independent trial families, lower-bound and upper-bound policies,
+  missing-evidence handling, audit fields, and blocked training status.
+- Forbidden actions: no effective-trial-count calculation, Deflated Sharpe
+  calculation, model training, formula evaluation, performance metric
+  computation, data fetch, API call, OOS rerun, candidate comparison rerun,
+  candidate creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms method fields, no calculated effective
+  count, blocked training status, and no-production safety fields.
+- Commit message: `Add ML v2 effective trial count method design`.
+- Next checkpoint entry condition: method design exists; a future checkpoint may
+  apply it as a report-only count estimate before any training gate is reopened.

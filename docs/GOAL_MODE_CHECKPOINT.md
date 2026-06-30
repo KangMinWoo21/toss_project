@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-06 trial count and Deflated Sharpe blocker audit
+Last updated: 2026-06-30 POST-07 effective trial count method design
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,15 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-07 effective trial count method design:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-07, and
+  `data/reports/ml_v2_effective_trial_count_method_design.csv` plus `.md` were
+  added. The design defines dependency grouping by method family, candidate
+  lineage, formula hash, model hash, scenario set, parameter summary, and
+  source report. It does not calculate effective trial count, Deflated Sharpe,
+  Sharpe, PnL, model ranking, or formula ranking. ML v2 training and validation
+  remain blocked with `training_allowed_now=False`, `trading_allowed=False`,
+  and `production_effect=none`.
 - ML v2 POST-06 trial count and Deflated Sharpe blocker audit:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-06, and
   `data/reports/ml_v2_trial_count_deflated_sharpe_blocker_audit.csv` plus
