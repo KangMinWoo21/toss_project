@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-04 min_history244 PIT safety review
+Last updated: 2026-06-30 CP-05 Formulaic alpha inventory
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,24 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-05 Formulaic Alpha Candidate Inventory:
+  `data/reports/formulaic_alpha_candidate_inventory.csv` and `.md` were added
+  as a no-generation inventory of possible OHLCV-only formulaic alpha families.
+  The inventory has 10 category rows, records `generated_candidate_count=0`,
+  keeps `evaluation_performed=False`, `training_allowed_now=False`,
+  `direct_buy_alpha_allowed=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`, and requires future
+  formulas to have deterministic hashes plus candidate trial ledger rows before
+  any bounded sample or sweep. External text/news/SNS/event inputs are rejected
+  from formula generation and kept as risk-overlay-only. No formula generation,
+  formula evaluation, model training, OOS rerun, data fetch, API call,
+  news/SNS scrape, candidate comparison rerun, candidate creation, monthly plan
+  regeneration, strategy parameter change, protected candidate change, broker
+  work, production readiness change, push, or trading authorization was
+  performed. Production remains `BLOCK`, protected candidate remains
+  `PAPER_REVIEW`, `broker_submission=False`, and `order_execution=False`. Next
+  ML v2 checkpoint: CP-06 Small OHLCV Formulaic Alpha Sample Generation.
+  Next ML v2 checkpoint: CP-06 Small OHLCV Formulaic Alpha Sample Generation.
 - ML v2 CP-04 min_history244 PIT Universe Safety Review:
   `data/reports/min_history244_pit_universe_safety_review.csv` and `.md` were
   added as a paper-only review of the protected candidate's relaxed
