@@ -134,7 +134,7 @@ appending long command logs or full report lists here.
   latest OOS gross `-10.6872%`, benchmark `-8.8464%`, excess `-1.8408%`, and
   trade count `12`. Candidate remains `PAPER_REVIEW`.
 - Research-only macro/event/news/SNS risk-overlay plan added at
-  `docs/macro_event_sentiment_overlay_research_plan.md`. It is documentation
+  `docs/archive/research/macro_event_sentiment_overlay_research_plan.md`. It is documentation
   only, disabled by default, and does not change production strategy behavior
   or the current `PAPER_REVIEW` candidate.
 - Minimal pure schema/risk-score stubs added in `backtester/macro_overlay.py`
@@ -185,7 +185,7 @@ appending long command logs or full report lists here.
   timing gap from being traded/held outside the winning month. The replacement
   path looks diagnostic-viable but not candidate-ready.
 - Research-only earnings/fundamental plan added at
-  `docs/fundamental_earnings_research_plan.md`. It defines PIT schemas for
+  `docs/archive/research/fundamental_earnings_research_plan.md`. It defines PIT schemas for
   earnings events, fundamental observations, quality reports, and event-risk
   reports. Earnings are event-risk filters, fundamentals are universe/quality
   filters, not direct buy alpha. Disabled by default; no candidate changes.

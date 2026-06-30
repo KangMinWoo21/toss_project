@@ -72,7 +72,7 @@
 
 ### 최근 추가된 연구-only 기능
 
-- `docs/macro_event_sentiment_overlay_research_plan.md`
+- `docs/archive/research/macro_event_sentiment_overlay_research_plan.md`
   - macro/event/news/SNS risk overlay 연구 계획
   - production 전략 변경 없음
   - post-cutoff OOS 데이터로 튜닝 금지
@@ -222,4 +222,3 @@ post-cutoff OOS는 paper-only 관찰 목적이며, 튜닝에 쓰면 안 된다.
 ## 11. 현재 판단
 
 이 프로젝트는 단순 백테스터 단계는 넘어섰지만, 아직 실거래 자동화 시스템은 아니다. 현재 가장 합리적인 방향은 **실거래를 막은 상태로 paper OOS 관찰, 데이터 품질 강화, sideways regime 원인 분석, 운영 리포트 신뢰도 개선을 계속하는 것**이다.
-

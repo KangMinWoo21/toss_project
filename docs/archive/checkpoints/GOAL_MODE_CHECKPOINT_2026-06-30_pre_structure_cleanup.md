@@ -1169,7 +1169,7 @@ protected paper-review candidate.
   `trading_allowed=False`, `production_effect=none`, and protected candidate
   unchanged.
 - Paper-only ML model completion roadmap checkpoint:
-  `docs/ml_model_completion_checkpoint.md`. This is a doc-only roadmap for
+  `docs/archive/research/ml_model_completion_checkpoint.md`. This is a doc-only roadmap for
   completing baseline-to-final-packet ML research loops; it does not train
   models, rerun OOS, fetch data, compare candidates, alter protected
   `PAPER_REVIEW` status, or change production readiness.
