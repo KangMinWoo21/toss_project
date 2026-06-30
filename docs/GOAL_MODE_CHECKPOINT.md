@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-03 Post-cutoff OOS proof inventory
+Last updated: 2026-06-30 CP-04 min_history244 PIT safety review
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,24 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-04 min_history244 PIT Universe Safety Review:
+  `data/reports/min_history244_pit_universe_safety_review.csv` and `.md` were
+  added as a paper-only review of the protected candidate's relaxed
+  `min_history244` PIT universe gate. Existing local reports show the protected
+  candidate remains `PAPER_REVIEW`, `protected_from_tuning=True`,
+  `promotion_allowed=False`, and `promoted_count=0`. The review records
+  `safety_status=evidence_incomplete`, 1972 min-history-only eligible symbols,
+  11 actually used symbols, 5 contribution-available symbols, and an empty
+  post-cutoff universe filter evidence file, so it does not support promotion
+  or production readiness. No parameter change, OOS rerun, data fetch, API
+  call, news/SNS scrape, candidate comparison rerun, candidate creation,
+  monthly plan regeneration, protected candidate change, broker work,
+  production readiness change, push, or trading authorization was performed.
+  Production remains `BLOCK`, protected candidate remains `PAPER_REVIEW`,
+  `trading_allowed=False`, `candidate_promotion=False`,
+  `broker_submission=False`, `order_execution=False`, and
+  `production_effect=none`. Next ML v2 checkpoint: CP-05 Formulaic Alpha
+  Candidate Inventory, No Generation.
 - ML v2 CP-03 Post-Cutoff OOS Proof Inventory:
   `data/reports/post_cutoff_oos_proof_inventory.csv` and `.md` were added as a
   local-report-only inventory of existing post-cutoff/OOS/readiness evidence.
