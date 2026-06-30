@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 CP-13 ML v2 blocked shadow scoring
+Last updated: 2026-06-30 CP-14 ML v2 hybrid overlay design
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,20 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 CP-14 Hybrid Overlay Design:
+  `data/reports/ml_v2_hybrid_overlay_design.csv` and `.md` were added as a
+  paper-only disabled-by-default overlay design. Macro/regime, disclosure/event,
+  news/event, CEO/official SNS, and sentiment-model references are all default
+  off; `direct_buy_alpha_allowed=False`, `training_allowed_now=False`,
+  `external_fetch_performed=False`, `llm_scoring_performed=False`,
+  `strategy_parameter_change=False`, `candidate_promotion=False`,
+  `trading_allowed=False`, and `production_effect=none`. No external fetch,
+  news/SNS scrape, LLM/FinBERT scoring, data fetch, API call, model training,
+  candidate comparison rerun, candidate creation, monthly plan regeneration,
+  strategy parameter change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization was performed.
+  Production remains `BLOCK` and protected candidate remains `PAPER_REVIEW`.
+  Next ML v2 checkpoint: CP-15 Final ML v2 Research Packet.
 - ML v2 CP-13 Shadow Scoring Report:
   `data/reports/ml_v2_shadow_scoring_report.csv` and `.md` were added as a
   blocked paper-only shadow scoring report. Because no trained or validated ML
