@@ -747,3 +747,27 @@ earliest incomplete checkpoint again.
 - Next checkpoint entry condition: compare/report ML v2 fixed-spec diagnostics
   against existing local ML baseline/v1 reports only if done as paper-only
   analysis with no candidate decision or production effect.
+
+### POST-23 Fixed-Spec ML Diagnostic Comparison
+
+- Goal: compare ML v2 fixed-spec diagnostics against existing local ML
+  baseline/v1 reports as a paper-only diagnostic inventory, without declaring a
+  model winner.
+- Deliverables:
+  `data/reports/ml_v2_fixed_spec_vs_existing_ml_diagnostic_comparison.csv` and
+  `.md`.
+- Completion conditions: reads existing local baseline, v1, and ML v2
+  fixed-spec reports only; records training/validation statuses, row counts,
+  accuracy diagnostics, feature scopes, non-comparable split caveat, and safety
+  fields; explicitly records no head-to-head model selection, no candidate
+  decision, `trading_allowed=False`, and `production_effect=none`.
+- Forbidden actions: no model training, validation rerun, OOS rerun, candidate
+  comparison rerun, model ranking for promotion, formula ranking, hyperparameter
+  tuning, candidate creation, strategy change, protected candidate change,
+  broker work, production readiness change, push, or trading authorization.
+- Checks: schema/content check confirms reports exist, safety fields are
+  disabled, and no model winner is declared.
+- Commit message: `Compare ML v2 fixed-spec diagnostics`.
+- Next checkpoint entry condition: design a later paper-only robustness plan
+  for ML v2 fixed-spec if requested; do not proceed to selection, promotion, or
+  production readiness from this comparison.

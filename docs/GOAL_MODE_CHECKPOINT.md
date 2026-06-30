@@ -1,6 +1,6 @@
 # Goal Mode Checkpoint
 
-Last updated: 2026-06-30 POST-22 fixed-spec paper-only training
+Last updated: 2026-06-30 POST-23 fixed-spec ML diagnostic comparison
 
 Purpose: keep this file small enough to read on every resume. Full historical
 context is archived at:
@@ -78,6 +78,17 @@ protected paper-review candidate.
 
 ## Latest Local Report Additions
 
+- ML v2 POST-23 fixed-spec diagnostic comparison:
+  `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-23, and
+  `data/reports/ml_v2_fixed_spec_vs_existing_ml_diagnostic_comparison.csv` plus
+  `.md` were added. The report compares existing local ML baseline, ML model
+  v1, and ML v2 fixed-spec diagnostics only. It records that samples and splits
+  are not directly comparable, declares no model winner, allows no candidate
+  decision, and keeps `trading_allowed=False` and `production_effect=none`. No
+  model training, validation rerun, OOS rerun, candidate comparison rerun,
+  model ranking for promotion, formula ranking, hyperparameter tuning,
+  candidate creation, strategy change, protected candidate change, broker work,
+  production readiness change, push, or trading authorization was performed.
 - ML v2 POST-22 fixed-spec paper-only training and validation:
   `docs/ml_v2_quant_hybrid_model_checkpoint.md` was extended with POST-22;
   `backtester/ml_v2_fixed_spec_training.py` and
