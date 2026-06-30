@@ -97,6 +97,21 @@ protected paper-review candidate.
   changes, protected candidate changes, production readiness changes, and push
   were not performed. The project root still has no `.codebase-memory/` or
   `graphify-out/` output.
+- codebase-memory-mcp safe fast index:
+  after explicit safe init/index approval, `codebase-memory-mcp 0.8.1` indexed
+  the project through local junction `C:\tmp\toss-cbm-project` pointing to
+  `C:\Users\KangMinWoo\Documents\토스증권`, because direct Korean-path CLI JSON
+  failed before indexing. The recorded project is `C-tmp-toss-cbm-project`
+  with `2440` nodes and `10175` edges in local cache
+  `C:\Users\KangMinWoo\.cache\codebase-memory-mcp\C-tmp-toss-cbm-project.db`.
+  `.cbmignore` was retained and read-only graph checks found zero indexed
+  `File` rows for `data/`, `.env`, and large/report extensions including CSV,
+  PDF, XLSX, ZIP, PARQUET, PKL, and JOBLIB. No MCP/Codex configuration, PATH
+  change, network download, reinstall, OOS rerun, fetch/API call, candidate
+  compare, monthly plan regeneration, trading/broker work, protected candidate
+  change, production readiness change, or push was performed. No
+  `.codebase-memory/` or `graphify-out/` directory was created in the project
+  root.
 - ML model final research packet:
   `data/reports/ml_model_research_packet.csv` and `.md`. Phase 14 is complete
   as a paper-only final packet consolidating local Phase 1-13 artifacts:

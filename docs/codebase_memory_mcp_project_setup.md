@@ -103,3 +103,56 @@ this preparation.
 If the tool is later installed and supports dry-run or safe-init behavior, run
 it only after confirming it respects `.cbmignore`, does not inspect excluded
 files, and writes generated output only to ignored local cache directories.
+
+## Safe Index Status
+
+Safe index approval was granted after binary-only installation.
+
+The installed binary was verified as `codebase-memory-mcp 0.8.1`. The tool help
+does not expose an `index_repository` dry-run mode, so the setup first checked
+that `auto_index=false`, confirmed there were no indexed projects, verified the
+required `.cbmignore` patterns, and reviewed the local upstream source for
+`.cbmignore` loading during discovery.
+
+Because the native Windows CLI argument path did not accept the Korean project
+path reliably, a local ASCII junction was created:
+
+- junction path: `C:\tmp\toss-cbm-project`
+- target path: `C:\Users\KangMinWoo\Documents\토스증권`
+
+The project was indexed via the junction using:
+
+```powershell
+codebase-memory-mcp cli index_repository '{"repo_path":"C:/tmp/toss-cbm-project","mode":"fast"}'
+```
+
+Index result:
+
+- project name: `C-tmp-toss-cbm-project`
+- root path recorded by the tool: `C:/tmp/toss-cbm-project`
+- nodes: `2440`
+- edges: `10175`
+- discovered files: `113`
+- excluded directories included `.git`, `data`, and Python cache folders
+- artifact present in project root: `false`
+
+Local output:
+
+- cache database:
+  `C:\Users\KangMinWoo\.cache\codebase-memory-mcp\C-tmp-toss-cbm-project.db`
+- config database:
+  `C:\Users\KangMinWoo\.cache\codebase-memory-mcp\_config.db`
+
+No `.codebase-memory/` or `graphify-out/` directory was created in the project
+root. Local git exclude rules were added to `.git/info/exclude` for
+`.codebase-memory/` and `graphify-out/`; these rules are local-only and are not
+committed.
+
+Post-index read-only graph checks returned zero `File` rows for:
+
+- paths starting with `data/`
+- paths containing `.env`
+- paths ending with `.csv`, `.pdf`, `.xlsx`, `.zip`, `.parquet`, `.pkl`, or
+  `.joblib`
+
+MCP/Codex configuration remains disconnected. PATH remains unchanged.
