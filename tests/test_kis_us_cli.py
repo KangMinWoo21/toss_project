@@ -32,12 +32,10 @@ class _FakeClient:
     def fetch_present_cash_usd(self):
         if self.fail_cash_reads:
             raise AssertionError("cash override should skip present cash API")
-        return 0.0
+        return 5000.0
 
     def fetch_integrated_margin_cash_usd(self):
-        if self.fail_cash_reads:
-            raise AssertionError("cash override should skip integrated margin API")
-        return 5000.0
+        raise AssertionError("KIS US mock flow should not call integrated margin API")
 
     def fetch_quote(self, symbol, exchange):
         return KisUsQuote(symbol, exchange, 100.0)
@@ -86,7 +84,7 @@ class KisUsCliTests(unittest.TestCase):
         self.assertEqual(rows[0]["execution_allowed"], "False")
         self.assertIn("NASD", _FakeClient.instances[-1].balance_exchanges)
 
-    def test_kis_us_paper_plan_uses_integrated_margin_cash_when_available(self):
+    def test_kis_us_paper_plan_uses_present_cash_when_available(self):
         _FakeClient.instances.clear()
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

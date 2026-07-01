@@ -6108,11 +6108,7 @@ def _run_kis_us_paper_plan(args: argparse.Namespace) -> int:
     if args.cash_usd is None:
         present_cash_usd = client.fetch_present_cash_usd()
         _sleep_between_kis_reads(args.request_interval_seconds)
-        integrated_margin_cash_usd = client.fetch_integrated_margin_cash_usd()
-        _sleep_between_kis_reads(args.request_interval_seconds)
-        cash_values = [
-            value for value in [present_cash_usd, integrated_margin_cash_usd] if value > 0
-        ]
+        cash_values = [value for value in [present_cash_usd] if value > 0]
     for exchange in _parse_comma_list(args.balance_exchanges):
         fetched_positions, cash_usd = client.fetch_balance(exchange)
         _sleep_between_kis_reads(args.request_interval_seconds)
@@ -6190,10 +6186,7 @@ def _run_kis_us_smoke_check(args: argparse.Namespace) -> int:
     present_cash_usd = client.fetch_present_cash_usd()
     _sleep_between_kis_reads(args.request_interval_seconds)
     checks.append(("present cash USD", "PASS", f"cash_usd={present_cash_usd:.2f}"))
-    integrated_margin_cash_usd = client.fetch_integrated_margin_cash_usd()
-    _sleep_between_kis_reads(args.request_interval_seconds)
-    checks.append(("integrated margin USD", "PASS", f"cash_usd={integrated_margin_cash_usd:.2f}"))
-    max_cash_usd = max(present_cash_usd, integrated_margin_cash_usd)
+    max_cash_usd = present_cash_usd
     for exchange in _parse_comma_list(args.balance_exchanges):
         positions, cash_usd = client.fetch_balance(exchange)
         _sleep_between_kis_reads(args.request_interval_seconds)
