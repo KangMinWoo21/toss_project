@@ -12,6 +12,7 @@
 | --- | --- |
 | 신규 엔진 분리 | `backtester/auto_trading/` |
 | KIS paper-only 분리 | `backtester/kis_us/` |
+| PR 검토용 핵심 증거 패킷 | `docs/auto-trading-final-evidence.md` |
 | 기준 모델 감사 해시 | `benchmark_report_sha256=802351b5ffec93c0b96f5cf72010bf0ce4fa60cbafbb15409d356587f326aefe` |
 | 전략 목표 상태 | `data/reports/auto_trading/auto_paper_audit_log.json` |
 | 순성과 비교 | `data/reports/auto_trading/auto_paper_performance.csv` |
