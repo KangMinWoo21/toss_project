@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+import sys
 from typing import Any
 
 
@@ -9,6 +10,36 @@ DEFAULT_KIS_US_TARGETS_SAMPLE = Path("data/examples/kis_us_targets_sample.csv")
 DEFAULT_KIS_US_PROTECTED_SAMPLE = Path("data/examples/kis_us_protected_positions_sample.csv")
 DEFAULT_KIS_US_DEMO_POSITIONS = Path("data/examples/kis_us_demo_positions.csv")
 DEFAULT_KIS_US_DEMO_QUOTES = Path("data/examples/kis_us_demo_quotes.csv")
+US_PAPER_COMMAND_ERROR_PREFIXES = {
+    "auto-paper-run": "auto_paper_run_error",
+    "auto-paper-export-kis-targets": "auto_paper_export_kis_targets_error",
+    "auto-paper-health-check": "auto_paper_health_check_error",
+    "auto-paper-risk-gate": "auto_paper_risk_gate_error",
+    "auto-paper-adjust-targets": "auto_paper_adjust_targets_error",
+    "auto-paper-register-model": "auto_paper_register_model_error",
+    "auto-paper-simulate-execution": "auto_paper_simulate_execution_error",
+    "auto-paper-market-impact": "auto_paper_market_impact_error",
+    "auto-paper-factor-risk": "auto_paper_factor_risk_error",
+    "auto-paper-optimize-portfolio": "auto_paper_optimize_portfolio_error",
+    "auto-paper-tca": "auto_paper_tca_error",
+    "auto-paper-external-data-readiness": "auto_paper_external_data_readiness_error",
+    "auto-paper-monitoring-report": "auto_paper_monitoring_report_error",
+    "kis-us-paper-plan": "kis_us_paper_plan_error",
+    "kis-us-paper-plan-demo": "kis_us_paper_plan_demo_error",
+    "kis-us-smoke-check": "kis_us_smoke_check_error",
+}
+
+
+def dispatch_us_paper_command(args: Any, *, handlers: dict[str, Any], stderr: Any = None) -> int | None:
+    command = str(getattr(args, "command", ""))
+    error_prefix = US_PAPER_COMMAND_ERROR_PREFIXES.get(command)
+    if error_prefix is None:
+        return None
+    try:
+        return int(handlers[command](args))
+    except (ValueError, OSError) as exc:
+        print(f"{error_prefix}  {exc}", file=stderr or sys.stderr)
+        return 2
 
 
 def register_us_paper_commands(subparsers: Any) -> None:

@@ -53,7 +53,7 @@ from .cli.common import arg_or_default as _arg_or_default
 from .cli.common import normalize_symbol as _normalize_symbol
 from .cli.common import parse_source_weights as _parse_source_weights
 from .cli.common import parse_windows as _parse_windows
-from .cli.us_paper import register_us_paper_commands
+from .cli.us_paper import dispatch_us_paper_command, register_us_paper_commands
 from .config import is_production_trading_enabled, load_env_into_process
 from .data import load_candles
 from .data_quality import (
@@ -77,7 +77,7 @@ from .leader_regime_switch import LeaderRegimeSwitchConfig, run_regime_switching
 from .flow import load_flow_scores
 from .health import evaluate_health, save_health_json, save_health_markdown
 from .kis_us.client import KisUsClient
-from .kis_us.config import KisUsConfigError, load_kis_us_config
+from .kis_us.config import load_kis_us_config
 from .kis_us.models import KisUsPosition, KisUsQuote
 from .kis_us.planner import build_kis_us_order_plan, load_targets as load_kis_us_targets
 from .kis_us.protected_positions import load_protected_positions as load_kis_us_protected_positions
@@ -2602,103 +2602,29 @@ def main() -> int:
     )
 
     args = parser.parse_args()
-    if args.command == "auto-paper-run":
-        try:
-            return _run_auto_paper_run(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_run_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-export-kis-targets":
-        try:
-            return _run_auto_paper_export_kis_targets(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_export_kis_targets_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-health-check":
-        try:
-            return _run_auto_paper_health_check(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_health_check_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-risk-gate":
-        try:
-            return _run_auto_paper_risk_gate(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_risk_gate_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-adjust-targets":
-        try:
-            return _run_auto_paper_adjust_targets(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_adjust_targets_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-register-model":
-        try:
-            return _run_auto_paper_register_model(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_register_model_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-simulate-execution":
-        try:
-            return _run_auto_paper_simulate_execution(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_simulate_execution_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-market-impact":
-        try:
-            return _run_auto_paper_market_impact(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_market_impact_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-factor-risk":
-        try:
-            return _run_auto_paper_factor_risk(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_factor_risk_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-optimize-portfolio":
-        try:
-            return _run_auto_paper_optimize_portfolio(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_optimize_portfolio_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-tca":
-        try:
-            return _run_auto_paper_tca(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_tca_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-external-data-readiness":
-        try:
-            return _run_auto_paper_external_data_readiness(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_external_data_readiness_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "auto-paper-monitoring-report":
-        try:
-            return _run_auto_paper_monitoring_report(args)
-        except (ValueError, OSError) as exc:
-            print(f"auto_paper_monitoring_report_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "kis-us-paper-plan":
-        try:
-            return _run_kis_us_paper_plan(args)
-        except (KisUsConfigError, ValueError, OSError) as exc:
-            print(f"kis_us_paper_plan_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "kis-us-paper-plan-demo":
-        try:
-            return _run_kis_us_paper_plan_demo(args)
-        except (ValueError, OSError) as exc:
-            print(f"kis_us_paper_plan_demo_error  {exc}", file=sys.stderr)
-            return 2
-    if args.command == "kis-us-smoke-check":
-        try:
-            return _run_kis_us_smoke_check(args)
-        except (KisUsConfigError, ValueError, OSError) as exc:
-            print(f"kis_us_smoke_check_error  {exc}", file=sys.stderr)
-            return 2
-
+    us_paper_result = dispatch_us_paper_command(
+        args,
+        handlers={
+            "auto-paper-run": _run_auto_paper_run,
+            "auto-paper-export-kis-targets": _run_auto_paper_export_kis_targets,
+            "auto-paper-health-check": _run_auto_paper_health_check,
+            "auto-paper-risk-gate": _run_auto_paper_risk_gate,
+            "auto-paper-adjust-targets": _run_auto_paper_adjust_targets,
+            "auto-paper-register-model": _run_auto_paper_register_model,
+            "auto-paper-simulate-execution": _run_auto_paper_simulate_execution,
+            "auto-paper-market-impact": _run_auto_paper_market_impact,
+            "auto-paper-factor-risk": _run_auto_paper_factor_risk,
+            "auto-paper-optimize-portfolio": _run_auto_paper_optimize_portfolio,
+            "auto-paper-tca": _run_auto_paper_tca,
+            "auto-paper-external-data-readiness": _run_auto_paper_external_data_readiness,
+            "auto-paper-monitoring-report": _run_auto_paper_monitoring_report,
+            "kis-us-paper-plan": _run_kis_us_paper_plan,
+            "kis-us-paper-plan-demo": _run_kis_us_paper_plan_demo,
+            "kis-us-smoke-check": _run_kis_us_smoke_check,
+        },
+    )
+    if us_paper_result is not None:
+        return us_paper_result
     if args.command == "data-check":
         path = Path(args.path)
         if path.is_file():
