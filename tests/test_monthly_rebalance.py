@@ -78,6 +78,7 @@ from backtester.monthly_rebalance import (
     build_order_plan,
     build_universe_filter_report,
     decide_monthly_allocation,
+    market_beta_proxy_symbols,
     diagnose_universe_bias,
     equal_weight_buy_hold_period_return,
     exclude_invalid_price_symbols,
@@ -663,6 +664,26 @@ class MonthlyRebalanceTests(unittest.TestCase):
 
         self.assertAlmostEqual(cap, 0.55)
         self.assertEqual(reason, "proxy_reversal_guard_capped")
+
+    def test_market_beta_proxy_symbols_can_skip_top_liquidity_names(self):
+        config = MonthlyRebalanceConfig(
+            market_beta_proxy_size=2,
+            market_beta_proxy_skip_top_liquidity=1,
+            point_in_time_liquidity_window_days=1,
+        )
+        symbol_candles = {
+            "TOP": _priced_candles("2025-01-01", [100.0, 101.0], volume=30_000),
+            "NEXT": _priced_candles("2025-01-01", [100.0, 101.0], volume=20_000),
+            "THIRD": _priced_candles("2025-01-01", [100.0, 101.0], volume=10_000),
+        }
+
+        symbols = market_beta_proxy_symbols(
+            symbol_candles,
+            signal_date="2025-01-02",
+            config=config,
+        )
+
+        self.assertEqual(symbols, ["NEXT", "THIRD"])
 
     def test_risk_gate_blocks_kill_switch_file(self):
         with TemporaryDirectory() as temp_dir:

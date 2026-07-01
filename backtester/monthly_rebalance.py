@@ -219,6 +219,7 @@ class MonthlyRebalanceConfig:
     point_in_time_universe: dict[str, set[str]] | None = None
     market_beta_symbol: str = "069500"
     market_beta_proxy_size: int = 12
+    market_beta_proxy_skip_top_liquidity: int = 0
     market_beta_proxy_max_exposure: float = 1.0
     market_beta_proxy_neutral_breadth_max_exposure: float = 1.0
     market_beta_proxy_neutral_loss_guard_max_exposure: float = 1.0
@@ -356,6 +357,7 @@ VALIDATION_SWEEP_PLAN_COLUMNS = [
     "min_train_positive_ratio",
     "candidate_pool_size",
     "market_beta_proxy_max_exposure",
+    "market_beta_proxy_skip_top_liquidity",
     "market_beta_proxy_neutral_breadth_max_exposure",
     "max_position_weight",
     "drawdown_guard_scale",
@@ -5503,11 +5505,11 @@ def _market_beta_proxy_reversal_guard_diagnostics(
         if config.point_in_time_liquidity_top_n > 0
         else point_in_time_candles
     )
-    proxy_symbols = rank_symbols_by_average_trading_value(
+    proxy_symbols = market_beta_proxy_symbols(
         decision_candles,
         signal_date=signal_date,
-        window_days=max(1, config.point_in_time_liquidity_window_days),
-    )[: max(0, config.market_beta_proxy_size)]
+        config=config,
+    )
     medium_return = _average_symbol_return_pct(
         decision_candles,
         proxy_symbols,
@@ -13217,6 +13219,23 @@ def rank_symbols_by_average_trading_value(
     ]
 
 
+def market_beta_proxy_symbols(
+    symbol_candles: dict[str, list[Candle]],
+    *,
+    signal_date: str,
+    config: MonthlyRebalanceConfig,
+) -> list[str]:
+    ranked_symbols = rank_symbols_by_average_trading_value(
+        symbol_candles,
+        signal_date=signal_date,
+        window_days=config.point_in_time_liquidity_window_days,
+    )
+    skip_top = max(0, config.market_beta_proxy_skip_top_liquidity)
+    if skip_top:
+        ranked_symbols = ranked_symbols[skip_top:]
+    return ranked_symbols[: max(0, config.market_beta_proxy_size)]
+
+
 def rank_symbol_average_trading_values(
     symbol_candles: dict[str, list[Candle]],
     *,
@@ -13271,11 +13290,11 @@ def _market_beta_target_weights(
     proxy_target_budget = min(target_budget, max(0.0, max_proxy_budget))
     if proxy_target_budget <= 0:
         return {}
-    proxy_symbols = rank_symbols_by_average_trading_value(
+    proxy_symbols = market_beta_proxy_symbols(
         symbol_candles,
         signal_date=signal_date,
-        window_days=config.point_in_time_liquidity_window_days,
-    )[: config.market_beta_proxy_size]
+        config=config,
+    )
     return target_weights_for_symbols(
         proxy_symbols,
         target_budget=proxy_target_budget,
@@ -13405,11 +13424,11 @@ def market_beta_proxy_neutral_loss_guard_cap(
     if medium_days <= 0 or guard_cap >= effective_cap:
         return effective_cap, "proxy_exposure_capped"
 
-    proxy_symbols = rank_symbols_by_average_trading_value(
+    proxy_symbols = market_beta_proxy_symbols(
         symbol_candles,
         signal_date=signal_date,
-        window_days=max(1, config.point_in_time_liquidity_window_days),
-    )[: max(0, config.market_beta_proxy_size)]
+        config=config,
+    )
     medium_return = _average_symbol_return_pct(
         symbol_candles,
         proxy_symbols,
@@ -13451,11 +13470,11 @@ def market_beta_proxy_reversal_guard_cap(
     if medium_days <= 0 or guard_cap >= effective_cap:
         return effective_cap, "proxy_exposure_capped"
 
-    proxy_symbols = rank_symbols_by_average_trading_value(
+    proxy_symbols = market_beta_proxy_symbols(
         symbol_candles,
         signal_date=signal_date,
-        window_days=max(1, config.point_in_time_liquidity_window_days),
-    )[: max(0, config.market_beta_proxy_size)]
+        config=config,
+    )
     medium_return = _average_symbol_return_pct(
         symbol_candles,
         proxy_symbols,

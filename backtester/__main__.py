@@ -857,6 +857,7 @@ def main() -> int:
     )
     monthly_plan_parser.add_argument("--market-beta-symbol", default="069500")
     monthly_plan_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
+    monthly_plan_parser.add_argument("--market-beta-proxy-skip-top-liquidity", type=int, default=0)
     monthly_plan_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
     monthly_plan_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_plan_parser.add_argument("--market-beta-proxy-buyable-only", action="store_true")
@@ -948,6 +949,7 @@ def main() -> int:
     )
     monthly_backtest_parser.add_argument("--market-beta-symbol", default="069500")
     monthly_backtest_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
+    monthly_backtest_parser.add_argument("--market-beta-proxy-skip-top-liquidity", type=int, default=0)
     monthly_backtest_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
     monthly_backtest_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_backtest_parser.add_argument("--market-beta-proxy-buyable-only", action="store_true")
@@ -1205,6 +1207,7 @@ def main() -> int:
     )
     monthly_validate_parser.add_argument("--market-beta-symbol", default="069500")
     monthly_validate_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
+    monthly_validate_parser.add_argument("--market-beta-proxy-skip-top-liquidity", type=int, default=0)
     monthly_validate_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
     monthly_validate_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_validate_parser.add_argument("--market-beta-proxy-buyable-only", action="store_true")
@@ -1766,6 +1769,7 @@ def main() -> int:
     monthly_train_decision_parser.add_argument("--fallback-breadth-threshold", type=float, default=0.5)
     monthly_train_decision_parser.add_argument("--market-beta-breadth-threshold", type=float, default=0.25)
     monthly_train_decision_parser.add_argument("--market-beta-proxy-size", type=int, default=12)
+    monthly_train_decision_parser.add_argument("--market-beta-proxy-skip-top-liquidity", type=int, default=0)
     monthly_train_decision_parser.add_argument("--market-beta-proxy-max-exposure", type=float, default=1.0)
     monthly_train_decision_parser.add_argument("--market-beta-proxy-neutral-breadth-max-exposure", type=float, default=1.0)
     monthly_train_decision_parser.add_argument("--market-beta-proxy-buyable-only", action="store_true")
@@ -3373,6 +3377,7 @@ def main() -> int:
             fallback_breadth_threshold=args.fallback_breadth_threshold,
             market_beta_breadth_threshold=args.market_beta_breadth_threshold,
             market_beta_proxy_size=args.market_beta_proxy_size,
+            market_beta_proxy_skip_top_liquidity=args.market_beta_proxy_skip_top_liquidity,
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
             market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
             market_beta_proxy_neutral_loss_guard_max_exposure=args.market_beta_proxy_neutral_loss_guard_max_exposure,
@@ -4650,6 +4655,7 @@ def main() -> int:
                 point_in_time_universe=point_in_time_universe,
                 market_beta_symbol=args.market_beta_symbol,
                 market_beta_proxy_size=args.market_beta_proxy_size,
+                market_beta_proxy_skip_top_liquidity=args.market_beta_proxy_skip_top_liquidity,
                 market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
                 market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
                 market_beta_proxy_neutral_loss_guard_max_exposure=args.market_beta_proxy_neutral_loss_guard_max_exposure,
@@ -4885,6 +4891,7 @@ def main() -> int:
                 point_in_time_universe=point_in_time_universe,
                 market_beta_symbol=args.market_beta_symbol,
                 market_beta_proxy_size=args.market_beta_proxy_size,
+                market_beta_proxy_skip_top_liquidity=args.market_beta_proxy_skip_top_liquidity,
                 market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
                 market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
                 market_beta_proxy_neutral_loss_guard_max_exposure=args.market_beta_proxy_neutral_loss_guard_max_exposure,
@@ -5269,6 +5276,7 @@ def main() -> int:
             point_in_time_universe=point_in_time_universe,
             market_beta_symbol=args.market_beta_symbol,
             market_beta_proxy_size=args.market_beta_proxy_size,
+            market_beta_proxy_skip_top_liquidity=args.market_beta_proxy_skip_top_liquidity,
             market_beta_proxy_max_exposure=args.market_beta_proxy_max_exposure,
             market_beta_proxy_neutral_breadth_max_exposure=args.market_beta_proxy_neutral_breadth_max_exposure,
             market_beta_proxy_neutral_loss_guard_max_exposure=args.market_beta_proxy_neutral_loss_guard_max_exposure,
