@@ -50,4 +50,3 @@ Safety state:
 - `order_execution=False`
 - `trading_allowed=False`
 - `production_effect=none`
-

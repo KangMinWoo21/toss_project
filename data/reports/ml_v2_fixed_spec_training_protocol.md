@@ -39,4 +39,3 @@ Safety state remains:
 - `broker_submission=False`
 - `order_execution=False`
 - `production_effect=none`
-

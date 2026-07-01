@@ -21,4 +21,3 @@ Sharpe is deferred for later model-selection work and is not calculated here.
   fixed-spec training run may proceed.
 
 Safety state remains `production_effect=none` and `trading_allowed=False`.
-
