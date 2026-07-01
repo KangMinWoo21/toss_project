@@ -10,10 +10,12 @@ KIS_US_TOKEN_PATH = "/oauth2/tokenP"
 KIS_US_INTEGRATED_MARGIN_PATH = "/uapi/domestic-stock/v1/trading/intgr-margin"
 KIS_US_BALANCE_PATH = "/uapi/overseas-stock/v1/trading/inquire-balance"
 KIS_US_PRESENT_BALANCE_PATH = "/uapi/overseas-stock/v1/trading/inquire-present-balance"
+KIS_US_PSAMOUNT_PATH = "/uapi/overseas-stock/v1/trading/inquire-psamount"
 KIS_US_PRICE_PATH = "/uapi/overseas-price/v1/quotations/price"
 KIS_US_INTEGRATED_MARGIN_TR_ID = "TTTC0869R"
 KIS_US_BALANCE_TR_ID_DEMO = "VTTS3012R"
 KIS_US_PRESENT_BALANCE_TR_ID_DEMO = "VTRP6504R"
+KIS_US_PSAMOUNT_TR_ID_DEMO = "VTTS3007R"
 KIS_US_PRICE_TR_ID = "HHDFS00000300"
 
 BALANCE_TO_QUOTE_EXCHANGE = {
@@ -21,6 +23,7 @@ BALANCE_TO_QUOTE_EXCHANGE = {
     "NYSE": "NYS",
     "AMEX": "AMS",
 }
+QUOTE_TO_BALANCE_EXCHANGE = {quote: balance for balance, quote in BALANCE_TO_QUOTE_EXCHANGE.items()}
 
 
 class KisUsClient:
@@ -135,6 +138,30 @@ class KisUsClient:
         )
         return KisUsQuote(symbol=str(symbol).strip().upper(), exchange=str(exchange).strip().upper(), price=price)
 
+    def fetch_psamount_usd(self, symbol: str, exchange: str, reference_price: float) -> float:
+        token = self._ensure_token()
+        normalized_exchange = str(exchange).strip().upper()
+        psamount_exchange = QUOTE_TO_BALANCE_EXCHANGE.get(normalized_exchange, normalized_exchange)
+        params = {
+            "CANO": self.config.account_no,
+            "ACNT_PRDT_CD": self.config.account_product_code,
+            "OVRS_EXCG_CD": psamount_exchange,
+            "OVRS_ORD_UNPR": _format_kis_decimal(reference_price),
+            "ITEM_CD": str(symbol).strip().upper(),
+        }
+        request = self._request(
+            f"{KIS_US_PSAMOUNT_PATH}?{urllib.parse.urlencode(params)}",
+            token=token,
+            tr_id=KIS_US_PSAMOUNT_TR_ID_DEMO,
+        )
+        payload = self._request_json(request)
+        output = payload.get("output", {})
+        if isinstance(output, list):
+            output = output[0] if output else {}
+        if not isinstance(output, dict):
+            return 0.0
+        return _parse_float(_first_value(output, ["ord_psbl_frcr_amt", "ovrs_ord_psbl_amt", "frcr_ord_psbl_amt1"]))
+
     def _ensure_token(self) -> str:
         return self._access_token or self.issue_token()
 
@@ -238,3 +265,7 @@ def _parse_float(value: Any) -> float:
         return float(str(value).replace(",", ""))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _format_kis_decimal(value: float) -> str:
+    return f"{float(value):.8f}".rstrip("0").rstrip(".")

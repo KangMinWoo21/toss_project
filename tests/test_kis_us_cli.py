@@ -14,6 +14,7 @@ from backtester.kis_us.models import KisUsPosition, KisUsQuote
 class _FakeClient:
     instances = []
     fail_cash_reads = False
+    psamount_cash_usd = 0.0
 
     def __init__(self, config):
         self.config = config
@@ -39,6 +40,9 @@ class _FakeClient:
 
     def fetch_quote(self, symbol, exchange):
         return KisUsQuote(symbol, exchange, 100.0)
+
+    def fetch_psamount_usd(self, symbol, exchange, reference_price):
+        return self.psamount_cash_usd
 
 
 class KisUsCliTests(unittest.TestCase):
@@ -127,6 +131,56 @@ class KisUsCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(rows["NVDA"]["side"], "BUY")
         self.assertEqual(rows["NVDA"]["quantity"], "25")
+
+    def test_kis_us_paper_plan_uses_psamount_cash_when_present_balance_is_zero(self):
+        _FakeClient.instances.clear()
+        _FakeClient.psamount_cash_usd = 100000.0
+        try:
+            with TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                targets = root / "targets.csv"
+                output = root / "plan.csv"
+                summary = root / "plan.md"
+                targets.write_text("symbol,exchange,target_weight\nNVDA,NAS,0.5\n", encoding="utf-8")
+                env = os.environ.copy()
+                env.update(
+                    {
+                        "KIS_APP_KEY": "app",
+                        "KIS_APP_SECRET": "secret",
+                        "KIS_ACCOUNT_NO": "12345678",
+                        "KIS_ACCOUNT_PRODUCT_CODE": "01",
+                        "KIS_MOCK_BASE_URL": "https://openapivts.koreainvestment.com:29443",
+                    }
+                )
+
+                with patch.dict(os.environ, env, clear=True), patch.object(
+                    cli, "KisUsClient", _FakeClient
+                ), patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "backtester",
+                        "kis-us-paper-plan",
+                        "--targets",
+                        str(targets),
+                        "--balance-exchanges",
+                        "NASD",
+                        "--output",
+                        str(output),
+                        "--summary-output",
+                        str(summary),
+                    ],
+                ):
+                    code = cli.main()
+
+                with output.open(newline="", encoding="utf-8") as f:
+                    rows = {row["symbol"]: row for row in csv.DictReader(f)}
+        finally:
+            _FakeClient.psamount_cash_usd = 0.0
+
+        self.assertEqual(code, 0)
+        self.assertEqual(rows["NVDA"]["side"], "BUY")
+        self.assertEqual(rows["NVDA"]["quantity"], "500")
 
     def test_kis_us_paper_plan_cash_override_skips_cash_read_apis(self):
         _FakeClient.instances.clear()

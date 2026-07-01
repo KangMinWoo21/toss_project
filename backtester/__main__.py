@@ -6124,6 +6124,16 @@ def _run_kis_us_paper_plan(args: argparse.Namespace) -> int:
         symbol: _fetch_kis_quote_with_pause(client, symbol, exchange, args.request_interval_seconds)
         for symbol, exchange in sorted(exchange_by_symbol.items())
     }
+    if args.cash_usd is None:
+        for target in targets:
+            quote = quotes.get(target.symbol)
+            if quote is None or quote.price <= 0:
+                continue
+            psamount_cash = client.fetch_psamount_usd(target.symbol, target.exchange, quote.price)
+            _sleep_between_kis_reads(args.request_interval_seconds)
+            if psamount_cash > 0:
+                cash_values.append(psamount_cash)
+        cash_usd = max(cash_values) if cash_values else 0.0
     created_at = datetime.now().astimezone().isoformat(timespec="seconds")
     orders = build_kis_us_order_plan(
         targets=targets,

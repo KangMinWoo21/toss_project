@@ -6,6 +6,8 @@ from backtester.kis_us.client import (
     KIS_US_BALANCE_TR_ID_DEMO,
     KIS_US_INTEGRATED_MARGIN_PATH,
     KIS_US_INTEGRATED_MARGIN_TR_ID,
+    KIS_US_PSAMOUNT_PATH,
+    KIS_US_PSAMOUNT_TR_ID_DEMO,
     KIS_US_PRESENT_BALANCE_PATH,
     KIS_US_PRESENT_BALANCE_TR_ID_DEMO,
     KIS_US_PRICE_PATH,
@@ -145,6 +147,30 @@ class KisUsClientTests(unittest.TestCase):
         self.assertIn(KIS_US_INTEGRATED_MARGIN_PATH, request.full_url)
         self.assertEqual(request.headers["tr_id"], KIS_US_INTEGRATED_MARGIN_TR_ID)
         self.assertIn("CMA_EVLU_AMT_ICLD_YN=N", request.full_url)
+
+    def test_fetch_psamount_uses_demo_tr_id_and_parses_orderable_usd_cash(self):
+        opener = _FakeOpener(
+            [
+                {
+                    "rt_cd": "0",
+                    "output": {
+                        "ord_psbl_frcr_amt": "100000.00",
+                        "ord_psbl_qty": "338",
+                    },
+                }
+            ]
+        )
+        client = KisUsClient(self._config(), opener=opener, access_token="token-1")
+
+        cash = client.fetch_psamount_usd("AAPL", "NASD", 292.455)
+
+        self.assertEqual(cash, 100000.0)
+        request = opener.requests[0]
+        self.assertIn(KIS_US_PSAMOUNT_PATH, request.full_url)
+        self.assertEqual(request.headers["tr_id"], KIS_US_PSAMOUNT_TR_ID_DEMO)
+        self.assertIn("OVRS_EXCG_CD=NASD", request.full_url)
+        self.assertIn("OVRS_ORD_UNPR=292.455", request.full_url)
+        self.assertIn("ITEM_CD=AAPL", request.full_url)
 
     def test_client_exposes_no_order_methods(self):
         names = {name for name in dir(KisUsClient) if "order" in name.lower() or "buy" in name.lower() or "sell" in name.lower()}
