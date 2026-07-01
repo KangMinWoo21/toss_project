@@ -1,0 +1,10 @@
+symbol,date,article_count,sentiment_score,source
+SPY,2026-06-30,0,0,template_gdelt_or_alpha_vantage_news_import_required
+QQQ,2026-06-30,0,0,template_gdelt_or_alpha_vantage_news_import_required
+AAPL,2026-06-30,0,0,template_gdelt_or_alpha_vantage_news_import_required
+MSFT,2026-06-30,0,0,template_gdelt_or_alpha_vantage_news_import_required
+NVDA,2026-06-30,0,0,template_gdelt_or_alpha_vantage_news_import_required
+AMZN,2026-06-30,0,0,template_gdelt_or_alpha_vantage_news_import_required
+GOOGL,2026-06-30,0,0,template_gdelt_or_alpha_vantage_news_import_required
+META,2026-06-30,0,0,template_gdelt_or_alpha_vantage_news_import_required
+TSLA,2026-06-30,0,0,template_gdelt_or_alpha_vantage_news_import_required

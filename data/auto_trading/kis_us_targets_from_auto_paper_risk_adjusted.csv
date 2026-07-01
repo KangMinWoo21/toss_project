@@ -1,0 +1,9 @@
+symbol,exchange,target_weight,risk_adjustment,risk_reasons,paper_only,dry_run,execution_allowed,production_effect
+SPY,AMS,0.300000,kept,none,True,True,False,none
+QQQ,NAS,0.250000,kept,none,True,True,False,none
+AAPL,NAS,0.100000,kept,none,True,True,False,none
+MSFT,NAS,0.100000,kept,none,True,True,False,none
+NVDA,NAS,0.100000,kept,none,True,True,False,none
+AMZN,NAS,0.050000,kept,none,True,True,False,none
+GOOGL,NAS,0.050000,kept,none,True,True,False,none
+META,NAS,0.030000,kept,none,True,True,False,none

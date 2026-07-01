@@ -1,0 +1,3 @@
+symbol,exchange,quantity,market_value,average_price
+AAPL,NAS,2,400.00,190.00
+TSLA,NAS,3,750.00,210.00

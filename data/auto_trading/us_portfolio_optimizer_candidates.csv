@@ -1,0 +1,10 @@
+symbol,exchange,alpha_score,paper_only,dry_run,execution_allowed,production_effect
+NVDA,NAS,0.930000,True,True,False,none
+TSLA,NAS,0.880000,True,True,False,none
+QQQ,NAS,0.820000,True,True,False,none
+AAPL,NAS,0.780000,True,True,False,none
+MSFT,NAS,0.760000,True,True,False,none
+SPY,AMS,0.740000,True,True,False,none
+META,NAS,0.650000,True,True,False,none
+AMZN,NAS,0.620000,True,True,False,none
+GOOGL,NAS,0.600000,True,True,False,none

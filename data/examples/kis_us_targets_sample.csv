@@ -1,0 +1,4 @@
+symbol,exchange,target_weight
+AAPL,NAS,0.45
+NVDA,NAS,0.35
+QQQ,NAS,0.20

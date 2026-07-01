@@ -1,0 +1,12 @@
+symbol,name,asset_type,exchange,effective_from,effective_to,status,source,survivorship_warning,target_weight
+SPY,SPDR S&P 500 ETF Trust,ETF,AMS,2015-01-01,,active,manual_point_in_time_seed,point-in-time seed source,0.30
+QQQ,Invesco QQQ Trust,ETF,NAS,2015-01-01,,active,manual_point_in_time_seed,point-in-time seed source,0.25
+AAPL,Apple Inc.,EQUITY,NAS,2015-01-01,,active,manual_point_in_time_seed,point-in-time seed source,0.10
+MSFT,Microsoft Corp.,EQUITY,NAS,2015-01-01,,active,manual_point_in_time_seed,point-in-time seed source,0.10
+NVDA,NVIDIA Corp.,EQUITY,NAS,2015-01-01,,active,manual_point_in_time_seed,point-in-time seed source,0.10
+AMZN,Amazon.com Inc.,EQUITY,NAS,2015-01-01,,active,manual_point_in_time_seed,point-in-time seed source,0.05
+GOOGL,Alphabet Inc. Class A,EQUITY,NAS,2015-01-01,,active,manual_point_in_time_seed,point-in-time seed source,0.05
+META,Meta Platforms Inc.,EQUITY,NAS,2015-01-01,,active,manual_point_in_time_seed,point-in-time seed source,0.03
+TSLA,Tesla Inc.,EQUITY,NAS,2015-01-01,,active,manual_point_in_time_seed,point-in-time seed source,0.02
+OLD,Old Delisted Example,EQUITY,NYS,2015-01-01,2020-12-31,active,manual_point_in_time_seed,point-in-time seed source,0.00
+DEAD,Dead Delisted Example,EQUITY,NAS,2015-01-01,,delisted,manual_point_in_time_seed,point-in-time seed source,0.00

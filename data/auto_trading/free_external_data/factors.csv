@@ -1,0 +1,10 @@
+symbol,sector,beta,size_score,value_score,quality_score,momentum_score,source,as_of
+SPY,Broad ETF,1.00,0.90,0.50,0.70,0.60,manual_free_proxy_seed_not_investment_data,2026-06-30
+QQQ,Growth ETF,1.10,0.85,0.40,0.65,0.70,manual_free_proxy_seed_not_investment_data,2026-06-30
+AAPL,Technology,1.20,0.90,0.45,0.80,0.70,manual_free_proxy_seed_not_investment_data,2026-06-30
+MSFT,Technology,1.05,0.90,0.50,0.85,0.65,manual_free_proxy_seed_not_investment_data,2026-06-30
+NVDA,Semiconductors,1.80,0.80,0.30,0.70,0.95,manual_free_proxy_seed_not_investment_data,2026-06-30
+AMZN,Consumer Discretionary,1.30,0.85,0.35,0.70,0.60,manual_free_proxy_seed_not_investment_data,2026-06-30
+GOOGL,Communication Services,1.10,0.85,0.55,0.75,0.55,manual_free_proxy_seed_not_investment_data,2026-06-30
+META,Communication Services,1.25,0.80,0.50,0.70,0.65,manual_free_proxy_seed_not_investment_data,2026-06-30
+TSLA,Consumer Discretionary,2.00,0.70,0.20,0.45,0.70,manual_free_proxy_seed_not_investment_data,2026-06-30

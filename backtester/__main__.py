@@ -1,13 +1,54 @@
 import argparse
 from collections import Counter
 import csv
+import math
 import os
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+import sys
+import time
 
 from .analysis import generate_rolling_windows, summarize_walk_forward, walk_forward
 from .auto_scalper import parse_symbol_list, run_auto_scalper_loop
+from .auto_trading.external_data import (
+    build_external_data_readiness_rows,
+    save_external_data_readiness_reports,
+)
+from .auto_trading.execution_simulator import (
+    ExecutionSimulationConfig,
+    simulate_paper_execution,
+    write_execution_simulation_report,
+)
+from .auto_trading.factor_risk import FactorRiskLimits, build_factor_risk_rows, save_factor_risk_reports
+from .auto_trading.kis_bridge import export_kis_targets_from_auto_paper
+from .auto_trading.model_registry import register_model_release
+from .auto_trading.operation_health import build_operation_health_rows, save_operation_health_reports
+from .auto_trading.market_impact import (
+    MarketImpactInput,
+    estimate_market_impact_rows,
+    write_market_impact_report,
+)
+from .auto_trading.monitoring import (
+    SchedulerMonitoringInputs,
+    build_scheduler_monitoring_rows,
+    save_scheduler_monitoring_reports,
+)
+from .auto_trading.portfolio_optimizer import (
+    PortfolioOptimizationConfig,
+    build_optimized_portfolio_rows,
+    save_optimized_portfolio_reports,
+)
+from .auto_trading.portfolio_risk import (
+    PortfolioRiskLimits,
+    adjust_targets_for_portfolio_risk,
+    build_portfolio_risk_rows,
+    save_adjusted_targets,
+    save_portfolio_risk_reports,
+)
+from .auto_trading.prices import load_price_history as load_auto_price_history
+from .auto_trading.runner import run_auto_paper_run
+from .auto_trading.tca import TcaConfig, build_tca_rows, save_tca_reports
 from .cli.common import arg_or_default as _arg_or_default
 from .cli.common import normalize_symbol as _normalize_symbol
 from .cli.common import parse_source_weights as _parse_source_weights
@@ -34,6 +75,12 @@ from .events import load_event_scores, merge_event_files
 from .leader_regime_switch import LeaderRegimeSwitchConfig, run_regime_switching_leader_backtest
 from .flow import load_flow_scores
 from .health import evaluate_health, save_health_json, save_health_markdown
+from .kis_us.client import KisUsClient
+from .kis_us.config import KisUsConfigError, load_kis_us_config
+from .kis_us.models import KisUsPosition, KisUsQuote
+from .kis_us.planner import build_kis_us_order_plan, load_targets as load_kis_us_targets
+from .kis_us.protected_positions import load_protected_positions as load_kis_us_protected_positions
+from .kis_us.reports import save_kis_us_order_plan, save_kis_us_order_summary
 from .leader_swing import LeaderSwingConfig, load_symbol_candles, run_leader_swing_backtest
 from .momentum_rotation import (
     MomentumRotationConfig,
@@ -353,6 +400,10 @@ DEFAULT_EXCLUDED_VALIDATION_DELTA_GLOBS = (
     "data/reports/monthly_validation_comparison_deltas_multi_*.csv",
     "data/reports/monthly_validation_comparison_deltas_diagnostic_*.csv",
 )
+DEFAULT_KIS_US_TARGETS_SAMPLE = Path("data/examples/kis_us_targets_sample.csv")
+DEFAULT_KIS_US_PROTECTED_SAMPLE = Path("data/examples/kis_us_protected_positions_sample.csv")
+DEFAULT_KIS_US_DEMO_POSITIONS = Path("data/examples/kis_us_demo_positions.csv")
+DEFAULT_KIS_US_DEMO_QUOTES = Path("data/examples/kis_us_demo_quotes.csv")
 
 
 @dataclass(frozen=True)
@@ -593,6 +644,376 @@ def main() -> int:
     auto_scalp_parser.add_argument("--max-spread-pct", type=float, default=0.2)
     auto_scalp_parser.add_argument("--take-profit-pct", type=float, default=0.8)
     auto_scalp_parser.add_argument("--stop-loss-pct", type=float, default=-1.0)
+
+    kis_us_parser = subparsers.add_parser(
+        "kis-us-paper-plan",
+        help="Create a KIS US stock mock-account dry-run order plan without placing orders",
+    )
+    kis_us_parser.add_argument("--targets", required=True, help="CSV with symbol,exchange,target_weight")
+    kis_us_parser.add_argument("--protected-positions", default=None, help="CSV with symbol,reason")
+    kis_us_parser.add_argument("--balance-exchanges", default="NASD,NYSE,AMEX")
+    kis_us_parser.add_argument("--cash-usd", type=float, default=None)
+    kis_us_parser.add_argument("--request-interval-seconds", type=float, default=0.0)
+    kis_us_parser.add_argument("--as-of", default=date.today().isoformat())
+    kis_us_parser.add_argument("--output", default="data/reports/kis_us_paper_order_plan.csv")
+    kis_us_parser.add_argument("--summary-output", default="data/reports/kis_us_paper_order_plan.md")
+
+    kis_us_demo_parser = subparsers.add_parser(
+        "kis-us-paper-plan-demo",
+        help="Create a KIS US paper-only demo plan from local sample files without API credentials",
+    )
+    kis_us_demo_parser.add_argument("--targets", default=str(DEFAULT_KIS_US_TARGETS_SAMPLE))
+    kis_us_demo_parser.add_argument("--protected-positions", default=str(DEFAULT_KIS_US_PROTECTED_SAMPLE))
+    kis_us_demo_parser.add_argument("--positions", default=str(DEFAULT_KIS_US_DEMO_POSITIONS))
+    kis_us_demo_parser.add_argument("--quotes", default=str(DEFAULT_KIS_US_DEMO_QUOTES))
+    kis_us_demo_parser.add_argument("--cash-usd", type=float, default=1200.0)
+    kis_us_demo_parser.add_argument("--as-of", default=date.today().isoformat())
+    kis_us_demo_parser.add_argument("--output", default="data/reports/kis_us_paper_order_plan_demo.csv")
+    kis_us_demo_parser.add_argument("--summary-output", default="data/reports/kis_us_paper_order_plan_demo.md")
+
+    kis_us_smoke_parser = subparsers.add_parser(
+        "kis-us-smoke-check",
+        help="Verify KIS US mock token, balance, and quote reads without placing orders",
+    )
+    kis_us_smoke_parser.add_argument("--symbols", default="AAPL", help="Comma-separated symbols for quote checks")
+    kis_us_smoke_parser.add_argument("--quote-exchange", default="NAS", help="KIS quote exchange code")
+    kis_us_smoke_parser.add_argument("--balance-exchanges", default="NASD", help="Comma-separated balance exchange codes")
+    kis_us_smoke_parser.add_argument("--request-interval-seconds", type=float, default=0.0)
+    kis_us_smoke_parser.add_argument("--output", default="data/reports/kis_us_smoke_check.md")
+
+    auto_paper_parser = subparsers.add_parser(
+        "auto-paper-run",
+        help="Run the local-CSV-only US paper auto-trading research engine",
+    )
+    auto_paper_parser.add_argument("--prices-dir", default="data/external/yahoo/us_daily")
+    auto_paper_parser.add_argument("--universe", default="data/auto_trading/us_core_universe.csv")
+    auto_paper_parser.add_argument(
+        "--universe-as-of",
+        default=None,
+        help="Optional YYYY-MM-DD point-in-time universe date; when set, --universe must be a universe history CSV",
+    )
+    auto_paper_parser.add_argument(
+        "--benchmark-report",
+        default="data/reports/monthly_performance_audit_candidate_proxy_guard_exit_short_minus5_neutral_loss_guard55_min_history244.csv",
+    )
+    auto_paper_parser.add_argument("--benchmark-row-selector", default="name=return_concentration")
+    auto_paper_parser.add_argument("--usd-krw-rate", type=float, default=1400.0)
+    auto_paper_parser.add_argument("--output-dir", default="data/reports/auto_trading")
+    auto_paper_parser.add_argument(
+        "--external-data-dir",
+        default=None,
+        help="Optional local CSV directory for free external data proxies; no network calls are made",
+    )
+
+    auto_paper_kis_export_parser = subparsers.add_parser(
+        "auto-paper-export-kis-targets",
+        help="Export a COMPLETE auto paper order plan into a KIS US paper-only target CSV",
+    )
+    auto_paper_kis_export_parser.add_argument(
+        "--auto-order-plan",
+        default="data/reports/auto_trading/auto_paper_order_plan.csv",
+    )
+    auto_paper_kis_export_parser.add_argument("--universe", default="data/auto_trading/us_core_universe.csv")
+    auto_paper_kis_export_parser.add_argument(
+        "--audit-log",
+        default="data/reports/auto_trading/auto_paper_audit_log.json",
+    )
+    auto_paper_kis_export_parser.add_argument(
+        "--output",
+        default="data/auto_trading/kis_us_targets_from_auto_paper.csv",
+    )
+
+    auto_paper_health_parser = subparsers.add_parser(
+        "auto-paper-health-check",
+        help="Validate auto paper and KIS paper-only artifacts before any broker read step",
+    )
+    auto_paper_health_parser.add_argument(
+        "--audit-log",
+        default="data/reports/auto_trading/auto_paper_audit_log.json",
+    )
+    auto_paper_health_parser.add_argument(
+        "--auto-order-plan",
+        default="data/reports/auto_trading/auto_paper_order_plan.csv",
+    )
+    auto_paper_health_parser.add_argument(
+        "--kis-targets",
+        default="data/auto_trading/kis_us_targets_from_auto_paper.csv",
+    )
+    auto_paper_health_parser.add_argument(
+        "--kis-order-plan",
+        default="data/reports/kis_us_paper_order_plan_from_auto_demo.csv",
+    )
+    auto_paper_health_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_operation_health.csv",
+    )
+    auto_paper_health_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/auto_trading/auto_paper_operation_health.md",
+    )
+
+    auto_paper_risk_parser = subparsers.add_parser(
+        "auto-paper-risk-gate",
+        help="Run paper-only portfolio risk gates on exported KIS targets",
+    )
+    auto_paper_risk_parser.add_argument(
+        "--kis-targets",
+        default="data/auto_trading/kis_us_targets_from_auto_paper.csv",
+    )
+    auto_paper_risk_parser.add_argument(
+        "--external-data-dir",
+        default="data/auto_trading/free_external_data",
+    )
+    auto_paper_risk_parser.add_argument("--prices-dir", default="data/external/yahoo/us_daily")
+    auto_paper_risk_parser.add_argument("--portfolio-value-usd", type=float, default=100_000.0)
+    auto_paper_risk_parser.add_argument("--max-single-weight", type=float, default=0.35)
+    auto_paper_risk_parser.add_argument("--max-sector-weight", type=float, default=0.50)
+    auto_paper_risk_parser.add_argument("--min-beta", type=float, default=0.0)
+    auto_paper_risk_parser.add_argument("--max-beta", type=float, default=1.80)
+    auto_paper_risk_parser.add_argument("--max-short-volume-ratio", type=float, default=0.35)
+    auto_paper_risk_parser.add_argument("--min-news-sentiment", type=float, default=-0.60)
+    auto_paper_risk_parser.add_argument("--max-adv-participation", type=float, default=0.05)
+    auto_paper_risk_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_portfolio_risk_gate.csv",
+    )
+    auto_paper_risk_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/auto_trading/auto_paper_portfolio_risk_gate.md",
+    )
+
+    auto_paper_adjust_parser = subparsers.add_parser(
+        "auto-paper-adjust-targets",
+        help="Create risk-adjusted KIS target CSV by removing/capping portfolio risk offenders",
+    )
+    auto_paper_adjust_parser.add_argument(
+        "--kis-targets",
+        default="data/auto_trading/kis_us_targets_from_auto_paper.csv",
+    )
+    auto_paper_adjust_parser.add_argument(
+        "--external-data-dir",
+        default="data/auto_trading/free_external_data",
+    )
+    auto_paper_adjust_parser.add_argument("--prices-dir", default="data/external/yahoo/us_daily")
+    auto_paper_adjust_parser.add_argument("--portfolio-value-usd", type=float, default=100_000.0)
+    auto_paper_adjust_parser.add_argument("--max-single-weight", type=float, default=0.35)
+    auto_paper_adjust_parser.add_argument("--max-sector-weight", type=float, default=0.50)
+    auto_paper_adjust_parser.add_argument("--min-beta", type=float, default=0.0)
+    auto_paper_adjust_parser.add_argument("--max-beta", type=float, default=1.80)
+    auto_paper_adjust_parser.add_argument("--max-short-volume-ratio", type=float, default=0.35)
+    auto_paper_adjust_parser.add_argument("--min-news-sentiment", type=float, default=-0.60)
+    auto_paper_adjust_parser.add_argument("--max-adv-participation", type=float, default=0.05)
+    auto_paper_adjust_parser.add_argument(
+        "--output",
+        default="data/auto_trading/kis_us_targets_from_auto_paper_risk_adjusted.csv",
+    )
+
+    auto_paper_register_parser = subparsers.add_parser(
+        "auto-paper-register-model",
+        help="Register a COMPLETE paper-only model release after risk gate PASS",
+    )
+    auto_paper_register_parser.add_argument(
+        "--audit-log",
+        default="data/reports/auto_trading/auto_paper_audit_log.json",
+    )
+    auto_paper_register_parser.add_argument(
+        "--model-config",
+        default="data/reports/auto_trading/auto_paper_model_config.json",
+    )
+    auto_paper_register_parser.add_argument(
+        "--cost-policy",
+        default="data/reports/auto_trading/auto_paper_cost_policy.md",
+    )
+    auto_paper_register_parser.add_argument(
+        "--risk-gate",
+        default="data/reports/auto_trading/auto_paper_portfolio_risk_gate_adjusted.csv",
+    )
+    auto_paper_register_parser.add_argument("--version", required=True)
+    auto_paper_register_parser.add_argument("--rollback-reference", default="")
+    auto_paper_register_parser.add_argument("--previous-registry", default=None)
+    auto_paper_register_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_model_registry.json",
+    )
+
+    auto_paper_execution_parser = subparsers.add_parser(
+        "auto-paper-simulate-execution",
+        help="Simulate paper-only fills from a dry-run order plan",
+    )
+    auto_paper_execution_parser.add_argument(
+        "--orders",
+        default="data/reports/kis_us_paper_order_plan_from_auto_risk_adjusted_demo.csv",
+    )
+    auto_paper_execution_parser.add_argument("--prices-dir", default="data/external/yahoo/us_daily")
+    auto_paper_execution_parser.add_argument(
+        "--fill-policy",
+        choices=["close", "open", "next_bar", "vwap_proxy"],
+        default="close",
+    )
+    auto_paper_execution_parser.add_argument("--max-adv-participation", type=float, default=0.05)
+    auto_paper_execution_parser.add_argument("--spread-rate", type=float, default=0.001)
+    auto_paper_execution_parser.add_argument("--slippage-rate", type=float, default=0.001)
+    auto_paper_execution_parser.add_argument("--execution-time-kst", default="")
+    auto_paper_execution_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_execution_simulation.csv",
+    )
+
+    auto_paper_market_impact_parser = subparsers.add_parser(
+        "auto-paper-market-impact",
+        help="Estimate paper-only market impact from a dry-run order plan and local daily prices",
+    )
+    auto_paper_market_impact_parser.add_argument(
+        "--orders",
+        default="data/reports/kis_us_paper_order_plan_from_auto_risk_adjusted_demo.csv",
+    )
+    auto_paper_market_impact_parser.add_argument("--prices-dir", default="data/external/yahoo/us_daily")
+    auto_paper_market_impact_parser.add_argument(
+        "--scenario",
+        choices=["base", "conservative", "stress"],
+        default="base",
+    )
+    auto_paper_market_impact_parser.add_argument("--spread-rate", type=float, default=0.001)
+    auto_paper_market_impact_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_market_impact.csv",
+    )
+
+    auto_paper_factor_risk_parser = subparsers.add_parser(
+        "auto-paper-factor-risk",
+        help="Evaluate institutional-style paper-only factor risk from local target and factor CSVs",
+    )
+    auto_paper_factor_risk_parser.add_argument(
+        "--kis-targets",
+        default="data/auto_trading/kis_us_targets_from_auto_paper_risk_adjusted.csv",
+    )
+    auto_paper_factor_risk_parser.add_argument(
+        "--external-data-dir",
+        default="data/auto_trading/free_external_data",
+    )
+    auto_paper_factor_risk_parser.add_argument("--max-single-weight", type=float, default=0.35)
+    auto_paper_factor_risk_parser.add_argument("--max-sector-weight", type=float, default=0.50)
+    auto_paper_factor_risk_parser.add_argument("--max-weighted-beta", type=float, default=1.50)
+    auto_paper_factor_risk_parser.add_argument("--max-negative-quality-tilt", type=float, default=0.20)
+    auto_paper_factor_risk_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_factor_risk.csv",
+    )
+    auto_paper_factor_risk_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/auto_trading/auto_paper_factor_risk.md",
+    )
+
+    auto_paper_optimizer_parser = subparsers.add_parser(
+        "auto-paper-optimize-portfolio",
+        help="Create paper-only optimized target weights from local candidate and factor CSVs",
+    )
+    auto_paper_optimizer_parser.add_argument(
+        "--candidates",
+        default="data/auto_trading/us_portfolio_optimizer_candidates.csv",
+    )
+    auto_paper_optimizer_parser.add_argument(
+        "--external-data-dir",
+        default="data/auto_trading/free_external_data",
+    )
+    auto_paper_optimizer_parser.add_argument("--max-total-weight", type=float, default=0.98)
+    auto_paper_optimizer_parser.add_argument("--max-single-weight", type=float, default=0.35)
+    auto_paper_optimizer_parser.add_argument("--max-sector-weight", type=float, default=0.50)
+    auto_paper_optimizer_parser.add_argument("--max-weighted-beta", type=float, default=1.50)
+    auto_paper_optimizer_parser.add_argument("--max-symbol-beta", type=float, default=1.80)
+    auto_paper_optimizer_parser.add_argument("--min-quality-score", type=float, default=0.50)
+    auto_paper_optimizer_parser.add_argument("--min-alpha-score", type=float, default=0.0)
+    auto_paper_optimizer_parser.add_argument("--weight-step", type=float, default=0.01)
+    auto_paper_optimizer_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_optimized_targets.csv",
+    )
+    auto_paper_optimizer_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/auto_trading/auto_paper_optimized_targets.md",
+    )
+
+    auto_paper_tca_parser = subparsers.add_parser(
+        "auto-paper-tca",
+        help="Write a paper-only transaction-cost-analysis report from simulated fills",
+    )
+    auto_paper_tca_parser.add_argument(
+        "--executions",
+        default="data/reports/auto_trading/auto_paper_execution_simulation.csv",
+    )
+    auto_paper_tca_parser.add_argument(
+        "--market-impact",
+        default="data/reports/auto_trading/auto_paper_market_impact.csv",
+    )
+    auto_paper_tca_parser.add_argument("--max-shortfall-bps", type=float, default=50.0)
+    auto_paper_tca_parser.add_argument("--max-cost-variance-usd", type=float, default=5.0)
+    auto_paper_tca_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_tca.csv",
+    )
+    auto_paper_tca_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/auto_trading/auto_paper_tca.md",
+    )
+
+    auto_paper_external_readiness_parser = subparsers.add_parser(
+        "auto-paper-external-data-readiness",
+        help="Validate local free external data adapters and write a paper-only readiness manifest",
+    )
+    auto_paper_external_readiness_parser.add_argument(
+        "--external-data-dir",
+        default="data/auto_trading/free_external_data",
+    )
+    auto_paper_external_readiness_parser.add_argument("--symbols", default="")
+    auto_paper_external_readiness_parser.add_argument(
+        "--candidates",
+        default="data/auto_trading/us_portfolio_optimizer_candidates.csv",
+    )
+    auto_paper_external_readiness_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_external_data_readiness.csv",
+    )
+    auto_paper_external_readiness_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/auto_trading/auto_paper_external_data_readiness.md",
+    )
+
+    auto_paper_monitoring_parser = subparsers.add_parser(
+        "auto-paper-monitoring-report",
+        help="Summarize local paper-only scheduler gate artifacts into one monitoring report",
+    )
+    auto_paper_monitoring_parser.add_argument(
+        "--audit-log",
+        default="data/reports/auto_trading/auto_paper_audit_log.json",
+    )
+    auto_paper_monitoring_parser.add_argument(
+        "--external-data-readiness",
+        default="data/reports/auto_trading/auto_paper_external_data_readiness.csv",
+    )
+    auto_paper_monitoring_parser.add_argument(
+        "--portfolio-risk-gate",
+        default="data/reports/auto_trading/auto_paper_portfolio_risk_gate_adjusted.csv",
+    )
+    auto_paper_monitoring_parser.add_argument(
+        "--factor-risk",
+        default="data/reports/auto_trading/auto_paper_factor_risk.csv",
+    )
+    auto_paper_monitoring_parser.add_argument(
+        "--tca-report",
+        default="data/reports/auto_trading/auto_paper_tca.csv",
+    )
+    auto_paper_monitoring_parser.add_argument(
+        "--operation-health",
+        default="data/reports/auto_trading/auto_paper_operation_health_risk_adjusted.csv",
+    )
+    auto_paper_monitoring_parser.add_argument(
+        "--output",
+        default="data/reports/auto_trading/auto_paper_scheduler_monitoring.csv",
+    )
+    auto_paper_monitoring_parser.add_argument(
+        "--markdown-output",
+        default="data/reports/auto_trading/auto_paper_scheduler_monitoring.md",
+    )
 
     scalp_replay_parser = subparsers.add_parser("scalp-replay", help="Replay saved scalp tick data across many rule variants")
     scalp_replay_parser.add_argument("--data-dir", default="data/scalper_cloud")
@@ -2553,6 +2974,103 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+    if args.command == "auto-paper-run":
+        try:
+            return _run_auto_paper_run(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_run_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-export-kis-targets":
+        try:
+            return _run_auto_paper_export_kis_targets(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_export_kis_targets_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-health-check":
+        try:
+            return _run_auto_paper_health_check(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_health_check_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-risk-gate":
+        try:
+            return _run_auto_paper_risk_gate(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_risk_gate_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-adjust-targets":
+        try:
+            return _run_auto_paper_adjust_targets(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_adjust_targets_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-register-model":
+        try:
+            return _run_auto_paper_register_model(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_register_model_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-simulate-execution":
+        try:
+            return _run_auto_paper_simulate_execution(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_simulate_execution_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-market-impact":
+        try:
+            return _run_auto_paper_market_impact(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_market_impact_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-factor-risk":
+        try:
+            return _run_auto_paper_factor_risk(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_factor_risk_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-optimize-portfolio":
+        try:
+            return _run_auto_paper_optimize_portfolio(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_optimize_portfolio_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-tca":
+        try:
+            return _run_auto_paper_tca(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_tca_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-external-data-readiness":
+        try:
+            return _run_auto_paper_external_data_readiness(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_external_data_readiness_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "auto-paper-monitoring-report":
+        try:
+            return _run_auto_paper_monitoring_report(args)
+        except (ValueError, OSError) as exc:
+            print(f"auto_paper_monitoring_report_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "kis-us-paper-plan":
+        try:
+            return _run_kis_us_paper_plan(args)
+        except (KisUsConfigError, ValueError, OSError) as exc:
+            print(f"kis_us_paper_plan_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "kis-us-paper-plan-demo":
+        try:
+            return _run_kis_us_paper_plan_demo(args)
+        except (ValueError, OSError) as exc:
+            print(f"kis_us_paper_plan_demo_error  {exc}", file=sys.stderr)
+            return 2
+    if args.command == "kis-us-smoke-check":
+        try:
+            return _run_kis_us_smoke_check(args)
+        except (KisUsConfigError, ValueError, OSError) as exc:
+            print(f"kis_us_smoke_check_error  {exc}", file=sys.stderr)
+            return 2
+
     if args.command == "data-check":
         path = Path(args.path)
         if path.is_file():
@@ -5628,6 +6146,660 @@ def main() -> int:
         print("Strategy summary")
         print(format_walk_forward_summary_table(summaries))
     return 0
+
+
+def _run_auto_paper_run(args: argparse.Namespace) -> int:
+    result = run_auto_paper_run(
+        prices_dir=args.prices_dir,
+        universe_path=args.universe,
+        benchmark_report=args.benchmark_report,
+        benchmark_row_selector=args.benchmark_row_selector,
+        output_dir=args.output_dir,
+        usd_krw_rate=float(args.usd_krw_rate),
+        external_data_dir=args.external_data_dir,
+        universe_as_of=args.universe_as_of,
+    )
+    print("US auto paper run")
+    print(f"engine_status  {result.engine_status}")
+    print(f"objective_status  {result.objective_status}")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print(f"performance  {result.performance_path}")
+    print(f"comparison  {result.comparison_path}")
+    print(f"order_plan  {result.order_plan_path}")
+    print(f"audit_log  {result.audit_log_path}")
+    print(f"model_config  {result.model_config_path}")
+    print(f"cost_policy  {result.cost_policy_path}")
+    print(f"external_data  {args.external_data_dir or 'none'}")
+    return 0
+
+
+def _run_auto_paper_export_kis_targets(args: argparse.Namespace) -> int:
+    rows = export_kis_targets_from_auto_paper(
+        auto_order_plan_path=args.auto_order_plan,
+        universe_path=args.universe,
+        audit_log_path=args.audit_log,
+        output_path=args.output,
+    )
+    print("US auto paper KIS target export")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print(f"targets  {len(rows)}")
+    print(f"kis_targets  {args.output}")
+    return 0
+
+
+def _run_auto_paper_health_check(args: argparse.Namespace) -> int:
+    rows = build_operation_health_rows(
+        audit_log_path=args.audit_log,
+        auto_order_plan_path=args.auto_order_plan,
+        kis_targets_path=args.kis_targets,
+        kis_order_plan_path=args.kis_order_plan,
+    )
+    save_operation_health_reports(rows, args.output, args.markdown_output)
+    overall = "PASS" if all(row["status"] == "PASS" for row in rows) else "BLOCK"
+    print(f"operation_health_status  {overall}")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print(f"health_report  {args.output}")
+    print(f"health_summary  {args.markdown_output}")
+    return 0 if overall == "PASS" else 2
+
+
+def _run_auto_paper_risk_gate(args: argparse.Namespace) -> int:
+    limits = _portfolio_risk_limits_from_args(args)
+    rows = build_portfolio_risk_rows(
+        targets_path=args.kis_targets,
+        external_data_dir=args.external_data_dir,
+        prices_dir=args.prices_dir,
+        portfolio_value_usd=float(args.portfolio_value_usd),
+        limits=limits,
+    )
+    save_portfolio_risk_reports(rows, args.output, args.markdown_output)
+    overall = "PASS" if all(row["status"] == "PASS" for row in rows) else "BLOCK"
+    print(f"portfolio_risk_status  {overall}")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print(f"risk_report  {args.output}")
+    print(f"risk_summary  {args.markdown_output}")
+    return 0 if overall == "PASS" else 2
+
+
+def _run_auto_paper_adjust_targets(args: argparse.Namespace) -> int:
+    limits = _portfolio_risk_limits_from_args(args)
+    rows = adjust_targets_for_portfolio_risk(
+        targets_path=args.kis_targets,
+        external_data_dir=args.external_data_dir,
+        prices_dir=args.prices_dir,
+        portfolio_value_usd=float(args.portfolio_value_usd),
+        limits=limits,
+    )
+    save_adjusted_targets(rows, args.output)
+    total_weight = sum(float(row["target_weight"]) for row in rows)
+    print("US auto paper risk-adjusted targets")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print(f"targets  {len(rows)}")
+    print(f"target_weight_total  {total_weight:.6f}")
+    print(f"adjusted_targets  {args.output}")
+    return 0
+
+
+def _run_auto_paper_register_model(args: argparse.Namespace) -> int:
+    record = register_model_release(
+        audit_log_path=args.audit_log,
+        model_config_path=args.model_config,
+        cost_policy_path=args.cost_policy,
+        risk_gate_path=args.risk_gate,
+        output_path=args.output,
+        version=args.version,
+        rollback_reference=args.rollback_reference,
+        previous_registry_path=args.previous_registry,
+    )
+    print("US auto paper model registry")
+    print(f"model_id  {record['model_id']}")
+    print(f"version  {record['version']}")
+    print(f"objective_status  {record['objective_status']}")
+    print(f"risk_gate_status  {record['risk_gate_status']}")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print(f"model_registry  {args.output}")
+    return 0
+
+
+def _run_auto_paper_simulate_execution(args: argparse.Namespace) -> int:
+    config = ExecutionSimulationConfig(
+        fill_policy=args.fill_policy,
+        max_adv_participation=float(args.max_adv_participation),
+        spread_rate=float(args.spread_rate),
+        slippage_rate=float(args.slippage_rate),
+        execution_time_kst=args.execution_time_kst,
+    )
+    rows = simulate_paper_execution(
+        orders_path=args.orders,
+        prices_dir=args.prices_dir,
+        config=config,
+    )
+    write_execution_simulation_report(rows, args.output)
+    status_counts = Counter(row["fill_status"] for row in rows)
+    status_summary = ",".join(f"{status}={count}" for status, count in sorted(status_counts.items()))
+    print("US auto paper execution simulation")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print(f"fills  {len(rows)}")
+    print(f"fill_status  {status_summary}")
+    print(f"execution_simulation  {args.output}")
+    return 0
+
+
+def _run_auto_paper_market_impact(args: argparse.Namespace) -> int:
+    values = _market_impact_inputs_from_order_plan(
+        orders_path=Path(args.orders),
+        prices_dir=Path(args.prices_dir),
+        scenario=args.scenario,
+        spread_rate=float(args.spread_rate),
+    )
+    rows = estimate_market_impact_rows(values)
+    write_market_impact_report(rows, args.output)
+    bucket_counts = Counter(row["risk_bucket"] for row in rows)
+    bucket_summary = ",".join(f"{bucket}={count}" for bucket, count in sorted(bucket_counts.items()))
+    print("US auto paper market impact")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print(f"orders  {len(rows)}")
+    print(f"risk_buckets  {bucket_summary}")
+    print(f"market_impact  {args.output}")
+    return 0
+
+
+def _run_auto_paper_factor_risk(args: argparse.Namespace) -> int:
+    limits = FactorRiskLimits(
+        max_single_weight=float(args.max_single_weight),
+        max_sector_weight=float(args.max_sector_weight),
+        max_weighted_beta=float(args.max_weighted_beta),
+        max_negative_quality_tilt=float(args.max_negative_quality_tilt),
+    )
+    rows = build_factor_risk_rows(
+        targets_path=args.kis_targets,
+        external_data_dir=args.external_data_dir,
+        limits=limits,
+    )
+    save_factor_risk_reports(rows, args.output, args.markdown_output)
+    status_counts = Counter(row["status"] for row in rows)
+    status_summary = ",".join(f"{status}={count}" for status, count in sorted(status_counts.items()))
+    overall = "PASS" if all(row["status"] == "PASS" for row in rows) else "BLOCK"
+    print("US auto paper factor risk")
+    print(f"factor_risk_status  {overall}")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print("production_effect  none")
+    print(f"checks  {len(rows)}")
+    print(f"status_counts  {status_summary}")
+    print(f"factor_risk  {args.output}")
+    print(f"factor_risk_summary  {args.markdown_output}")
+    return 0 if overall == "PASS" else 2
+
+
+def _run_auto_paper_optimize_portfolio(args: argparse.Namespace) -> int:
+    config = PortfolioOptimizationConfig(
+        max_total_weight=float(args.max_total_weight),
+        max_single_weight=float(args.max_single_weight),
+        max_sector_weight=float(args.max_sector_weight),
+        max_weighted_beta=float(args.max_weighted_beta),
+        max_symbol_beta=float(args.max_symbol_beta),
+        min_quality_score=float(args.min_quality_score),
+        min_alpha_score=float(args.min_alpha_score),
+        weight_step=float(args.weight_step),
+    )
+    rows = build_optimized_portfolio_rows(
+        candidates_path=args.candidates,
+        external_data_dir=args.external_data_dir,
+        config=config,
+    )
+    save_optimized_portfolio_reports(rows, args.output, args.markdown_output)
+    selected = [row for row in rows if float(row["target_weight"]) > 0]
+    total_weight = sum(float(row["target_weight"]) for row in selected)
+    print("US auto paper portfolio optimizer")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print("production_effect  none")
+    print(f"selected  {len(selected)}")
+    print(f"target_weight_total  {total_weight:.6f}")
+    print(f"portfolio_optimizer  {args.output}")
+    print(f"portfolio_optimizer_summary  {args.markdown_output}")
+    return 0
+
+
+def _run_auto_paper_tca(args: argparse.Namespace) -> int:
+    config = TcaConfig(
+        max_shortfall_bps=float(args.max_shortfall_bps),
+        max_cost_variance_usd=float(args.max_cost_variance_usd),
+    )
+    rows = build_tca_rows(
+        executions_path=args.executions,
+        market_impact_path=args.market_impact,
+        config=config,
+    )
+    save_tca_reports(rows, args.output, args.markdown_output)
+    status_counts = Counter(row["tca_status"] for row in rows)
+    status_summary = ",".join(f"{status}={count}" for status, count in sorted(status_counts.items()))
+    total_shortfall = sum(float(row["implementation_shortfall_usd"]) for row in rows)
+    overall = "PASS" if all(row["tca_status"] == "PASS" for row in rows) else "REVIEW"
+    print("US auto paper TCA simulator")
+    print(f"tca_status  {overall}")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print("production_effect  none")
+    print(f"rows  {len(rows)}")
+    print(f"status_counts  {status_summary}")
+    print(f"total_implementation_shortfall_usd  {total_shortfall:.6f}")
+    print(f"tca_report  {args.output}")
+    print(f"tca_summary  {args.markdown_output}")
+    return 0 if overall == "PASS" else 2
+
+
+def _run_auto_paper_external_data_readiness(args: argparse.Namespace) -> int:
+    symbols = _symbols_from_cli_or_candidates(args.symbols, Path(args.candidates))
+    rows = build_external_data_readiness_rows(args.external_data_dir, symbols)
+    save_external_data_readiness_reports(rows, args.output, args.markdown_output)
+    status_counts = Counter(row["status"] for row in rows)
+    status_summary = ",".join(f"{status}={count}" for status, count in sorted(status_counts.items()))
+    overall = "PASS" if all(row["status"] == "PASS" for row in rows) else "BLOCK"
+    print("US auto paper external data readiness")
+    print(f"external_data_readiness_status  {overall}")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print("production_effect  none")
+    print(f"symbols  {len(symbols)}")
+    print(f"status_counts  {status_summary}")
+    print(f"external_data_readiness  {args.output}")
+    print(f"external_data_readiness_summary  {args.markdown_output}")
+    return 0 if overall == "PASS" else 2
+
+
+def _run_auto_paper_monitoring_report(args: argparse.Namespace) -> int:
+    inputs = SchedulerMonitoringInputs(
+        audit_log=args.audit_log,
+        external_data_readiness=args.external_data_readiness,
+        portfolio_risk_gate=args.portfolio_risk_gate,
+        factor_risk=args.factor_risk,
+        tca_report=args.tca_report,
+        operation_health=args.operation_health,
+    )
+    rows = build_scheduler_monitoring_rows(inputs)
+    save_scheduler_monitoring_reports(rows, args.output, args.markdown_output)
+    status_counts = Counter(row["status"] for row in rows)
+    status_summary = ",".join(f"{status}={count}" for status, count in sorted(status_counts.items()))
+    overall = "PASS" if all(row["status"] == "PASS" for row in rows) else "BLOCK"
+    print("US auto paper scheduler monitoring")
+    print(f"scheduler_monitoring_status  {overall}")
+    print("paper_only  True")
+    print("dry_run  True")
+    print("execution_allowed  False")
+    print("production_effect  none")
+    print(f"status_counts  {status_summary}")
+    print(f"scheduler_monitoring  {args.output}")
+    print(f"scheduler_monitoring_summary  {args.markdown_output}")
+    return 0 if overall == "PASS" else 2
+
+
+def _symbols_from_cli_or_candidates(symbols_text: str, candidates_path: Path) -> list[str]:
+    symbols = [symbol.strip().upper() for symbol in symbols_text.split(",") if symbol.strip()]
+    if symbols:
+        return sorted(set(symbols))
+    rows = _read_csv_dicts(candidates_path)
+    derived = sorted({str(row.get("symbol", "")).strip().upper() for row in rows if str(row.get("symbol", "")).strip()})
+    if not derived:
+        raise ValueError(f"{candidates_path} has no symbols for external data readiness")
+    return derived
+
+
+def _market_impact_inputs_from_order_plan(
+    *,
+    orders_path: Path,
+    prices_dir: Path,
+    scenario: str,
+    spread_rate: float,
+) -> list[MarketImpactInput]:
+    order_rows = [
+        row
+        for row in _read_csv_dicts(orders_path)
+        if str(row.get("side", "")).strip().upper() != "SKIP"
+    ]
+    if not order_rows:
+        raise ValueError(f"{orders_path} has no non-SKIP order rows")
+    for row in order_rows:
+        if str(row.get("execution_allowed", "")).strip() != "False":
+            raise ValueError(f"unsafe order row for {row.get('symbol', '')}: execution_allowed={row.get('execution_allowed', '')}")
+    symbols = sorted({str(row.get("symbol", "")).strip().upper() for row in order_rows if str(row.get("symbol", "")).strip()})
+    histories = load_auto_price_history(prices_dir, symbols)
+    values: list[MarketImpactInput] = []
+    for row in order_rows:
+        symbol = str(row.get("symbol", "")).strip().upper()
+        order_value = _order_value_usd(row)
+        history = histories[symbol]
+        values.append(
+            MarketImpactInput(
+                symbol=symbol,
+                order_value_usd=order_value,
+                average_daily_dollar_volume=_auto_average_daily_dollar_volume(history),
+                annualized_volatility=_auto_annualized_volatility(history),
+                spread_rate=spread_rate,
+                scenario=scenario,
+            )
+        )
+    return values
+
+
+def _order_value_usd(row: dict[str, str]) -> float:
+    raw_estimated = str(row.get("estimated_value", "")).strip()
+    if raw_estimated:
+        return abs(float(raw_estimated))
+    quantity = abs(float(row.get("quantity", 0) or 0))
+    reference_price = abs(float(row.get("reference_price", 0) or 0))
+    return quantity * reference_price
+
+
+def _auto_average_daily_dollar_volume(rows) -> float:
+    recent = rows[-20:] if len(rows) > 20 else rows
+    values = [row.close * row.volume for row in recent if row.close > 0 and row.volume > 0]
+    if not values:
+        raise ValueError("cannot estimate ADV from empty or zero-volume price history")
+    return sum(values) / len(values)
+
+
+def _auto_annualized_volatility(rows) -> float:
+    closes = [row.close for row in rows if row.close > 0]
+    returns = [(closes[index] / closes[index - 1]) - 1.0 for index in range(1, len(closes))]
+    if len(returns) < 2:
+        return 0.0
+    mean = sum(returns) / len(returns)
+    variance = sum((value - mean) ** 2 for value in returns) / (len(returns) - 1)
+    return math.sqrt(variance) * math.sqrt(252)
+
+
+def _portfolio_risk_limits_from_args(args: argparse.Namespace) -> PortfolioRiskLimits:
+    return PortfolioRiskLimits(
+        max_single_weight=float(args.max_single_weight),
+        max_sector_weight=float(args.max_sector_weight),
+        min_beta=float(args.min_beta),
+        max_beta=float(args.max_beta),
+        max_short_volume_ratio=float(args.max_short_volume_ratio),
+        min_news_sentiment=float(args.min_news_sentiment),
+        max_adv_participation=float(args.max_adv_participation),
+    )
+
+
+def _run_kis_us_paper_plan(args: argparse.Namespace) -> int:
+    cfg = load_kis_us_config()
+    targets = load_kis_us_targets(args.targets)
+    protected_positions = load_kis_us_protected_positions(args.protected_positions)
+    client = KisUsClient(cfg)
+    client.issue_token()
+    _sleep_between_kis_reads(args.request_interval_seconds)
+    positions: list[KisUsPosition] = []
+    cash_values: list[float] = []
+    if args.cash_usd is None:
+        present_cash_usd = client.fetch_present_cash_usd()
+        _sleep_between_kis_reads(args.request_interval_seconds)
+        integrated_margin_cash_usd = client.fetch_integrated_margin_cash_usd()
+        _sleep_between_kis_reads(args.request_interval_seconds)
+        cash_values = [
+            value for value in [present_cash_usd, integrated_margin_cash_usd] if value > 0
+        ]
+    for exchange in _parse_comma_list(args.balance_exchanges):
+        fetched_positions, cash_usd = client.fetch_balance(exchange)
+        _sleep_between_kis_reads(args.request_interval_seconds)
+        positions.extend(fetched_positions)
+        if cash_usd > 0:
+            cash_values.append(cash_usd)
+    positions = _merge_kis_us_positions(positions)
+    cash_usd = float(args.cash_usd) if args.cash_usd is not None else (max(cash_values) if cash_values else 0.0)
+    exchange_by_symbol = {target.symbol: target.exchange for target in targets}
+    for position in positions:
+        exchange_by_symbol.setdefault(position.symbol, position.exchange)
+    quotes = {
+        symbol: _fetch_kis_quote_with_pause(client, symbol, exchange, args.request_interval_seconds)
+        for symbol, exchange in sorted(exchange_by_symbol.items())
+    }
+    created_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    orders = build_kis_us_order_plan(
+        targets=targets,
+        positions=positions,
+        quotes=quotes,
+        protected_positions=protected_positions,
+        cash_usd=cash_usd,
+        as_of=args.as_of,
+        created_at=created_at,
+    )
+    save_kis_us_order_plan(orders, args.output)
+    save_kis_us_order_summary(orders, args.summary_output, as_of=args.as_of, cash_usd=cash_usd)
+    print("KIS US paper-only plan")
+    print(f"as_of  {args.as_of}")
+    print(f"orders  {len(orders)}")
+    print("execution_allowed  False")
+    print(f"order_plan  {args.output}")
+    print(f"summary  {args.summary_output}")
+    return 0
+
+
+def _run_kis_us_paper_plan_demo(args: argparse.Namespace) -> int:
+    targets = load_kis_us_targets(args.targets)
+    protected_positions = load_kis_us_protected_positions(args.protected_positions)
+    positions = _load_kis_us_demo_positions(args.positions)
+    quotes = _load_kis_us_demo_quotes(args.quotes)
+    created_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    orders = build_kis_us_order_plan(
+        targets=targets,
+        positions=positions,
+        quotes=quotes,
+        protected_positions=protected_positions,
+        cash_usd=float(args.cash_usd),
+        as_of=args.as_of,
+        created_at=created_at,
+    )
+    save_kis_us_order_plan(orders, args.output)
+    save_kis_us_order_summary(orders, args.summary_output, as_of=args.as_of, cash_usd=float(args.cash_usd))
+    print("KIS US paper-only demo plan")
+    print(f"as_of  {args.as_of}")
+    print(f"orders  {len(orders)}")
+    print("execution_allowed  False")
+    print("api_credentials  not_required")
+    print(f"order_plan  {args.output}")
+    print(f"summary  {args.summary_output}")
+    return 0
+
+
+def _run_kis_us_smoke_check(args: argparse.Namespace) -> int:
+    cfg = load_kis_us_config()
+    client = KisUsClient(cfg)
+    checks: list[tuple[str, str, str]] = []
+    token = client.issue_token()
+    if not token:
+        raise ValueError("token response did not include access_token")
+    checks.append(("token", "PASS", "access token issued"))
+    _sleep_between_kis_reads(args.request_interval_seconds)
+
+    total_positions = 0
+    present_cash_usd = client.fetch_present_cash_usd()
+    _sleep_between_kis_reads(args.request_interval_seconds)
+    checks.append(("present cash USD", "PASS", f"cash_usd={present_cash_usd:.2f}"))
+    integrated_margin_cash_usd = client.fetch_integrated_margin_cash_usd()
+    _sleep_between_kis_reads(args.request_interval_seconds)
+    checks.append(("integrated margin USD", "PASS", f"cash_usd={integrated_margin_cash_usd:.2f}"))
+    max_cash_usd = max(present_cash_usd, integrated_margin_cash_usd)
+    for exchange in _parse_comma_list(args.balance_exchanges):
+        positions, cash_usd = client.fetch_balance(exchange)
+        _sleep_between_kis_reads(args.request_interval_seconds)
+        total_positions += len(positions)
+        max_cash_usd = max(max_cash_usd, float(cash_usd))
+        checks.append((f"balance {exchange}", "PASS", f"positions={len(positions)}, cash_usd={cash_usd:.2f}"))
+
+    quote_exchange = str(args.quote_exchange).strip().upper()
+    for symbol in _parse_comma_list(args.symbols):
+        quote = client.fetch_quote(symbol, quote_exchange)
+        _sleep_between_kis_reads(args.request_interval_seconds)
+        if quote.price <= 0:
+            raise ValueError(f"quote {symbol}/{quote_exchange} returned non-positive price")
+        checks.append((f"quote {symbol}/{quote_exchange}", "PASS", f"price={quote.price:.4f}"))
+
+    _save_kis_us_smoke_report(
+        checks,
+        args.output,
+        created_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        total_positions=total_positions,
+        max_cash_usd=max_cash_usd,
+    )
+    print("KIS US smoke check")
+    for name, status, _detail in checks:
+        print(f"{name}: {status}")
+    print("orders_submitted: False")
+    print(f"report  {args.output}")
+    return 0
+
+
+def _save_kis_us_smoke_report(
+    checks: list[tuple[str, str, str]],
+    output_path: Path | str,
+    *,
+    created_at: str,
+    total_positions: int,
+    max_cash_usd: float,
+) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# KIS US Smoke Check",
+        "",
+        "Status: paper-only / read-only / no order submitted",
+        f"Created at: {created_at}",
+        f"Positions observed: {total_positions}",
+        f"Max cash USD observed: {max_cash_usd:.2f}",
+        "",
+        "## Summary",
+        "",
+    ]
+    for name, status, _detail in checks:
+        lines.append(f"- {name}: {status}")
+    lines.extend(
+        [
+            "",
+            "## Checks",
+            "",
+            "| check | status | detail |",
+            "| --- | --- | --- |",
+        ]
+    )
+    for name, status, detail in checks:
+        lines.append(f"| {name} | {status} | {detail} |")
+    lines.extend(
+        [
+            "",
+            "## Safety",
+            "",
+            "- No order endpoint is called.",
+            "- No broker credentials, access token, or account number is written to this report.",
+        ]
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _fetch_kis_quote_with_pause(
+    client: KisUsClient,
+    symbol: str,
+    exchange: str,
+    request_interval_seconds: float,
+) -> KisUsQuote:
+    quote = client.fetch_quote(symbol, exchange)
+    _sleep_between_kis_reads(request_interval_seconds)
+    return quote
+
+
+def _sleep_between_kis_reads(request_interval_seconds: float) -> None:
+    interval = max(float(request_interval_seconds), 0.0)
+    if interval > 0:
+        time.sleep(interval)
+
+
+def _load_kis_us_demo_positions(path: Path | str) -> list[KisUsPosition]:
+    csv_path = Path(path)
+    with csv_path.open(newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"{csv_path} has no header")
+        missing = {"symbol", "exchange", "quantity", "market_value", "average_price"}.difference(reader.fieldnames)
+        if missing:
+            raise ValueError(f"{csv_path} is missing columns: {', '.join(sorted(missing))}")
+        positions = [
+            KisUsPosition(
+                symbol=str(row.get("symbol", "")).strip().upper(),
+                exchange=str(row.get("exchange", "")).strip().upper(),
+                quantity=int(float(row.get("quantity", 0) or 0)),
+                market_value=float(row.get("market_value", 0) or 0),
+                average_price=float(row.get("average_price", 0) or 0),
+            )
+            for row in reader
+            if str(row.get("symbol", "")).strip()
+        ]
+    return _merge_kis_us_positions(positions)
+
+
+def _load_kis_us_demo_quotes(path: Path | str) -> dict[str, KisUsQuote]:
+    csv_path = Path(path)
+    with csv_path.open(newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"{csv_path} has no header")
+        missing = {"symbol", "exchange", "price"}.difference(reader.fieldnames)
+        if missing:
+            raise ValueError(f"{csv_path} is missing columns: {', '.join(sorted(missing))}")
+        quotes: dict[str, KisUsQuote] = {}
+        for row in reader:
+            symbol = str(row.get("symbol", "")).strip().upper()
+            if not symbol:
+                continue
+            quotes[symbol] = KisUsQuote(
+                symbol=symbol,
+                exchange=str(row.get("exchange", "")).strip().upper(),
+                price=float(row.get("price", 0) or 0),
+            )
+    return quotes
+
+
+def _parse_comma_list(value: str) -> list[str]:
+    return [item.strip().upper() for item in str(value).split(",") if item.strip()]
+
+
+def _merge_kis_us_positions(positions: list[KisUsPosition]) -> list[KisUsPosition]:
+    merged: dict[str, KisUsPosition] = {}
+    for position in positions:
+        existing = merged.get(position.symbol)
+        if existing is None:
+            merged[position.symbol] = position
+            continue
+        quantity = existing.quantity + position.quantity
+        market_value = existing.market_value + position.market_value
+        average_price = market_value / quantity if quantity > 0 else 0.0
+        merged[position.symbol] = KisUsPosition(
+            symbol=position.symbol,
+            exchange=existing.exchange or position.exchange,
+            quantity=quantity,
+            market_value=market_value,
+            average_price=average_price,
+        )
+    return sorted(merged.values(), key=lambda position: position.symbol)
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:

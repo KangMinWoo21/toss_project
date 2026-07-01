@@ -1,0 +1,10 @@
+symbol,name,asset_type,universe_start,universe_end,source,active_flag,survivorship_warning,target_weight,exchange,role,protected,notes
+SPY,SPDR S&P 500 ETF Trust,ETF,2015-01-01,,manual_us_core_v1,true,current liquid US research universe; survivorship bias possible,0.30,AMS,broad_market_core,false,S&P 500 ETF
+QQQ,Invesco QQQ Trust,ETF,2015-01-01,,manual_us_core_v1,true,current liquid US research universe; survivorship bias possible,0.25,NAS,growth_index_core,false,Nasdaq 100 ETF
+AAPL,Apple Inc.,EQUITY,2015-01-01,,manual_us_core_v1,true,current liquid US research universe; survivorship bias possible,0.10,NAS,large_cap_tech,false,Apple
+MSFT,Microsoft Corp.,EQUITY,2015-01-01,,manual_us_core_v1,true,current liquid US research universe; survivorship bias possible,0.10,NAS,large_cap_tech,false,Microsoft
+NVDA,NVIDIA Corp.,EQUITY,2015-01-01,,manual_us_core_v1,true,current liquid US research universe; survivorship bias possible,0.10,NAS,ai_semiconductor,false,Nvidia
+AMZN,Amazon.com Inc.,EQUITY,2015-01-01,,manual_us_core_v1,true,current liquid US research universe; survivorship bias possible,0.05,NAS,large_cap_consumer_cloud,false,Amazon
+GOOGL,Alphabet Inc. Class A,EQUITY,2015-01-01,,manual_us_core_v1,true,current liquid US research universe; survivorship bias possible,0.05,NAS,large_cap_tech,false,Alphabet Class A
+META,Meta Platforms Inc.,EQUITY,2015-01-01,,manual_us_core_v1,true,current liquid US research universe; survivorship bias possible,0.03,NAS,large_cap_tech,false,Meta Platforms
+TSLA,Tesla Inc.,EQUITY,2015-01-01,,manual_us_core_v1,true,current liquid US research universe; survivorship bias possible,0.02,NAS,high_volatility_satellite,true,Protected by default for sell-block tests

@@ -1,0 +1,10 @@
+symbol,path,start,end,source_url
+SPY,data/external/yahoo/us_daily/SPY_daily.csv,2015-01-01,2026-07-03,https://query1.finance.yahoo.com/v8/finance/chart/SPY?period1=1420070400&period2=1783036800&interval=1d&events=history
+QQQ,data/external/yahoo/us_daily/QQQ_daily.csv,2015-01-01,2026-07-03,https://query1.finance.yahoo.com/v8/finance/chart/QQQ?period1=1420070400&period2=1783036800&interval=1d&events=history
+AAPL,data/external/yahoo/us_daily/AAPL_daily.csv,2015-01-01,2026-07-03,https://query1.finance.yahoo.com/v8/finance/chart/AAPL?period1=1420070400&period2=1783036800&interval=1d&events=history
+MSFT,data/external/yahoo/us_daily/MSFT_daily.csv,2015-01-01,2026-07-03,https://query1.finance.yahoo.com/v8/finance/chart/MSFT?period1=1420070400&period2=1783036800&interval=1d&events=history
+NVDA,data/external/yahoo/us_daily/NVDA_daily.csv,2015-01-01,2026-07-03,https://query1.finance.yahoo.com/v8/finance/chart/NVDA?period1=1420070400&period2=1783036800&interval=1d&events=history
+AMZN,data/external/yahoo/us_daily/AMZN_daily.csv,2015-01-01,2026-07-03,https://query1.finance.yahoo.com/v8/finance/chart/AMZN?period1=1420070400&period2=1783036800&interval=1d&events=history
+GOOGL,data/external/yahoo/us_daily/GOOGL_daily.csv,2015-01-01,2026-07-03,https://query1.finance.yahoo.com/v8/finance/chart/GOOGL?period1=1420070400&period2=1783036800&interval=1d&events=history
+META,data/external/yahoo/us_daily/META_daily.csv,2015-01-01,2026-07-03,https://query1.finance.yahoo.com/v8/finance/chart/META?period1=1420070400&period2=1783036800&interval=1d&events=history
+TSLA,data/external/yahoo/us_daily/TSLA_daily.csv,2015-01-01,2026-07-03,https://query1.finance.yahoo.com/v8/finance/chart/TSLA?period1=1420070400&period2=1783036800&interval=1d&events=history

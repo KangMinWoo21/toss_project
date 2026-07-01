@@ -1,0 +1,10 @@
+symbol,date,short_volume,total_volume,source
+SPY,2026-06-30,0,0,template_finra_daily_short_sale_volume_import_required
+QQQ,2026-06-30,0,0,template_finra_daily_short_sale_volume_import_required
+AAPL,2026-06-30,0,0,template_finra_daily_short_sale_volume_import_required
+MSFT,2026-06-30,0,0,template_finra_daily_short_sale_volume_import_required
+NVDA,2026-06-30,0,0,template_finra_daily_short_sale_volume_import_required
+AMZN,2026-06-30,0,0,template_finra_daily_short_sale_volume_import_required
+GOOGL,2026-06-30,0,0,template_finra_daily_short_sale_volume_import_required
+META,2026-06-30,0,0,template_finra_daily_short_sale_volume_import_required
+TSLA,2026-06-30,0,0,template_finra_daily_short_sale_volume_import_required
